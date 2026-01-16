@@ -116,6 +116,7 @@ actor StreamContext {
     private var lastBackpressureLogTime: CFAbsoluteTime = 0
     private let queueFlushCooldown: CFAbsoluteTime = 0.25
     private var lastQueueFlushTime: CFAbsoluteTime = 0
+    private var lastKeyframeSendDeadline: CFAbsoluteTime = 0
 
     /// Network feedback-based bitrate cap (client quality feedback)
     private var networkBitrateCap: Int?
@@ -219,6 +220,16 @@ actor StreamContext {
     /// Update the current content rectangle (called per-frame from capture callback)
     private func setContentRect(_ rect: CGRect) {
         currentContentRect = rect
+    }
+
+    private func recordKeyframeSendEstimate(frameSize: Int, bitrate: Int) {
+        guard frameSize > 0, bitrate > 0 else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        let duration = Double(frameSize * 8) / Double(bitrate)
+        let deadline = now + duration
+        if deadline > lastKeyframeSendDeadline {
+            lastKeyframeSendDeadline = deadline
+        }
     }
 
     private func scaledOutputSize(for inputSize: CGSize) -> CGSize {
@@ -419,7 +430,8 @@ actor StreamContext {
             let queueDelay = await packetSender.estimatedQueueDelay(bitrate: currentBitrate)
             if queueDelay > maxQueueDelay {
                 let now = CFAbsoluteTimeGetCurrent()
-                let canFlush = now - lastQueueFlushTime >= queueFlushCooldown
+                let keyframeInFlight = now < lastKeyframeSendDeadline
+                let canFlush = now - lastQueueFlushTime >= queueFlushCooldown && !keyframeInFlight
                 if canFlush {
                     lastQueueFlushTime = now
                     await packetSender.resetQueue(reason: "backpressure \(Int(queueDelay * 1000))ms")
@@ -705,6 +717,9 @@ actor StreamContext {
             let dimToken = self.dimensionToken
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
+            if isKeyframe {
+                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
+            }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
                 isKeyframe: isKeyframe,
@@ -808,6 +823,9 @@ actor StreamContext {
             let dimToken = self.dimensionToken
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
+            if isKeyframe {
+                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
+            }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
                 isKeyframe: isKeyframe,
@@ -914,6 +932,9 @@ actor StreamContext {
 
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
+            if isKeyframe {
+                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
+            }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
                 isKeyframe: isKeyframe,
@@ -1075,6 +1096,9 @@ actor StreamContext {
             let dimToken = self.dimensionToken
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
+            if isKeyframe {
+                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
+            }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
                 isKeyframe: isKeyframe,
