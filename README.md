@@ -28,7 +28,7 @@ Add MirageKit as a Swift Package Manager dependency.
 
 ```swift
 // Package.swift
-.package(url: "https://github.com/EthanLipnik/MirageKit.git", from: "1.0.0"),
+.package(url: "https://github.com/EthanLipnik/MirageKit.git", from: "0.0.1"),
 ```
 
 Then add `MirageKit` to the relevant target dependencies.
@@ -116,6 +116,10 @@ struct StreamView: View {
 - The host can create a shared virtual display sized to the client’s display for 1:1 pixels.
 - Session state updates allow remote unlock flows (login screen vs locked session).
 - Menu bar passthrough enables clients to render native menu structures and send actions back.
+
+## Architecture
+
+For a deeper dive into modules and data flows, see `Architecture.md`.
 
 ## Configuration
 
