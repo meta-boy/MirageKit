@@ -12,9 +12,15 @@ actor StreamContext {
     private let windowID: WindowID
     private let encoderConfig: MirageEncoderConfiguration
     private var streamScale: CGFloat
-    private let scaler = PixelBufferScaler()
+    private var baseCaptureSize: CGSize = .zero
     private var currentEncodedSize: CGSize = .zero
     private var currentCaptureSize: CGSize = .zero
+    private var lastWindowFrame: CGRect = .zero
+    private enum CaptureMode {
+        case window
+        case display
+    }
+    private var captureMode: CaptureMode = .window
     /// Max payload size per UDP packet (excludes Mirage header).
     nonisolated let maxPayloadSize: Int
 
@@ -114,9 +120,6 @@ actor StreamContext {
     private let queueDelayIncreaseMultiplier: Double = 1.05
     private let backpressureLogInterval: CFAbsoluteTime = 1.0
     private var lastBackpressureLogTime: CFAbsoluteTime = 0
-    private let queueFlushCooldown: CFAbsoluteTime = 0.25
-    private var lastQueueFlushTime: CFAbsoluteTime = 0
-    private var lastKeyframeSendDeadline: CFAbsoluteTime = 0
 
     /// Network feedback-based bitrate cap (client quality feedback)
     private var networkBitrateCap: Int?
@@ -222,82 +225,32 @@ actor StreamContext {
         currentContentRect = rect
     }
 
-    private func recordKeyframeSendEstimate(frameSize: Int, bitrate: Int) {
-        guard frameSize > 0, bitrate > 0 else { return }
-        let now = CFAbsoluteTimeGetCurrent()
-        let duration = Double(frameSize * 8) / Double(bitrate)
-        let deadline = now + duration
-        if deadline > lastKeyframeSendDeadline {
-            lastKeyframeSendDeadline = deadline
-        }
-    }
-
-    private func scaledOutputSize(for inputSize: CGSize) -> CGSize {
+    private func scaledOutputSize(for baseSize: CGSize) -> CGSize {
         let clampedScale = streamScale
-        let width = StreamContext.alignedEvenPixel(inputSize.width * clampedScale)
-        let height = StreamContext.alignedEvenPixel(inputSize.height * clampedScale)
+        let width = StreamContext.alignedEvenPixel(baseSize.width * clampedScale)
+        let height = StreamContext.alignedEvenPixel(baseSize.height * clampedScale)
         return CGSize(width: width, height: height)
     }
 
-    private func scaleRect(_ rect: CGRect, scale: CGFloat, maxSize: CGSize) -> CGRect {
-        guard scale != 1.0 else { return rect }
-        let scaled = CGRect(
-            x: rect.origin.x * scale,
-            y: rect.origin.y * scale,
-            width: rect.size.width * scale,
-            height: rect.size.height * scale
-        )
-
-        let maxWidth = maxSize.width
-        let maxHeight = maxSize.height
-        let clampedWidth = min(maxWidth, scaled.width)
-        let clampedHeight = min(maxHeight, scaled.height)
-        let clampedX = min(max(0, scaled.origin.x), maxWidth - clampedWidth)
-        let clampedY = min(max(0, scaled.origin.y), maxHeight - clampedHeight)
-        return CGRect(x: clampedX, y: clampedY, width: clampedWidth, height: clampedHeight)
+    private func updateCaptureSizesIfNeeded(_ bufferSize: CGSize) {
+        guard bufferSize.width > 0, bufferSize.height > 0 else { return }
+        guard bufferSize != currentCaptureSize else { return }
+        currentCaptureSize = bufferSize
+        currentEncodedSize = bufferSize
+        if streamScale > 0 {
+            baseCaptureSize = CGSize(width: bufferSize.width / streamScale, height: bufferSize.height / streamScale)
+        }
     }
 
-    private func scaleFrameInfo(_ frameInfo: CapturedFrameInfo, scale: CGFloat, outputSize: CGSize) -> CapturedFrameInfo {
-        guard scale != 1.0 else { return frameInfo }
-        let scaledContentRect = scaleRect(frameInfo.contentRect, scale: scale, maxSize: outputSize)
-        let scaledDirtyRects = frameInfo.dirtyRects.map { rect in
-            scaleRect(rect, scale: scale, maxSize: outputSize)
+    private func recoveryKeyframeQuality() -> Float {
+        let pixelCount = currentEncodedSize.width * currentEncodedSize.height
+        if pixelCount >= 12_000_000 || currentBitrate <= 20_000_000 {
+            return 0.2
         }
-        return CapturedFrameInfo(
-            contentRect: scaledContentRect,
-            dirtyRects: scaledDirtyRects,
-            dirtyPercentage: frameInfo.dirtyPercentage,
-            forceKeyframe: frameInfo.forceKeyframe,
-            isKeepalive: frameInfo.isKeepalive
-        )
-    }
-
-    private func scaledSampleBuffer(
-        _ sampleBuffer: CMSampleBuffer,
-        outputSize: CGSize
-    ) -> CMSampleBuffer? {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
-
-        if outputSize.width <= 0 || outputSize.height <= 0 {
-            return nil
+        if pixelCount >= 8_000_000 || currentBitrate <= 40_000_000 {
+            return 0.25
         }
-
-        if Int(outputSize.width) == CVPixelBufferGetWidth(pixelBuffer),
-           Int(outputSize.height) == CVPixelBufferGetHeight(pixelBuffer) {
-            return sampleBuffer
-        }
-
-        guard let scaledBuffer = scaler.scale(pixelBuffer: pixelBuffer, outputSize: outputSize) else {
-            return nil
-        }
-
-        let timingInfo = CMSampleTimingInfo(
-            duration: CMSampleBufferGetDuration(sampleBuffer),
-            presentationTimeStamp: CMSampleBufferGetPresentationTimeStamp(sampleBuffer),
-            decodeTimeStamp: CMSampleBufferGetDecodeTimeStamp(sampleBuffer)
-        )
-
-        return scaler.sampleBuffer(from: scaledBuffer, timingInfo: timingInfo)
+        return minQuality
     }
 
     /// Handle a captured frame with always-latest-frame logic
@@ -349,28 +302,13 @@ actor StreamContext {
 
         pendingFrame = nil  // Clear - we're processing this one
 
-        let inputSize: CGSize
         if let pixelBuffer = CMSampleBufferGetImageBuffer(wrapper.buffer) {
-            inputSize = CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
-        } else {
-            inputSize = .zero
+            let bufferSize = CGSize(
+                width: CVPixelBufferGetWidth(pixelBuffer),
+                height: CVPixelBufferGetHeight(pixelBuffer)
+            )
+            updateCaptureSizesIfNeeded(bufferSize)
         }
-        guard inputSize.width > 0, inputSize.height > 0 else {
-            return
-        }
-        currentCaptureSize = inputSize
-        let targetOutputSize = currentEncodedSize == .zero
-            ? scaledOutputSize(for: inputSize)
-            : currentEncodedSize
-        if currentEncodedSize == .zero {
-            currentEncodedSize = targetOutputSize
-        }
-        let scaleFactor = targetOutputSize.width / inputSize.width
-        let scaledFrameInfo = scaleFrameInfo(frameInfo, scale: scaleFactor, outputSize: targetOutputSize)
-        guard let scaledSampleBuffer = scaledSampleBuffer(wrapper.buffer, outputSize: targetOutputSize) else {
-            return
-        }
-        let scaledWrapper = SampleBufferWrapper(buffer: scaledSampleBuffer)
 
         // Reset encoder if it was stuck on previous frame
         // This invalidates the VTCompressionSession and creates a new one
@@ -384,24 +322,32 @@ actor StreamContext {
                 // Reduce quality before reset - the recovery keyframe will be smaller
                 // and more likely to complete successfully during network congestion
                 let previousQuality = currentQuality
-                await encoder?.updateQuality(minQuality)
-
+                let recoveryQuality = recoveryKeyframeQuality()
+                var didAdjustQuality = false
+                if previousQuality > recoveryQuality {
+                    currentQuality = recoveryQuality
+                    await encoder?.updateQuality(currentQuality)
+                    didAdjustQuality = true
+                }
+ 
                 do {
                     await packetSender?.bumpGeneration(reason: "encoder reset")
                     try await encoder?.reset()
                     didResetEncoder = true
                     lastEncoderResetTime = now
-                    MirageLogger.stream("Recovery keyframe: using quality \(minQuality)")
-
-                    // Schedule quality restoration after recovery keyframe is likely sent
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(200))
-                        if currentQuality == minQuality && previousQuality > minQuality {
-                            currentQuality = previousQuality
-                            await encoder?.updateQuality(currentQuality)
-                            MirageLogger.stream("Recovery complete, restored quality to \(String(format: "%.1f", currentQuality))")
+                    if didAdjustQuality {
+                        MirageLogger.stream("Recovery keyframe: using quality \(currentQuality)")
+                        // Schedule quality restoration after recovery keyframe is likely sent
+                        Task {
+                            try? await Task.sleep(for: .milliseconds(200))
+                            if currentQuality == recoveryQuality, previousQuality > recoveryQuality {
+                                currentQuality = previousQuality
+                                await encoder?.updateQuality(currentQuality)
+                                MirageLogger.stream("Recovery complete, restored quality to \(currentQuality)")
+                            }
                         }
                     }
+
                 } catch {
                     MirageLogger.error(.stream, "Encoder reset failed: \(error)")
                 }
@@ -414,7 +360,7 @@ actor StreamContext {
         // Skip encoding if nothing changed (client keeps previous frame)
         // EXCEPT for keepalive frames - these must be sent to maintain stream during SCK pauses
         // This should rarely happen as CaptureStreamOutput already filters these
-        if scaledFrameInfo.dirtyPercentage == 0 && scaledFrameInfo.dirtyRects.isEmpty && !scaledFrameInfo.isKeepalive {
+        if frameInfo.dirtyPercentage == 0 && frameInfo.dirtyRects.isEmpty && !frameInfo.isKeepalive {
             // Check for newer frames
             if pendingFrame != nil {
                 Task { await processLatestFrame() }
@@ -424,47 +370,37 @@ actor StreamContext {
 
         // Encode using HEVC - P-frames automatically encode only what changed
         // Pass forceKeyframe hint (set when SCK resumes after a fallback period, or after encoder reset)
-        var forceKeyframe = scaledFrameInfo.forceKeyframe || didResetEncoder
+        var forceKeyframe = frameInfo.forceKeyframe || didResetEncoder
 
         if let packetSender {
             let queueDelay = await packetSender.estimatedQueueDelay(bitrate: currentBitrate)
-            if queueDelay > maxQueueDelay {
+            if queueDelay > maxQueueDelay && !forceKeyframe && !frameInfo.isKeepalive {
                 let now = CFAbsoluteTimeGetCurrent()
-                let keyframeInFlight = now < lastKeyframeSendDeadline
-                let canFlush = now - lastQueueFlushTime >= queueFlushCooldown && !keyframeInFlight
-                if canFlush {
-                    lastQueueFlushTime = now
-                    await packetSender.resetQueue(reason: "backpressure \(Int(queueDelay * 1000))ms")
-                    await encoder?.flush()
-                    forceKeyframe = true
-                    MirageLogger.stream("Backpressure: flushed queue (\(Int(queueDelay * 1000))ms)")
-                } else if !forceKeyframe && !scaledFrameInfo.isKeepalive {
-                    droppedFrameCount += 1
-                    if now - lastBackpressureLogTime > backpressureLogInterval {
-                        lastBackpressureLogTime = now
-                        MirageLogger.stream("Backpressure: dropping frame (queue \(Int(queueDelay * 1000))ms)")
-                    }
-                    if pendingFrame != nil {
-                        Task { await processLatestFrame() }
-                    }
-                    return
+                droppedFrameCount += 1
+                if now - lastBackpressureLogTime > backpressureLogInterval {
+                    lastBackpressureLogTime = now
+                    MirageLogger.stream("Backpressure: dropping frame (queue \(Int(queueDelay * 1000))ms)")
                 }
+                if pendingFrame != nil {
+                    Task { await processLatestFrame() }
+                }
+                return
             }
         }
 
-        if scaledFrameInfo.isKeepalive {
-            MirageLogger.stream("Encoding keepalive frame (dirty=\(scaledFrameInfo.dirtyPercentage)%)")
+        if frameInfo.isKeepalive {
+            MirageLogger.stream("Encoding keepalive frame (dirty=\(frameInfo.dirtyPercentage)%)")
         }
 
         isCurrentlyEncoding = true
         encodeStartTime = CFAbsoluteTimeGetCurrent()
 
-        lastDirtyPercentage = scaledFrameInfo.dirtyPercentage
+        lastDirtyPercentage = frameInfo.dirtyPercentage
         // Store contentRect for use in frame header
-        setContentRect(scaledFrameInfo.contentRect)
+        setContentRect(frameInfo.contentRect)
 
         do {
-            try await encoder?.encodeFrame(scaledWrapper, forceKeyframe: forceKeyframe)
+            try await encoder?.encodeFrame(wrapper, forceKeyframe: forceKeyframe)
         } catch {
             MirageLogger.error(.stream, "Encode error: \(error)")
         }
@@ -684,10 +620,14 @@ actor StreamContext {
 
         // Encode at scaled resolution for low latency
         let captureTarget = streamTargetDimensions(windowFrame: window.frame)
-        currentCaptureSize = CGSize(width: captureTarget.width, height: captureTarget.height)
-        let outputSize = scaledOutputSize(for: currentCaptureSize)
+        baseCaptureSize = CGSize(width: captureTarget.width, height: captureTarget.height)
+        let outputSize = scaledOutputSize(for: baseCaptureSize)
+        currentCaptureSize = outputSize
         currentEncodedSize = outputSize
+        captureMode = .window
+        lastWindowFrame = window.frame
         try await encoder.createSession(width: Int(outputSize.width), height: Int(outputSize.height))
+        await encoder.updateBitrate(currentBitrate)
 
         // Pre-heat encoder to eliminate warm-up latency on first real frames
         // Without this, first 5-10 frames take 70-80ms instead of 3-4ms
@@ -717,9 +657,6 @@ actor StreamContext {
             let dimToken = self.dimensionToken
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
-            if isKeyframe {
-                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
-            }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
                 isKeyframe: isKeyframe,
@@ -745,7 +682,8 @@ actor StreamContext {
         try await captureEngine.startCapture(
             window: window,
             application: application,
-            display: display
+            display: display,
+            outputScale: streamScale
         ) { [weak self] sampleBuffer, frameInfo in
             guard let self else { return }
             // Wrap the sample buffer for safe sending across actor boundary
@@ -791,12 +729,15 @@ actor StreamContext {
 
         // Encode at scaled resolution from display native resolution or explicit pixel override
         let captureResolution = resolution ?? CGSize(width: display.width, height: display.height)
-        currentCaptureSize = captureResolution
-        let outputSize = scaledOutputSize(for: currentCaptureSize)
+        baseCaptureSize = captureResolution
+        let outputSize = scaledOutputSize(for: baseCaptureSize)
+        currentCaptureSize = outputSize
         currentEncodedSize = outputSize
+        captureMode = .display
         let width = max(1, Int(outputSize.width))
         let height = max(1, Int(outputSize.height))
         try await encoder.createSession(width: width, height: height)
+        await encoder.updateBitrate(currentBitrate)
 
         // Pre-heat encoder to eliminate warm-up latency
         try await encoder.preheat()
@@ -823,9 +764,6 @@ actor StreamContext {
             let dimToken = self.dimensionToken
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
-            if isKeyframe {
-                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
-            }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
                 isKeyframe: isKeyframe,
@@ -848,7 +786,7 @@ actor StreamContext {
 
         try await captureEngine.startDisplayCapture(
             display: display,
-            resolution: captureResolution,
+            resolution: outputSize,
             showsCursor: showsCursor
         ) { [weak self] sampleBuffer, frameInfo in
             guard let self else { return }
@@ -891,13 +829,16 @@ actor StreamContext {
 
         // Calculate capture and encoding resolutions
         let captureResolution = resolution ?? CGSize(width: display.width, height: display.height)
-        currentCaptureSize = captureResolution
-        let outputSize = scaledOutputSize(for: currentCaptureSize)
+        baseCaptureSize = captureResolution
+        let outputSize = scaledOutputSize(for: baseCaptureSize)
+        currentCaptureSize = outputSize
         currentEncodedSize = outputSize
+        captureMode = .display
         let width = max(1, Int(outputSize.width))
         let height = max(1, Int(outputSize.height))
         MirageLogger.stream("Desktop encoding at \(width)x\(height)")
         try await encoder.createSession(width: width, height: height)
+        await encoder.updateBitrate(currentBitrate)
 
         // Pre-heat encoder to eliminate warm-up latency
         try await encoder.preheat()
@@ -932,9 +873,6 @@ actor StreamContext {
 
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
-            if isKeyframe {
-                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
-            }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
                 isKeyframe: isKeyframe,
@@ -956,10 +894,10 @@ actor StreamContext {
         self.captureEngine = captureEngine
 
         // Desktop streaming hides cursor - client renders its own for smoother tracking
-        // Capture at full resolution even if encoding at 5K (VT handles scaling)
+        // Capture at the scaled resolution so encoder matches the output size
         try await captureEngine.startDisplayCapture(
             display: display,
-            resolution: captureResolution,
+            resolution: outputSize,
             showsCursor: false
         ) { [weak self] sampleBuffer, frameInfo in
             guard let self else { return }
@@ -1062,13 +1000,17 @@ actor StreamContext {
         // Virtual display resolution (2880×1800) is just for isolation - window may be smaller within it
         let captureScaleFactor: CGFloat = 2.0  // Virtual display is HiDPI 2x
         let captureTarget = streamTargetDimensions(windowFrame: scWindow.frame, scaleFactor: captureScaleFactor)
-        currentCaptureSize = CGSize(width: captureTarget.width, height: captureTarget.height)
-        let outputSize = scaledOutputSize(for: currentCaptureSize)
+        baseCaptureSize = CGSize(width: captureTarget.width, height: captureTarget.height)
+        let outputSize = scaledOutputSize(for: baseCaptureSize)
+        currentCaptureSize = outputSize
         currentEncodedSize = outputSize
+        captureMode = .window
+        lastWindowFrame = scWindow.frame
         try await encoder.createSession(
             width: Int(outputSize.width),
             height: Int(outputSize.height)
         )
+        await encoder.updateBitrate(currentBitrate)
         MirageLogger.encoder("Encoder created at scaled dimensions \(Int(outputSize.width))x\(Int(outputSize.height)) (capture \(captureTarget.width)x\(captureTarget.height), window \(Int(scWindow.frame.width))x\(Int(scWindow.frame.height)) × \(captureScaleFactor))")
 
         // Pre-heat encoder to eliminate warm-up latency
@@ -1096,9 +1038,6 @@ actor StreamContext {
             let dimToken = self.dimensionToken
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
-            if isKeyframe {
-                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
-            }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
                 isKeyframe: isKeyframe,
@@ -1126,7 +1065,8 @@ actor StreamContext {
             window: windowWrapper.window,
             application: appWrapper.application,
             display: displayWrapper.display,
-            knownScaleFactor: 2.0  // Virtual display is HiDPI 2x, NSScreen detection fails on headless Macs
+            knownScaleFactor: 2.0,  // Virtual display is HiDPI 2x, NSScreen detection fails on headless Macs
+            outputScale: streamScale
         ) { [weak self] sampleBuffer, frameInfo in
             guard let self else { return }
             let wrapper = SampleBufferWrapper(buffer: sampleBuffer)
@@ -1212,14 +1152,18 @@ actor StreamContext {
         // Update encoder to match new capture dimensions (window.frame × scaleFactor)
         let captureScaleFactor: CGFloat = 2.0  // Virtual display is HiDPI 2x
         let captureTarget = streamTargetDimensions(windowFrame: scWindow.frame, scaleFactor: captureScaleFactor)
-        currentCaptureSize = CGSize(width: captureTarget.width, height: captureTarget.height)
-        let outputSize = scaledOutputSize(for: currentCaptureSize)
+        baseCaptureSize = CGSize(width: captureTarget.width, height: captureTarget.height)
+        let outputSize = scaledOutputSize(for: baseCaptureSize)
+        currentCaptureSize = outputSize
         currentEncodedSize = outputSize
+        captureMode = .window
+        lastWindowFrame = scWindow.frame
         if let encoder {
             try await encoder.updateDimensions(
                 width: Int(outputSize.width),
                 height: Int(outputSize.height)
             )
+            await encoder.updateBitrate(currentBitrate)
             MirageLogger.encoder("Encoder updated to \(Int(outputSize.width))x\(Int(outputSize.height)) for resolution change")
         }
 
@@ -1231,7 +1175,8 @@ actor StreamContext {
             window: windowWrapper.window,
             application: appWrapper.application,
             display: displayWrapper.display,
-            knownScaleFactor: 2.0  // Virtual display is HiDPI 2x
+            knownScaleFactor: 2.0,  // Virtual display is HiDPI 2x
+            outputScale: streamScale
         ) { [weak self] sampleBuffer, frameInfo in
             guard let self else { return }
             let wrapper = SampleBufferWrapper(buffer: sampleBuffer)
@@ -1255,10 +1200,13 @@ actor StreamContext {
         // Recovery happens during motion/errors when quality matters less
         let previousQuality = currentQuality
         let previousBitrate = currentBitrate
-        if currentQuality > minQuality {
-            currentQuality = minQuality
+        let recoveryQuality = recoveryKeyframeQuality()
+        var didAdjustQuality = false
+        if currentQuality > recoveryQuality {
+            currentQuality = recoveryQuality
             await encoder?.updateQuality(currentQuality)
-            MirageLogger.stream("Recovery keyframe: temporarily reduced quality to \(minQuality)")
+            MirageLogger.stream("Recovery keyframe: temporarily reduced quality to \(currentQuality)")
+            didAdjustQuality = true
         }
         let reducedBitrate = max(minBitrate, Int(Double(currentBitrate) * 0.6))
         if reducedBitrate < currentBitrate {
@@ -1279,11 +1227,11 @@ actor StreamContext {
         // This gives time for the keyframe to be encoded at lower quality
         Task {
             try? await Task.sleep(for: .milliseconds(100))
-            if currentQuality == minQuality && previousQuality > minQuality {
+            if didAdjustQuality, currentQuality == recoveryQuality, previousQuality > recoveryQuality {
                 // Only restore if motion-adaptive hasn't already changed it
                 currentQuality = previousQuality
                 await encoder?.updateQuality(currentQuality)
-                MirageLogger.stream("Recovery keyframe sent, restored quality to \(String(format: "%.1f", currentQuality))")
+                MirageLogger.stream("Recovery keyframe sent, restored quality to \(currentQuality)")
             }
             if currentBitrate == reducedBitrate {
                 currentBitrate = min(previousBitrate, effectiveMaxBitrate())
@@ -1302,10 +1250,13 @@ actor StreamContext {
         // Temporarily reduce quality for recovery keyframe
         let previousQuality = currentQuality
         let previousBitrate = currentBitrate
-        if currentQuality > minQuality {
-            currentQuality = minQuality
+        let recoveryQuality = recoveryKeyframeQuality()
+        var didAdjustQuality = false
+        if currentQuality > recoveryQuality {
+            currentQuality = recoveryQuality
             await encoder?.updateQuality(currentQuality)
-            MirageLogger.stream("Immediate keyframe: temporarily reduced quality to \(minQuality)")
+            MirageLogger.stream("Immediate keyframe: temporarily reduced quality to \(currentQuality)")
+            didAdjustQuality = true
         }
         let reducedBitrate = max(minBitrate, Int(Double(currentBitrate) * 0.6))
         if reducedBitrate < currentBitrate {
@@ -1322,10 +1273,10 @@ actor StreamContext {
         // Schedule quality restoration
         Task {
             try? await Task.sleep(for: .milliseconds(100))
-            if currentQuality == minQuality && previousQuality > minQuality {
+            if didAdjustQuality, currentQuality == recoveryQuality, previousQuality > recoveryQuality {
                 currentQuality = previousQuality
                 await encoder?.updateQuality(currentQuality)
-                MirageLogger.stream("Immediate keyframe sent, restored quality to \(String(format: "%.1f", currentQuality))")
+                MirageLogger.stream("Immediate keyframe sent, restored quality to \(currentQuality)")
             }
             if currentBitrate == reducedBitrate {
                 currentBitrate = min(previousBitrate, effectiveMaxBitrate())
@@ -1346,7 +1297,7 @@ actor StreamContext {
     }
 
     /// Update stream dimensions when the host window is resized
-    /// Always encodes at native resolution for maximum quality
+    /// Encodes at the stream-scaled resolution for lower bandwidth
     func updateDimensions(windowFrame: CGRect) async throws {
         guard isRunning else { return }
 
@@ -1364,22 +1315,26 @@ actor StreamContext {
 
         // Encode at scaled resolution based on stream scale
         let captureTarget = streamTargetDimensions(windowFrame: windowFrame)
-        currentCaptureSize = CGSize(width: captureTarget.width, height: captureTarget.height)
-        let outputSize = scaledOutputSize(for: currentCaptureSize)
+        baseCaptureSize = CGSize(width: captureTarget.width, height: captureTarget.height)
+        let outputSize = scaledOutputSize(for: baseCaptureSize)
         let width = Int(outputSize.width)
         let height = Int(outputSize.height)
+        currentCaptureSize = outputSize
         currentEncodedSize = outputSize
+        lastWindowFrame = windowFrame
+        captureMode = .window
 
         MirageLogger.stream("Updating stream to scaled resolution: \(width)x\(height) (capture \(captureTarget.width)x\(captureTarget.height), scale: \(captureTarget.hostScaleFactor), from \(windowFrame.width)x\(windowFrame.height) pts) (frames paused)")
 
         // Update the capture engine configuration first
         if let captureEngine {
-            try await captureEngine.updateDimensions(windowFrame: windowFrame)
+            try await captureEngine.updateDimensions(windowFrame: windowFrame, outputScale: streamScale)
         }
 
         // Update the encoder session (requires recreation)
         if let encoder {
             try await encoder.updateDimensions(width: width, height: height)
+            await encoder.updateBitrate(currentBitrate)
         }
 
         // Force keyframe after resize for clean restart
@@ -1406,33 +1361,40 @@ actor StreamContext {
         MirageLogger.stream("Dimension token incremented to \(dimensionToken)")
         await packetSender?.bumpGeneration(reason: "resolution update")
 
-        MirageLogger.stream("Updating to client-requested resolution: \(width)x\(height) (frames paused)")
+        baseCaptureSize = CGSize(width: width, height: height)
+        let outputSize = scaledOutputSize(for: baseCaptureSize)
+        let scaledWidth = Int(outputSize.width)
+        let scaledHeight = Int(outputSize.height)
+        captureMode = .display
 
-        // Update the capture engine to output at client's exact pixel dimensions
+        MirageLogger.stream("Updating to client-requested resolution: \(width)x\(height) (scaled \(scaledWidth)x\(scaledHeight)) (frames paused)")
+
+        // Update the capture engine to output at the scaled pixel dimensions
         if let captureEngine {
-            try await captureEngine.updateResolution(width: width, height: height)
+            try await captureEngine.updateResolution(width: scaledWidth, height: scaledHeight)
         }
 
-        currentCaptureSize = CGSize(width: width, height: height)
-        let outputSize = scaledOutputSize(for: currentCaptureSize)
+        currentCaptureSize = outputSize
         currentEncodedSize = outputSize
 
         // Update the encoder to match scaled output
         if let encoder {
-            try await encoder.updateDimensions(width: Int(outputSize.width), height: Int(outputSize.height))
+            try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight)
+            await encoder.updateBitrate(currentBitrate)
         }
 
         // Force keyframe after resize for clean restart
         await encoder?.forceKeyframe()
 
-        MirageLogger.stream("Resolution update to \(width)x\(height) complete (frames resumed)")
+        MirageLogger.stream("Resolution update to \(scaledWidth)x\(scaledHeight) complete (frames resumed)")
     }
 
-    /// Update stream scale without resizing the capture source
+    /// Update stream scale and reconfigure capture output size
     func updateStreamScale(_ newScale: CGFloat) async throws {
         let clampedScale = StreamContext.clampStreamScale(newScale)
         guard clampedScale != streamScale else { return }
 
+        let previousScale = streamScale
         streamScale = clampedScale
 
         // Mark as resizing - frames will be dropped to prevent decode errors
@@ -1447,14 +1409,41 @@ actor StreamContext {
         MirageLogger.stream("Dimension token incremented to \(dimensionToken)")
         await packetSender?.bumpGeneration(reason: "stream scale update")
 
-        let captureSize = currentCaptureSize == .zero ? currentEncodedSize : currentCaptureSize
-        guard captureSize.width > 0, captureSize.height > 0 else { return }
+        let derivedBaseSize: CGSize
+        if baseCaptureSize != .zero {
+            derivedBaseSize = baseCaptureSize
+        } else if previousScale > 0 {
+            let fallbackSize = currentCaptureSize == .zero ? currentEncodedSize : currentCaptureSize
+            derivedBaseSize = CGSize(
+                width: fallbackSize.width / previousScale,
+                height: fallbackSize.height / previousScale
+            )
+        } else {
+            derivedBaseSize = currentCaptureSize
+        }
+        baseCaptureSize = derivedBaseSize
+        guard derivedBaseSize.width > 0, derivedBaseSize.height > 0 else { return }
 
-        let outputSize = scaledOutputSize(for: captureSize)
+        let outputSize = scaledOutputSize(for: derivedBaseSize)
+        let scaledWidth = Int(outputSize.width)
+        let scaledHeight = Int(outputSize.height)
+        currentCaptureSize = outputSize
         currentEncodedSize = outputSize
 
+        if let captureEngine {
+            switch captureMode {
+            case .display:
+                try await captureEngine.updateResolution(width: scaledWidth, height: scaledHeight)
+            case .window:
+                if !lastWindowFrame.isEmpty {
+                    try await captureEngine.updateDimensions(windowFrame: lastWindowFrame, outputScale: streamScale)
+                }
+            }
+        }
+
         if let encoder {
-            try await encoder.updateDimensions(width: Int(outputSize.width), height: Int(outputSize.height))
+            try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight)
+            await encoder.updateBitrate(currentBitrate)
         }
 
         let previousMaxBitrate = maxBitrate
@@ -1504,20 +1493,26 @@ actor StreamContext {
         MirageLogger.stream("Dimension token incremented to \(dimensionToken)")
         await packetSender?.bumpGeneration(reason: "display switch")
 
-        MirageLogger.stream("Switching to new display \(displayWrapper.display.displayID) at \(Int(resolution.width))x\(Int(resolution.height)) (frames paused)")
+        baseCaptureSize = resolution
+        let outputSize = scaledOutputSize(for: baseCaptureSize)
+        let scaledWidth = Int(outputSize.width)
+        let scaledHeight = Int(outputSize.height)
+
+        MirageLogger.stream("Switching to new display \(displayWrapper.display.displayID) at \(Int(resolution.width))x\(Int(resolution.height)) (scaled \(scaledWidth)x\(scaledHeight)) (frames paused)")
 
         // Update the capture engine to the new display
         if let captureEngine {
-            try await captureEngine.updateCaptureDisplay(displayWrapper.display, resolution: resolution)
+            try await captureEngine.updateCaptureDisplay(displayWrapper.display, resolution: outputSize)
         }
 
-        currentCaptureSize = resolution
-        let outputSize = scaledOutputSize(for: currentCaptureSize)
+        currentCaptureSize = outputSize
         currentEncodedSize = outputSize
+        captureMode = .display
 
         // Update the encoder to match the new resolution
         if let encoder {
-            try await encoder.updateDimensions(width: Int(outputSize.width), height: Int(outputSize.height))
+            try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight)
+            await encoder.updateBitrate(currentBitrate)
         }
 
         // Force keyframe after display switch for clean restart

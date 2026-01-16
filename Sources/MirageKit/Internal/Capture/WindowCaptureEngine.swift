@@ -45,11 +45,20 @@ actor WindowCaptureEngine {
     private var currentWidth: Int = 0
     private var currentHeight: Int = 0
     private var currentScaleFactor: CGFloat = 1.0
+    private var outputScale: CGFloat = 1.0
+    private var useBestCaptureResolution: Bool = true
     private var contentFilter: SCContentFilter?
-
+ 
     init(configuration: MirageEncoderConfiguration) {
         self.configuration = configuration
     }
+
+    private static func alignedEvenPixel(_ value: CGFloat) -> Int {
+        let rounded = Int(value.rounded())
+        let even = rounded - (rounded % 2)
+        return max(even, 2)
+    }
+
 
     /// Start capturing all windows belonging to an application (includes alerts, sheets, dialogs)
     /// - Parameters:
@@ -59,6 +68,7 @@ actor WindowCaptureEngine {
         application: SCRunningApplication,
         display: SCDisplay,
         knownScaleFactor: CGFloat? = nil,
+        outputScale: CGFloat = 1.0,
         onFrame: @escaping @Sendable (CMSampleBuffer, CapturedFrameInfo) -> Void,
         onDimensionChange: @escaping @Sendable (Int, Int) -> Void = { _, _ in }
     ) async throws {
@@ -81,15 +91,19 @@ actor WindowCaptureEngine {
         } else {
             target = streamTargetDimensions(windowFrame: window.frame)
         }
-        currentScaleFactor = target.hostScaleFactor
-        currentWidth = target.width
-        currentHeight = target.height
+
+        let clampedScale = max(0.1, min(1.0, outputScale))
+        self.outputScale = clampedScale
+        currentScaleFactor = target.hostScaleFactor * clampedScale
+        currentWidth = Self.alignedEvenPixel(CGFloat(target.width) * clampedScale)
+        currentHeight = Self.alignedEvenPixel(CGFloat(target.height) * clampedScale)
 
         // CRITICAL: For virtual displays on headless Macs, do NOT use .best or .nominal
         // as they may capture at wrong resolution (1x instead of 2x).
         // Setting explicit width/height WITHOUT captureResolution lets SCK use our dimensions.
         // For real displays, .best correctly detects backing scale factor.
-        if knownScaleFactor == nil {
+        useBestCaptureResolution = (knownScaleFactor == nil)
+        if useBestCaptureResolution {
             streamConfig.captureResolution = .best
         }
         // When knownScaleFactor is set, we intentionally don't set captureResolution
@@ -97,7 +111,7 @@ actor WindowCaptureEngine {
         streamConfig.width = currentWidth
         streamConfig.height = currentHeight
 
-        MirageLogger.capture("Configuring capture: \(currentWidth)x\(currentHeight), scale=\(currentScaleFactor), knownScale=\(String(describing: knownScaleFactor))")
+        MirageLogger.capture("Configuring capture: \(currentWidth)x\(currentHeight), scale=\(currentScaleFactor), outputScale=\(clampedScale), knownScale=\(String(describing: knownScaleFactor))")
 
         // Frame rate
         streamConfig.minimumFrameInterval = CMTime(
@@ -167,15 +181,16 @@ actor WindowCaptureEngine {
     }
 
     /// Update stream dimensions when the host window is resized
-    /// Always captures at native resolution for maximum quality
-    func updateDimensions(windowFrame: CGRect) async throws {
+    /// Output resolution can be scaled for bandwidth savings.
+    func updateDimensions(windowFrame: CGRect, outputScale: CGFloat? = nil) async throws {
         guard isCapturing, let stream else { return }
 
-        // Always capture at native resolution
         let target = streamTargetDimensions(windowFrame: windowFrame)
-        currentScaleFactor = target.hostScaleFactor
-        let newWidth = target.width
-        let newHeight = target.height
+        let scale = max(0.1, min(1.0, outputScale ?? self.outputScale))
+        self.outputScale = scale
+        currentScaleFactor = target.hostScaleFactor * scale
+        let newWidth = Self.alignedEvenPixel(CGFloat(target.width) * scale)
+        let newHeight = Self.alignedEvenPixel(CGFloat(target.height) * scale)
 
         // Don't update if dimensions haven't actually changed
         guard newWidth != currentWidth || newHeight != currentHeight else { return }
@@ -183,14 +198,16 @@ actor WindowCaptureEngine {
         // Clear cached fallback frame to prevent stale data during resize
         streamOutput?.clearCache()
 
-        MirageLogger.capture("Updating dimensions from \(currentWidth)x\(currentHeight) to \(newWidth)x\(newHeight) (scale: \(currentScaleFactor))")
+        MirageLogger.capture("Updating dimensions from \(currentWidth)x\(currentHeight) to \(newWidth)x\(newHeight) (scale: \(currentScaleFactor), outputScale: \(scale))")
 
         currentWidth = newWidth
         currentHeight = newHeight
 
         // Create new stream configuration with updated dimensions
         let streamConfig = SCStreamConfiguration()
-        streamConfig.captureResolution = .best
+        if useBestCaptureResolution {
+            streamConfig.captureResolution = .best
+        }
         streamConfig.width = newWidth
         streamConfig.height = newHeight
         streamConfig.minimumFrameInterval = CMTime(
@@ -228,7 +245,9 @@ actor WindowCaptureEngine {
 
         // Create new stream configuration with client's exact pixel dimensions
         let streamConfig = SCStreamConfiguration()
-        streamConfig.captureResolution = .best
+        if useBestCaptureResolution {
+            streamConfig.captureResolution = .best
+        }
         streamConfig.width = width
         streamConfig.height = height
         streamConfig.minimumFrameInterval = CMTime(
@@ -269,7 +288,9 @@ actor WindowCaptureEngine {
 
         // Create configuration for the new display
         let streamConfig = SCStreamConfiguration()
-        streamConfig.captureResolution = .best
+        if useBestCaptureResolution {
+            streamConfig.captureResolution = .best
+        }
         streamConfig.width = newWidth
         streamConfig.height = newHeight
         streamConfig.minimumFrameInterval = CMTime(
@@ -299,7 +320,9 @@ actor WindowCaptureEngine {
 
         // Create new stream configuration with updated frame rate
         let streamConfig = SCStreamConfiguration()
-        streamConfig.captureResolution = .best
+        if useBestCaptureResolution {
+            streamConfig.captureResolution = .best
+        }
         streamConfig.width = currentWidth
         streamConfig.height = currentHeight
         streamConfig.minimumFrameInterval = CMTime(
@@ -365,7 +388,8 @@ actor WindowCaptureEngine {
         // CRITICAL: For HiDPI displays, force ScreenCaptureKit to capture at pixel resolution
         // Without this, SCK captures at logical (point) resolution and we get half-res frames
         // .best tells SCK to use the highest available resolution (pixel resolution for Retina/HiDPI)
-        if currentScaleFactor > 1.0 {
+        useBestCaptureResolution = currentScaleFactor > 1.0
+        if useBestCaptureResolution {
             streamConfig.captureResolution = .best
             MirageLogger.capture("HiDPI capture: scale=\(currentScaleFactor), forcing captureResolution=.best")
         }

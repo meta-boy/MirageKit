@@ -1,6 +1,37 @@
 import Foundation
 import os
 
+public enum MirageLogLevel: String, Sendable {
+    case info
+    case debug
+    case error
+    case fault
+}
+
+public struct MirageLogEntry: Sendable {
+    public let date: Date
+    public let category: LogCategory
+    public let level: MirageLogLevel
+    public let message: String
+}
+
+public protocol MirageLogSink: Sendable {
+    func record(_ entry: MirageLogEntry) async
+}
+
+actor MirageLogSinkStore {
+    static let shared = MirageLogSinkStore()
+    private var sink: MirageLogSink?
+
+    func setSink(_ sink: MirageLogSink?) {
+        self.sink = sink
+    }
+
+    func record(_ entry: MirageLogEntry) async {
+        await sink?.record(entry)
+    }
+}
+
 /// Log categories for Mirage
 /// Use MIRAGE_LOG environment variable to enable: "all", "none", or comma-separated list
 public enum LogCategory: String, CaseIterable, Sendable {
@@ -47,6 +78,12 @@ public struct MirageLogger: Sendable {
     /// Enabled log categories (evaluated once at startup from env var)
     public static let enabledCategories: Set<LogCategory> = parseEnvironment()
 
+    public static func setLogSink(_ sink: MirageLogSink?) {
+        Task {
+            await MirageLogSinkStore.shared.setSink(sink)
+        }
+    }
+
     /// Check if a category is enabled
     public static func isEnabled(_ category: LogCategory) -> Bool {
         enabledCategories.contains(category)
@@ -58,6 +95,7 @@ public struct MirageLogger: Sendable {
         guard enabledCategories.contains(category) else { return }
         let msg = message()
         loggers[category]?.info("\(msg, privacy: .public)")
+        record(category: category, level: .info, message: msg)
     }
 
     /// Log a debug-level message (lower priority, filtered by default in Console.app)
@@ -65,6 +103,7 @@ public struct MirageLogger: Sendable {
         guard enabledCategories.contains(category) else { return }
         let msg = message()
         loggers[category]?.debug("\(msg, privacy: .public)")
+        record(category: category, level: .debug, message: msg)
     }
 
     /// Log a message unconditionally (for errors)
@@ -72,12 +111,26 @@ public struct MirageLogger: Sendable {
     public static func error(_ category: LogCategory, _ message: @autoclosure () -> String) {
         let msg = message()
         loggers[category]?.error("\(msg, privacy: .public)")
+        record(category: category, level: .error, message: msg)
     }
 
     /// Log a fault-level message (critical errors that indicate bugs)
     public static func fault(_ category: LogCategory, _ message: @autoclosure () -> String) {
         let msg = message()
         loggers[category]?.fault("\(msg, privacy: .public)")
+        record(category: category, level: .fault, message: msg)
+    }
+
+    private static func record(category: LogCategory, level: MirageLogLevel, message: String) {
+        if Task.isCancelled { return }
+        Task {
+            await MirageLogSinkStore.shared.record(MirageLogEntry(
+                date: Date(),
+                category: category,
+                level: level,
+                message: message
+            ))
+        }
     }
 
     /// Parse MIRAGE_LOG environment variable
