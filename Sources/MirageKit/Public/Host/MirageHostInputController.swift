@@ -62,7 +62,7 @@ public final class MirageHostInputController: @unchecked Sendable {
     private var modifierResetTimer: DispatchSourceTimer?
 
     /// Maximum time modifiers can be held before being considered stuck.
-    private let modifierStuckTimeoutSeconds: TimeInterval = 2.0
+    private let modifierStuckTimeoutSeconds: TimeInterval = 0.5
 
     /// Mapping from modifier flags to their corresponding virtual key codes.
     private static let modifierKeyCodes: [(flag: MirageModifierFlags, keyCode: CGKeyCode)] = [

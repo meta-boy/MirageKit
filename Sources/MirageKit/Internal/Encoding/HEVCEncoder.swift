@@ -447,6 +447,10 @@ actor HEVCEncoder {
         forceNextKeyframe = true
     }
 
+    func resetFrameNumber() {
+        frameNumber = 0
+    }
+
     /// Flush all pending frames from the encoder pipeline and force next keyframe.
     /// This ensures the next frame captured will be encoded as a keyframe immediately,
     /// without waiting for any in-flight frames to complete first.

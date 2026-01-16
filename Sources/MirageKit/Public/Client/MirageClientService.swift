@@ -174,6 +174,8 @@ public final class MirageClientService {
 
     // Track which streams have been registered with the host (prevents duplicate registrations)
     private var registeredStreamIDs: Set<StreamID> = []
+    private var lastKeyframeRequestTime: [StreamID: CFAbsoluteTime] = [:]
+    private let keyframeRequestCooldown: CFAbsoluteTime = 0.75
 
     /// Thread-safe set of active stream IDs for packet filtering from UDP callback
     private let activeStreamIDsLock = NSLock()
@@ -1247,6 +1249,7 @@ public final class MirageClientService {
         }
 
         MirageLogger.client("Stream registration sent")
+        lastKeyframeRequestTime[streamID] = CFAbsoluteTimeGetCurrent()
     }
 
     /// Stop the video connection
@@ -1263,6 +1266,14 @@ public final class MirageClientService {
             MirageLogger.client("Cannot send keyframe request - not connected")
             return
         }
+
+        let now = CFAbsoluteTimeGetCurrent()
+        if let lastTime = lastKeyframeRequestTime[streamID], now - lastTime < keyframeRequestCooldown {
+            let remaining = Int(((keyframeRequestCooldown - (now - lastTime)) * 1000).rounded())
+            MirageLogger.client("Keyframe request skipped (cooldown \(remaining)ms) for stream \(streamID)")
+            return
+        }
+        lastKeyframeRequestTime[streamID] = now
 
         let request = KeyframeRequestMessage(streamID: streamID)
         guard let message = try? ControlMessage(type: .keyframeRequest, content: request) else {

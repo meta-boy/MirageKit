@@ -561,13 +561,6 @@ public class MirageMetalView: MTKView {
     /// Custom display link so drawing continues in UITrackingRunLoopMode.
     private var displayLink: CADisplayLink?
 
-    /// Debounce timer for drawable size changes - waits for layout to settle before reporting
-    /// This prevents micro-resize spam when the view is adjusting during initial layout
-    /// Using nonisolated(unsafe) because Timer is non-Sendable but we only access from main thread
-    nonisolated(unsafe) private var drawableSizeDebounceTimer: Timer?
-
-    /// Pending drawable size to report after debounce delay
-    nonisolated(unsafe) private var pendingDrawableSize: CGSize = .zero
 
     private var effectiveScale: CGFloat {
         if let screenScale = window?.screen.nativeScale {
@@ -632,7 +625,6 @@ public class MirageMetalView: MTKView {
 
     deinit {
         stopDisplayLink()
-        drawableSizeDebounceTimer?.invalidate()
     }
 
     private func startDisplayLink() {
@@ -693,7 +685,7 @@ public class MirageMetalView: MTKView {
 
     /// Report actual drawable pixel size to ensure host captures at correct resolution
     /// FIRST report is immediate (no debounce) to enable correct initial resolution
-    /// Subsequent reports use 1-second debounce to prevent micro-resize spam
+    /// Subsequent reports are sent immediately on significant changes to begin resize blur right away.
     private func reportDrawableSizeIfChanged() {
         let drawableSize = self.drawableSize
         guard drawableSize.width > 0 && drawableSize.height > 0 else { return }
@@ -722,32 +714,9 @@ public class MirageMetalView: MTKView {
             return  // Skip - change is too small
         }
 
-        // Store the pending size and (re)start the debounce timer
-        pendingDrawableSize = drawableSize
-
-        // Cancel any existing timer
-        drawableSizeDebounceTimer?.invalidate()
-
-        // Wait 1 second for the layout to settle before reporting the size
-        // This prevents dozens of micro-resize events during orientation changes
-        drawableSizeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            let sizeToReport = self.pendingDrawableSize
-            guard sizeToReport.width > 0 && sizeToReport.height > 0 else { return }
-
-            // Double-check tolerance in case size settled back to near original
-            let widthDiff = abs(sizeToReport.width - self.lastReportedDrawableSize.width)
-            let heightDiff = abs(sizeToReport.height - self.lastReportedDrawableSize.height)
-            let widthTolerance = self.lastReportedDrawableSize.width * 0.02
-            let heightTolerance = self.lastReportedDrawableSize.height * 0.02
-            guard widthDiff > max(widthTolerance, 20) || heightDiff > max(heightTolerance, 20) else {
-                return  // Skip - final size is within tolerance of last reported
-            }
-
-            self.lastReportedDrawableSize = sizeToReport
-            MirageLogger.renderer("Drawable size changed (debounced): \(sizeToReport.width)x\(sizeToReport.height) px")
-            self.onDrawableSizeChanged?(sizeToReport)
-        }
+        lastReportedDrawableSize = drawableSize
+        MirageLogger.renderer("Drawable size changed: \(drawableSize.width)x\(drawableSize.height) px")
+        onDrawableSizeChanged?(drawableSize)
     }
 
     /// Update with a new decoded frame

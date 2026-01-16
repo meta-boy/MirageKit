@@ -23,6 +23,7 @@ actor StreamContext {
     private var captureMode: CaptureMode = .window
     /// Max payload size per UDP packet (excludes Mirage header).
     nonisolated let maxPayloadSize: Int
+    nonisolated(unsafe) private var shouldEncodeFrames: Bool = true
 
     // Window capture engine (used both for legacy and virtual display modes)
     private var captureEngine: WindowCaptureEngine?
@@ -52,6 +53,8 @@ actor StreamContext {
     /// Snapshot of current bitrate for encoder callbacks
     /// Updated on the actor whenever bitrate changes
     nonisolated(unsafe) private var bitrateSnapshot: Int = 0
+    /// Snapshot of current max bitrate for keyframe pacing
+    nonisolated(unsafe) private var maxBitrateSnapshot: Int = 0
     /// Latest dirty percentage from capture (used for motion-adaptive tuning)
     private var lastDirtyPercentage: Float = 0
 
@@ -97,6 +100,7 @@ actor StreamContext {
 
     /// Minimum quality during extreme motion (prevents unusable quality)
     private let minQuality: Float = 0.3
+    private var smoothedMotionRatio: Double = 0
 
     /// Bitrate bounds for adaptive motion control
     private let baseMaxBitrate: Int
@@ -131,12 +135,15 @@ actor StreamContext {
     private var networkBitrateCap: Int?
     private var lastFeedbackDropTime: CFAbsoluteTime = 0
     private var lastFeedbackAdjustmentTime: CFAbsoluteTime = 0
+    private var lastFrameBudgetLogTime: CFAbsoluteTime = 0
     private let feedbackDecreaseCooldown: CFAbsoluteTime = 0.25
     private let feedbackIncreaseCooldown: CFAbsoluteTime = 1.0
     private let feedbackRecoveryDelay: CFAbsoluteTime = 1.5
     private let feedbackDecreaseMultiplier: Double = 0.8
     private let feedbackSevereDecreaseMultiplier: Double = 0.6
     private let feedbackIncreaseMultiplier: Double = 1.05
+    private let feedbackSmoothingSamples: Int = 5
+    private var feedbackBuffer: [QualityFeedbackMessage] = []
 
     /// Motion thresholds relative to per-frame bitrate budget
     private let highMotionMultiplier: Double = 0.9
@@ -150,6 +157,7 @@ actor StreamContext {
 
     /// Frames needed at low motion before restoring quality
     private let qualityRestoreDelay = 30
+    private let adaptiveWarmupFrames = 90
 
     /// Callback for sending encoded packets
     private var onEncodedPacket: (@Sendable (Data, FrameHeader) -> Void)?
@@ -194,8 +202,10 @@ actor StreamContext {
         self.minBitrate = bounds.min
         self.currentBitrate = self.maxBitrate
         self.bitrateSnapshot = self.currentBitrate
+        self.maxBitrateSnapshot = self.maxBitrate
         self.enableAdaptiveBitrate = encoderConfig.enableAdaptiveBitrate
         self.currentFrameRate = encoderConfig.targetFrameRate
+        self.shouldEncodeFrames = false
     }
 
     private static func clampStreamScale(_ scale: CGFloat) -> CGFloat {
@@ -245,6 +255,34 @@ actor StreamContext {
         currentEncodedSize = bufferSize
         if streamScale > 0 {
             baseCaptureSize = CGSize(width: bufferSize.width / streamScale, height: bufferSize.height / streamScale)
+        }
+        updateResolutionAwareBitrateFloor()
+    }
+
+    private func updateResolutionAwareBitrateFloor() {
+        guard currentEncodedSize.width > 0, currentEncodedSize.height > 0 else { return }
+        let pixelCount = Double(currentEncodedSize.width * currentEncodedSize.height)
+        let frameRate = max(1.0, Double(currentFrameRate))
+        let bytesPerPixel = 0.06
+        let targetBitsPerSecond = pixelCount * frameRate * bytesPerPixel * 8.0
+        let resolutionFloor = Int(targetBitsPerSecond.rounded())
+        let floorBitrate = max(baseMinBitrate, min(baseMaxBitrate, resolutionFloor))
+        if floorBitrate > minBitrate {
+            minBitrate = floorBitrate
+        }
+        if currentBitrate < minBitrate {
+            currentBitrate = minBitrate
+            bitrateSnapshot = currentBitrate
+            maxBitrateSnapshot = maxBitrate
+            Task { await encoder?.updateBitrate(currentBitrate) }
+        }
+
+        let effectiveMax = effectiveMaxBitrate()
+        if currentBitrate > effectiveMax {
+            currentBitrate = effectiveMax
+            bitrateSnapshot = currentBitrate
+            maxBitrateSnapshot = maxBitrate
+            Task { await encoder?.updateBitrate(currentBitrate) }
         }
     }
 
@@ -328,7 +366,7 @@ actor StreamContext {
     private func processLatestFrame() async {
         // Skip encoding during resize operations - prevents decode errors and wasted CPU
         // Frames are dropped but connection stays alive; keyframe forced after resize
-        if isResizing {
+        if isResizing || !shouldEncodeFrames {
             pendingFrame = nil
             return
         }
@@ -470,16 +508,53 @@ actor StreamContext {
     private func applyBitrateCap(reason: String) async {
         let cappedMax = effectiveMaxBitrate()
         if currentBitrate > cappedMax {
-            currentBitrate = cappedMax
+            currentBitrate = max(minBitrate, cappedMax)
             bitrateSnapshot = currentBitrate
+            maxBitrateSnapshot = maxBitrate
             await encoder?.updateBitrate(currentBitrate)
             MirageLogger.stream("Feedback: bitrate capped at \(currentBitrate / 1_000_000)Mbps (\(reason))")
         }
     }
 
+    func allowEncodingAfterRegistration() async {
+        guard !shouldEncodeFrames else { return }
+        shouldEncodeFrames = true
+        recentFrameSizes.removeAll()
+        lowMotionCounter = 0
+        smoothedMotionRatio = 0
+        lastFeedbackDropTime = 0
+        lastFeedbackAdjustmentTime = 0
+        feedbackBuffer.removeAll()
+        let previousQuality = currentQuality
+        let initialQuality = recoveryKeyframeQuality()
+        if previousQuality > initialQuality {
+            currentQuality = initialQuality
+            await encoder?.updateQuality(currentQuality)
+        }
+
+        if let encoder {
+            await encoder.resetFrameNumber()
+            await encoder.forceKeyframe()
+        }
+
+        if previousQuality > initialQuality {
+            Task {
+                try? await Task.sleep(for: .milliseconds(120))
+                if currentQuality == initialQuality {
+                    currentQuality = previousQuality
+                    await encoder?.updateQuality(currentQuality)
+                }
+            }
+        }
+        MirageLogger.stream("UDP registration confirmed, encoding resumed")
+    }
+
     /// Update quality based on recent frame sizes (motion-adaptive encoding)
     /// Called after each encoded frame to adjust quality for next frame
     private func updateQualityForFrameSize(_ frameSize: Int, isKeyframe: Bool) async {
+        guard shouldEncodeFrames else { return }
+        guard frameNumber > adaptiveWarmupFrames else { return }
+
         // Track recent frame sizes (exclude keyframes from average - they're naturally large)
         if !isKeyframe {
             recentFrameSizes.append(frameSize)
@@ -495,10 +570,16 @@ actor StreamContext {
 
         let frameRate = max(1, currentFrameRate)
         let maxAdaptiveBitrate = effectiveMaxBitrate()
-        let bitrateForBudget = min(currentBitrate, maxAdaptiveBitrate)
-        let frameBudgetBytes = Double(bitrateForBudget) / 8.0 / Double(frameRate)
+        let frameBudgetBytes = Double(maxAdaptiveBitrate) / 8.0 / Double(frameRate)
         let highMotionThreshold = frameBudgetBytes * highMotionMultiplier
         let extremeMotionThreshold = frameBudgetBytes * extremeMotionMultiplier
+
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastFrameBudgetLogTime > 2.0 {
+            lastFrameBudgetLogTime = now
+            let resolution = "\(Int(currentEncodedSize.width))x\(Int(currentEncodedSize.height))"
+            MirageLogger.stream("Motion budget: \(Int(frameBudgetBytes / 1024))KB/frame @ \(currentFrameRate)fps (bitrate \(maxAdaptiveBitrate / 1_000_000)Mbps, res \(resolution))")
+        }
 
         // Determine target quality + bitrate based on motion level
         var targetQuality = currentQuality
@@ -514,20 +595,26 @@ actor StreamContext {
             sizeMotionRatio = max(0.0, min(1.0, (avgFrameSizeBytes - highMotionThreshold) / ratioDenominator))
         }
 
-        let dirtyRatio = max(0.0, min(1.0, Double(lastDirtyPercentage) / 100.0))
         let dirtyMotionRatio: Double
-        if dirtyRatio <= 0.2 {
+        if captureMode == .display {
             dirtyMotionRatio = 0.0
         } else {
-            dirtyMotionRatio = min(1.0, (dirtyRatio - 0.2) / 0.6)
+            let dirtyRatio = max(0.0, min(1.0, Double(lastDirtyPercentage) / 100.0))
+            if dirtyRatio <= 0.2 {
+                dirtyMotionRatio = 0.0
+            } else {
+                dirtyMotionRatio = min(1.0, (dirtyRatio - 0.2) / 0.6)
+            }
         }
 
         let motionRatio = max(sizeMotionRatio, dirtyMotionRatio)
+        let smoothedRatio = smoothedMotionRatio * 0.7 + motionRatio * 0.3
+        smoothedMotionRatio = smoothedRatio
 
-        if motionRatio > 0 {
-            targetQuality = normalQuality - (normalQuality - minQuality) * Float(motionRatio)
+        if smoothedRatio > 0 {
+            targetQuality = normalQuality - (normalQuality - minQuality) * Float(smoothedRatio)
             let bitrateRange = max(0, maxAdaptiveBitrate - minBitrate)
-            let scaledBitrate = Double(maxAdaptiveBitrate) - Double(bitrateRange) * motionRatio
+            let scaledBitrate = Double(maxAdaptiveBitrate) - Double(bitrateRange) * smoothedRatio
             targetBitrate = max(minBitrate, Int(scaledBitrate.rounded()))
             lowMotionCounter = 0
         } else {
@@ -574,8 +661,10 @@ actor StreamContext {
             if delta >= changeThreshold, now - lastBitrateChangeTime >= bitrateChangeCooldown {
                 currentBitrate = max(minBitrate, min(maxAdaptiveBitrate, targetBitrate))
                 bitrateSnapshot = currentBitrate
+                maxBitrateSnapshot = maxBitrate
                 lastBitrateChangeTime = now
                 await encoder?.updateBitrate(currentBitrate)
+
                 if currentBitrate < maxAdaptiveBitrate {
                     MirageLogger.stream("Motion-adaptive: bitrate reduced to \(currentBitrate / 1_000_000)Mbps")
                 } else {
@@ -583,16 +672,35 @@ actor StreamContext {
                 }
             }
         }
+
+        updateResolutionAwareBitrateFloor()
     }
 
     func applyQualityFeedback(_ feedback: QualityFeedbackMessage) async {
+        guard shouldEncodeFrames else { return }
+
+        feedbackBuffer.append(feedback)
+        if feedbackBuffer.count > feedbackSmoothingSamples {
+            feedbackBuffer.removeFirst(feedbackBuffer.count - feedbackSmoothingSamples)
+        }
+
+        let aggregated = feedbackBuffer.reduce(into: (dropped: 0, health: 0.0, decodeMs: 0.0)) { partial, item in
+            partial.dropped += item.droppedFrames
+            partial.health += item.bufferHealth
+            partial.decodeMs += item.averageDecodeTimeMs
+        }
+        let count = Double(max(1, feedbackBuffer.count))
+        let averagedHealth = aggregated.health / count
+        let averagedDropped = aggregated.dropped / max(1, feedbackBuffer.count)
+
         let now = CFAbsoluteTimeGetCurrent()
-        let dropDetected = feedback.droppedFrames > 0 || feedback.bufferHealth < 0.9
+        let dropDetected = averagedDropped > 0 || averagedHealth < 0.9
+        updateResolutionAwareBitrateFloor()
 
         if dropDetected {
             lastFeedbackDropTime = now
             if now - lastFeedbackAdjustmentTime >= feedbackDecreaseCooldown {
-                let severe = feedback.bufferHealth < 0.8 || feedback.droppedFrames > 5
+                let severe = averagedHealth < 0.8 || averagedDropped > 5
                 let factor = severe ? feedbackSevereDecreaseMultiplier : feedbackDecreaseMultiplier
                 let reduced = Int(Double(currentBitrate) * factor)
                 let capped = max(minBitrate, min(maxBitrate, reduced))
@@ -601,6 +709,7 @@ actor StreamContext {
                 } else {
                     networkBitrateCap = capped
                 }
+                updateResolutionAwareBitrateFloor()
                 await applyBitrateCap(reason: "quality feedback")
 
                 if currentQuality > minQuality {
@@ -627,6 +736,7 @@ actor StreamContext {
                 let bumped = min(increased, Int(Double(currentBitrate) * feedbackIncreaseMultiplier))
                 currentBitrate = bumped
                 bitrateSnapshot = currentBitrate
+                maxBitrateSnapshot = maxBitrate
                 await encoder?.updateBitrate(currentBitrate)
                 MirageLogger.stream("Feedback: bitrate increased to \(currentBitrate / 1_000_000)Mbps")
             } else {
@@ -667,12 +777,16 @@ actor StreamContext {
         currentEncodedSize = outputSize
         captureMode = .window
         lastWindowFrame = window.frame
+        updateResolutionAwareBitrateFloor()
+        MirageLogger.stream("Stream init: scale=\(streamScale), encoded=\(Int(outputSize.width))x\(Int(outputSize.height)), bitrate=\(currentBitrate / 1_000_000)Mbps (min=\(minBitrate / 1_000_000), max=\(maxBitrate / 1_000_000))")
         try await encoder.createSession(width: Int(outputSize.width), height: Int(outputSize.height))
         await encoder.updateBitrate(currentBitrate)
 
         // Pre-heat encoder to eliminate warm-up latency on first real frames
         // Without this, first 5-10 frames take 70-80ms instead of 3-4ms
         try await encoder.preheat()
+        shouldEncodeFrames = false
+        MirageLogger.stream("Waiting for UDP registration before encoding")
 
         // Set up frame handler
         let streamID = self.streamID
@@ -698,8 +812,9 @@ actor StreamContext {
             let dimToken = self.dimensionToken
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
+            let maxBitrate = self.maxBitrateSnapshot
             if isKeyframe {
-                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
+                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: maxBitrate) }
             }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
@@ -711,7 +826,7 @@ actor StreamContext {
                 sequenceNumberStart: seqStart,
                 additionalFlags: flags,
                 dimensionToken: dimToken,
-                targetBitrate: targetBitrate,
+                targetBitrate: isKeyframe ? maxBitrate : targetBitrate,
                 logPrefix: "Frame",
                 generation: generation
             )
@@ -778,13 +893,17 @@ actor StreamContext {
         currentCaptureSize = outputSize
         currentEncodedSize = outputSize
         captureMode = .display
+        updateResolutionAwareBitrateFloor()
         let width = max(1, Int(outputSize.width))
         let height = max(1, Int(outputSize.height))
+        MirageLogger.stream("Display init: scale=\(streamScale), encoded=\(width)x\(height), bitrate=\(currentBitrate / 1_000_000)Mbps (min=\(minBitrate / 1_000_000), max=\(maxBitrate / 1_000_000))")
         try await encoder.createSession(width: width, height: height)
         await encoder.updateBitrate(currentBitrate)
 
         // Pre-heat encoder to eliminate warm-up latency
         try await encoder.preheat()
+        shouldEncodeFrames = false
+        MirageLogger.stream("Waiting for UDP registration before encoding")
 
         // Set up frame handler
         let streamID = self.streamID
@@ -808,8 +927,9 @@ actor StreamContext {
             let dimToken = self.dimensionToken
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
+            let maxBitrate = self.maxBitrateSnapshot
             if isKeyframe {
-                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
+                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: maxBitrate) }
             }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
@@ -821,7 +941,7 @@ actor StreamContext {
                 sequenceNumberStart: seqStart,
                 additionalFlags: flags,
                 dimensionToken: dimToken,
-                targetBitrate: targetBitrate,
+                targetBitrate: isKeyframe ? maxBitrate : targetBitrate,
                 logPrefix: "Login frame",
                 generation: generation
             )
@@ -881,14 +1001,17 @@ actor StreamContext {
         currentCaptureSize = outputSize
         currentEncodedSize = outputSize
         captureMode = .display
+        updateResolutionAwareBitrateFloor()
         let width = max(1, Int(outputSize.width))
         let height = max(1, Int(outputSize.height))
-        MirageLogger.stream("Desktop encoding at \(width)x\(height)")
+        MirageLogger.stream("Desktop encoding at \(width)x\(height) (scale=\(streamScale), bitrate=\(currentBitrate / 1_000_000)Mbps min=\(minBitrate / 1_000_000) max=\(maxBitrate / 1_000_000))")
         try await encoder.createSession(width: width, height: height)
         await encoder.updateBitrate(currentBitrate)
 
         // Pre-heat encoder to eliminate warm-up latency
         try await encoder.preheat()
+        shouldEncodeFrames = false
+        MirageLogger.stream("Waiting for UDP registration before encoding")
 
         // Set up frame handler
         let streamID = self.streamID
@@ -912,16 +1035,15 @@ actor StreamContext {
             let flags = self.additionalFrameFlags
             let dimToken = self.dimensionToken
 
-            // Update quality based on frame size (motion-adaptive encoding)
-            // Dispatched to actor to not block VT callback
             Task {
                 await self.updateQualityForFrameSize(frameSize, isKeyframe: isKeyframe)
             }
 
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
+            let maxBitrate = self.maxBitrateSnapshot
             if isKeyframe {
-                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
+                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: maxBitrate) }
             }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
@@ -933,7 +1055,7 @@ actor StreamContext {
                 sequenceNumberStart: seqStart,
                 additionalFlags: flags,
                 dimensionToken: dimToken,
-                targetBitrate: targetBitrate,
+                targetBitrate: isKeyframe ? maxBitrate : targetBitrate,
                 logPrefix: "Desktop frame",
                 generation: generation
             )
@@ -1056,6 +1178,8 @@ actor StreamContext {
         currentEncodedSize = outputSize
         captureMode = .window
         lastWindowFrame = scWindow.frame
+        updateResolutionAwareBitrateFloor()
+        MirageLogger.stream("Virtual display init: scale=\(streamScale), encoded=\(Int(outputSize.width))x\(Int(outputSize.height)), bitrate=\(currentBitrate / 1_000_000)Mbps (min=\(minBitrate / 1_000_000), max=\(maxBitrate / 1_000_000))")
         try await encoder.createSession(
             width: Int(outputSize.width),
             height: Int(outputSize.height)
@@ -1065,6 +1189,8 @@ actor StreamContext {
 
         // Pre-heat encoder to eliminate warm-up latency
         try await encoder.preheat()
+        shouldEncodeFrames = false
+        MirageLogger.stream("Waiting for UDP registration before encoding")
 
         // Set up frame handler
         let streamID = self.streamID
@@ -1088,8 +1214,9 @@ actor StreamContext {
             let dimToken = self.dimensionToken
             let generation = packetSender.currentGenerationSnapshot()
             let targetBitrate = self.bitrateSnapshot
+            let maxBitrate = self.maxBitrateSnapshot
             if isKeyframe {
-                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: targetBitrate) }
+                Task { await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: maxBitrate) }
             }
             let workItem = StreamPacketSender.WorkItem(
                 encodedData: encodedData,
@@ -1101,7 +1228,7 @@ actor StreamContext {
                 sequenceNumberStart: seqStart,
                 additionalFlags: flags,
                 dimensionToken: dimToken,
-                targetBitrate: targetBitrate,
+                targetBitrate: isKeyframe ? maxBitrate : targetBitrate,
                 logPrefix: "VD Frame",
                 generation: generation
             )
@@ -1217,6 +1344,7 @@ actor StreamContext {
                 height: Int(outputSize.height)
             )
             await encoder.updateBitrate(currentBitrate)
+            maxBitrateSnapshot = maxBitrate
             MirageLogger.encoder("Encoder updated to \(Int(outputSize.width))x\(Int(outputSize.height)) for resolution change")
         }
 
@@ -1271,6 +1399,7 @@ actor StreamContext {
         if reducedBitrate < currentBitrate {
             currentBitrate = reducedBitrate
             bitrateSnapshot = currentBitrate
+            maxBitrateSnapshot = maxBitrate
             await encoder?.updateBitrate(currentBitrate)
             MirageLogger.stream("Recovery keyframe: temporarily reduced bitrate to \(currentBitrate / 1_000_000)Mbps")
         }
@@ -1295,6 +1424,7 @@ actor StreamContext {
             if currentBitrate == reducedBitrate {
                 currentBitrate = min(previousBitrate, effectiveMaxBitrate())
                 bitrateSnapshot = currentBitrate
+                maxBitrateSnapshot = maxBitrate
                 await encoder?.updateBitrate(currentBitrate)
                 MirageLogger.stream("Recovery keyframe sent, restored bitrate to \(currentBitrate / 1_000_000)Mbps")
             }
@@ -1327,6 +1457,7 @@ actor StreamContext {
         if reducedBitrate < currentBitrate {
             currentBitrate = reducedBitrate
             bitrateSnapshot = currentBitrate
+            maxBitrateSnapshot = maxBitrate
             await encoder?.updateBitrate(currentBitrate)
             MirageLogger.stream("Immediate keyframe: temporarily reduced bitrate to \(currentBitrate / 1_000_000)Mbps")
         }
@@ -1346,6 +1477,7 @@ actor StreamContext {
             if currentBitrate == reducedBitrate {
                 currentBitrate = min(previousBitrate, effectiveMaxBitrate())
                 bitrateSnapshot = currentBitrate
+                maxBitrateSnapshot = maxBitrate
                 await encoder?.updateBitrate(currentBitrate)
                 MirageLogger.stream("Immediate keyframe sent, restored bitrate to \(currentBitrate / 1_000_000)Mbps")
             }
@@ -1400,7 +1532,9 @@ actor StreamContext {
         if let encoder {
             try await encoder.updateDimensions(width: width, height: height)
             await encoder.updateBitrate(currentBitrate)
+            maxBitrateSnapshot = maxBitrate
         }
+
 
         // Force keyframe after resize for clean restart
         await encoder?.forceKeyframe()
@@ -1441,11 +1575,13 @@ actor StreamContext {
 
         currentCaptureSize = outputSize
         currentEncodedSize = outputSize
+        updateResolutionAwareBitrateFloor()
 
         // Update the encoder to match scaled output
         if let encoder {
             try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight)
             await encoder.updateBitrate(currentBitrate)
+            maxBitrateSnapshot = maxBitrate
         }
 
         // Force keyframe after resize for clean restart
@@ -1509,6 +1645,7 @@ actor StreamContext {
         if let encoder {
             try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight)
             await encoder.updateBitrate(currentBitrate)
+            maxBitrateSnapshot = maxBitrate
         }
 
         let previousMaxBitrate = maxBitrate
@@ -1520,6 +1657,7 @@ actor StreamContext {
         )
         maxBitrate = bounds.max
         minBitrate = bounds.min
+        updateResolutionAwareBitrateFloor()
 
         if previousMaxBitrate != maxBitrate || previousMinBitrate != minBitrate {
             let scaledCurrent: Int
@@ -1532,6 +1670,7 @@ actor StreamContext {
             if clampedBitrate != currentBitrate {
                 currentBitrate = clampedBitrate
                 bitrateSnapshot = currentBitrate
+                maxBitrateSnapshot = maxBitrate
                 await encoder?.updateBitrate(currentBitrate)
             }
             MirageLogger.stream("Stream scale bitrate bounds updated: \(maxBitrate / 1_000_000)Mbps max, \(minBitrate / 1_000_000)Mbps min")
@@ -1573,11 +1712,13 @@ actor StreamContext {
         currentCaptureSize = outputSize
         currentEncodedSize = outputSize
         captureMode = .display
+        updateResolutionAwareBitrateFloor()
 
         // Update the encoder to match the new resolution
         if let encoder {
             try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight)
             await encoder.updateBitrate(currentBitrate)
+            maxBitrateSnapshot = maxBitrate
         }
 
         // Force keyframe after display switch for clean restart

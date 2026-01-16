@@ -1183,13 +1183,9 @@ public final class MirageHostService {
 
             MirageLogger.host("UDP connection registered for stream \(streamID)")
 
-            // Force an immediate keyframe so the client can start decoding ASAP.
-            // The initial keyframe was sent before the client registered, so it was dropped.
-            // Using forceImmediateKeyframe() flushes the encoder pipeline to ensure
-            // the next captured frame is encoded as a keyframe without delay.
             if let context = streamsByID[streamID] {
-                MirageLogger.host("Forcing immediate keyframe for stream \(streamID)")
-                await context.forceImmediateKeyframe()
+                MirageLogger.host("Enabling encoding after UDP registration for stream \(streamID)")
+                await context.allowEncodingAfterRegistration()
             } else {
                 MirageLogger.host("WARNING: No stream context found for stream \(streamID)")
             }
