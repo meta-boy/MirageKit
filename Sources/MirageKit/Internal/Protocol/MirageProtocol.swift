@@ -1,0 +1,352 @@
+import Foundation
+import CoreGraphics
+
+/// Magic number for packet validation
+let MirageProtocolMagic: UInt32 = 0x4D495247 // "MIRG"
+
+/// Protocol version
+let MirageProtocolVersion: UInt8 = 1
+
+/// Default maximum UDP packet size (header + payload) to avoid IPv6 fragmentation.
+/// 1200 bytes keeps packets under the IPv6 minimum MTU (1280) once IP/UDP headers are added.
+public let MirageDefaultMaxPacketSize: Int = 1200
+
+/// Header size in bytes:
+/// Base fields (4+1+1+2+4+8+4+2+2+4+4+4+4+4+4 = 52) +
+/// contentRect (4 x Float32 = 16) +
+/// tile info (8 x UInt16 = 16) +
+/// dimensionToken (UInt16 = 2) = 70 total
+let MirageHeaderSize: Int = 70
+
+/// Compute payload size from the configured maximum packet size.
+/// `maxPacketSize` includes the Mirage header; this returns the payload size only.
+func miragePayloadSize(maxPacketSize: Int) -> Int {
+    let payload = maxPacketSize - MirageHeaderSize
+    if payload > 0 {
+        return payload
+    }
+    return MirageDefaultMaxPacketSize - MirageHeaderSize
+}
+
+/// Video frame packet header (68 bytes, fixed size)
+struct FrameHeader {
+    /// Magic number for validation (0x4D495247 = "MIRG")
+    var magic: UInt32 = MirageProtocolMagic
+
+    /// Protocol version
+    var version: UInt8 = MirageProtocolVersion
+
+    /// Packet flags
+    var flags: FrameFlags
+
+    /// Stream identifier (for multiplexing)
+    var streamID: StreamID
+
+    /// Packet sequence number (per-stream)
+    var sequenceNumber: UInt32
+
+    /// Presentation timestamp in nanoseconds
+    var timestamp: UInt64
+
+    /// Frame number within stream
+    var frameNumber: UInt32
+
+    /// Fragment index within frame
+    var fragmentIndex: UInt16
+
+    /// Total fragments for this frame
+    var fragmentCount: UInt16
+
+    /// Payload length in bytes
+    var payloadLength: UInt32
+
+    /// CRC32 checksum of payload
+    var checksum: UInt32
+
+    /// Content rectangle within the frame buffer (x, y, width, height in pixels)
+    /// When ScreenCaptureKit can't fill the buffer, content is at top-left with black padding.
+    /// This tells the renderer where the actual content is.
+    var contentRectX: Float32 = 0
+    var contentRectY: Float32 = 0
+    var contentRectWidth: Float32 = 0
+    var contentRectHeight: Float32 = 0
+
+    // MARK: - Tile encoding fields (used when .tile flag is set)
+
+    /// Number of columns in the tile grid
+    var tileGridColumns: UInt16 = 0
+
+    /// Number of rows in the tile grid
+    var tileGridRows: UInt16 = 0
+
+    /// Column index of this tile (0-based)
+    var tileColumn: UInt16 = 0
+
+    /// Row index of this tile (0-based)
+    var tileRow: UInt16 = 0
+
+    /// Pixel X position of this tile in the frame
+    var tileX: UInt16 = 0
+
+    /// Pixel Y position of this tile in the frame
+    var tileY: UInt16 = 0
+
+    /// Width of this tile in pixels
+    var tileWidth: UInt16 = 0
+
+    /// Height of this tile in pixels
+    var tileHeight: UInt16 = 0
+
+    /// Dimension token for rejecting old-dimension P-frames after resize.
+    /// Incremented each time encoder dimensions change. Client compares this
+    /// to expected token and silently discards frames with mismatched tokens.
+    var dimensionToken: UInt16 = 0
+
+    init(
+        flags: FrameFlags = [],
+        streamID: StreamID,
+        sequenceNumber: UInt32,
+        timestamp: UInt64,
+        frameNumber: UInt32,
+        fragmentIndex: UInt16,
+        fragmentCount: UInt16,
+        payloadLength: UInt32,
+        checksum: UInt32,
+        contentRect: CGRect = .zero,
+        tileInfo: TileInfo? = nil,
+        dimensionToken: UInt16 = 0
+    ) {
+        self.flags = flags
+        self.streamID = streamID
+        self.sequenceNumber = sequenceNumber
+        self.timestamp = timestamp
+        self.frameNumber = frameNumber
+        self.fragmentIndex = fragmentIndex
+        self.fragmentCount = fragmentCount
+        self.payloadLength = payloadLength
+        self.checksum = checksum
+        self.contentRectX = Float32(contentRect.origin.x)
+        self.contentRectY = Float32(contentRect.origin.y)
+        self.contentRectWidth = Float32(contentRect.size.width)
+        self.contentRectHeight = Float32(contentRect.size.height)
+        self.dimensionToken = dimensionToken
+
+        // Tile info (only populated when .tile flag is set)
+        if let tile = tileInfo {
+            self.tileGridColumns = tile.gridColumns
+            self.tileGridRows = tile.gridRows
+            self.tileColumn = tile.column
+            self.tileRow = tile.row
+            self.tileX = tile.x
+            self.tileY = tile.y
+            self.tileWidth = tile.width
+            self.tileHeight = tile.height
+        }
+    }
+
+    /// Tile information for tile-based encoding
+    struct TileInfo {
+        let gridColumns: UInt16
+        let gridRows: UInt16
+        let column: UInt16
+        let row: UInt16
+        let x: UInt16
+        let y: UInt16
+        let width: UInt16
+        let height: UInt16
+    }
+
+    /// Get contentRect as CGRect
+    var contentRect: CGRect {
+        CGRect(
+            x: CGFloat(contentRectX),
+            y: CGFloat(contentRectY),
+            width: CGFloat(contentRectWidth),
+            height: CGFloat(contentRectHeight)
+        )
+    }
+
+    /// Serialize header to bytes
+    func serialize() -> Data {
+        var data = Data(capacity: MirageHeaderSize)
+
+        withUnsafeBytes(of: magic.littleEndian) { data.append(contentsOf: $0) }
+        data.append(version)
+        data.append(flags.rawValue)
+        withUnsafeBytes(of: streamID.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: sequenceNumber.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: timestamp.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: frameNumber.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: fragmentIndex.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: fragmentCount.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: payloadLength.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: checksum.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: contentRectX.bitPattern.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: contentRectY.bitPattern.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: contentRectWidth.bitPattern.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: contentRectHeight.bitPattern.littleEndian) { data.append(contentsOf: $0) }
+
+        // Tile fields (16 bytes)
+        withUnsafeBytes(of: tileGridColumns.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: tileGridRows.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: tileColumn.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: tileRow.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: tileX.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: tileY.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: tileWidth.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: tileHeight.littleEndian) { data.append(contentsOf: $0) }
+
+        // Dimension token (2 bytes)
+        withUnsafeBytes(of: dimensionToken.littleEndian) { data.append(contentsOf: $0) }
+
+        return data
+    }
+
+    /// Deserialize header from bytes
+    static func deserialize(from data: Data) -> FrameHeader? {
+        guard data.count >= MirageHeaderSize else { return nil }
+
+        var offset = 0
+
+        func read<T: FixedWidthInteger>(_ type: T.Type) -> T {
+            let value = data.withUnsafeBytes { ptr in
+                ptr.loadUnaligned(fromByteOffset: offset, as: T.self)
+            }
+            offset += MemoryLayout<T>.size
+            return T(littleEndian: value)
+        }
+
+        func readByte() -> UInt8 {
+            let value = data[offset]
+            offset += 1
+            return value
+        }
+
+        func readFloat32() -> Float32 {
+            let bits = read(UInt32.self)
+            return Float32(bitPattern: bits)
+        }
+
+        let magic = read(UInt32.self)
+        guard magic == MirageProtocolMagic else { return nil }
+
+        let version = readByte()
+        guard version == MirageProtocolVersion else { return nil }
+
+        let flags = FrameFlags(rawValue: readByte())
+        let streamID = read(UInt16.self)
+        let sequenceNumber = read(UInt32.self)
+        let timestamp = read(UInt64.self)
+        let frameNumber = read(UInt32.self)
+        let fragmentIndex = read(UInt16.self)
+        let fragmentCount = read(UInt16.self)
+        let payloadLength = read(UInt32.self)
+        let checksum = read(UInt32.self)
+        let contentRectX = readFloat32()
+        let contentRectY = readFloat32()
+        let contentRectWidth = readFloat32()
+        let contentRectHeight = readFloat32()
+
+        // Tile fields
+        let tileGridColumns = read(UInt16.self)
+        let tileGridRows = read(UInt16.self)
+        let tileColumn = read(UInt16.self)
+        let tileRow = read(UInt16.self)
+        let tileX = read(UInt16.self)
+        let tileY = read(UInt16.self)
+        let tileWidth = read(UInt16.self)
+        let tileHeight = read(UInt16.self)
+
+        // Dimension token
+        let dimensionToken = read(UInt16.self)
+
+        // Build tile info if this is a tile packet
+        let tileInfo: TileInfo? = flags.contains(.tile) ? TileInfo(
+            gridColumns: tileGridColumns,
+            gridRows: tileGridRows,
+            column: tileColumn,
+            row: tileRow,
+            x: tileX,
+            y: tileY,
+            width: tileWidth,
+            height: tileHeight
+        ) : nil
+
+        return FrameHeader(
+            flags: flags,
+            streamID: streamID,
+            sequenceNumber: sequenceNumber,
+            timestamp: timestamp,
+            frameNumber: frameNumber,
+            fragmentIndex: fragmentIndex,
+            fragmentCount: fragmentCount,
+            payloadLength: payloadLength,
+            checksum: checksum,
+            contentRect: CGRect(
+                x: CGFloat(contentRectX),
+                y: CGFloat(contentRectY),
+                width: CGFloat(contentRectWidth),
+                height: CGFloat(contentRectHeight)
+            ),
+            tileInfo: tileInfo,
+            dimensionToken: dimensionToken
+        )
+    }
+}
+
+/// Frame flags
+struct FrameFlags: OptionSet, Sendable {
+    let rawValue: UInt8
+
+    /// This is a keyframe (IDR frame)
+    static let keyframe = FrameFlags(rawValue: 1 << 0)
+
+    /// This is the last fragment of the frame
+    static let endOfFrame = FrameFlags(rawValue: 1 << 1)
+
+    /// Contains parameter sets (SPS/PPS/VPS)
+    static let parameterSet = FrameFlags(rawValue: 1 << 2)
+
+    /// Stream discontinuity (decoder should reset)
+    static let discontinuity = FrameFlags(rawValue: 1 << 3)
+
+    /// High priority packet (for QoS)
+    static let priority = FrameFlags(rawValue: 1 << 4)
+
+    /// This is a tile packet (JPEG-encoded partial update)
+    /// When set, the tile fields in the header contain valid data
+    static let tile = FrameFlags(rawValue: 1 << 5)
+
+    /// This is the last tile in a tile update batch
+    static let lastTile = FrameFlags(rawValue: 1 << 6)
+
+    /// This is a login/lock screen display stream (not a window stream)
+    /// Used when host is locked and streaming the virtual display for remote unlock
+    static let loginDisplay = FrameFlags(rawValue: 1 << 7)
+
+    /// This is a full desktop stream (virtual display mirroring mode)
+    /// Used when client requests streaming of the entire desktop
+    static let desktopStream = FrameFlags(rawValue: 1 << 8)
+}
+
+/// CRC32 calculation for packet validation
+enum CRC32 {
+    private static let table: [UInt32] = {
+        (0..<256).map { i -> UInt32 in
+            var crc = UInt32(i)
+            for _ in 0..<8 {
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1
+            }
+            return crc
+        }
+    }()
+
+    static func calculate(_ data: Data) -> UInt32 {
+        var crc: UInt32 = 0xFFFFFFFF
+        for byte in data {
+            let index = Int((crc ^ UInt32(byte)) & 0xFF)
+            crc = (crc >> 8) ^ table[index]
+        }
+        return crc ^ 0xFFFFFFFF
+    }
+}
