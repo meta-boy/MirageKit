@@ -478,6 +478,7 @@ public final class MirageHostService {
         maxBitrate: Int? = nil,
         keyFrameInterval: Int? = nil,
         keyframeQuality: Float? = nil,
+        streamScale: CGFloat? = nil,
         targetFrameRate: Int? = nil
         // hdr: Bool = false
     ) async throws -> MirageStreamSession {
@@ -557,6 +558,7 @@ public final class MirageHostService {
             streamID: streamID,
             windowID: window.id,
             encoderConfig: effectiveEncoderConfig,
+            streamScale: streamScale ?? 1.0,
             maxPacketSize: networkConfig.maxPacketSize
         )
 
@@ -667,8 +669,9 @@ public final class MirageHostService {
             let minWidth = Int(minSize?.width ?? CGFloat(fallbackMin.minWidth))
             let minHeight = Int(minSize?.height ?? CGFloat(fallbackMin.minHeight))
 
-            // Always encode at native resolution
-            let target = streamTargetDimensions(windowFrame: updatedWindow.frame)
+            let encodedDimensions = await context.getEncodedDimensions()
+            let targetFrameRate = await context.getTargetFrameRate()
+            let codec = await context.getCodec()
 
             // Get dimension token from stream context
             let dimensionToken = await context.getDimensionToken()
@@ -676,10 +679,10 @@ public final class MirageHostService {
             let message = StreamStartedMessage(
                 streamID: streamID,
                 windowID: window.id,
-                width: target.width,
-                height: target.height,
-                frameRate: encoderConfig.targetFrameRate,
-                codec: encoderConfig.codec,
+                width: encodedDimensions.width,
+                height: encodedDimensions.height,
+                frameRate: targetFrameRate,
+                codec: codec,
                 minWidth: minWidth,
                 minHeight: minHeight,
                 dimensionToken: dimensionToken
@@ -778,11 +781,12 @@ public final class MirageHostService {
             inputStreamCacheActor.updateWindowFrame(session.id, newFrame: latestFrame)
 
             do {
-                // Update capture/encoder to native resolution
+                // Update capture/encoder to scaled resolution
                 try await context.updateDimensions(windowFrame: updatedWindow.frame)
 
-                // Notify client about the dimension change - always at native resolution
-                let target = streamTargetDimensions(windowFrame: updatedWindow.frame)
+                let encodedDimensions = await context.getEncodedDimensions()
+                let targetFrameRate = await context.getTargetFrameRate()
+                let codec = await context.getCodec()
 
                 // Get updated dimension token after resize
                 let dimensionToken = await context.getDimensionToken()
@@ -796,16 +800,16 @@ public final class MirageHostService {
                     let message = StreamStartedMessage(
                         streamID: session.id,
                         windowID: window.id,
-                        width: target.width,
-                        height: target.height,
-                        frameRate: encoderConfig.targetFrameRate,
-                        codec: encoderConfig.codec,
+                        width: encodedDimensions.width,
+                        height: encodedDimensions.height,
+                        frameRate: targetFrameRate,
+                        codec: codec,
                         minWidth: minWidth,
                         minHeight: minHeight,
                         dimensionToken: dimensionToken
                     )
                     try await clientContext.send(.streamStarted, content: message)
-                    MirageLogger.host("Encoding at native resolution: \(target.width)x\(target.height) (scale: \(target.hostScaleFactor))")
+                    MirageLogger.host("Encoding at scaled resolution: \(encodedDimensions.width)x\(encodedDimensions.height)")
                 }
             } catch {
                 MirageLogger.error(.host, "Failed to update stream dimensions: \(error)")
@@ -914,7 +918,18 @@ public final class MirageHostService {
 
         if clientsByConnection.isEmpty {
             await stopLoginDisplayStream(newState: sessionState)
+            await cleanupSharedVirtualDisplayIfIdle()
         }
+    }
+
+    private func cleanupSharedVirtualDisplayIfIdle() async {
+        guard activeStreams.isEmpty, loginDisplayContext == nil, desktopStreamContext == nil else { return }
+
+        let stats = await SharedVirtualDisplayManager.shared.getStatistics()
+        guard stats.hasDisplay else { return }
+
+        MirageLogger.host("No active streams or clients; destroying shared virtual display")
+        await SharedVirtualDisplayManager.shared.destroyAllAndClear()
     }
 
     /// Activate the application and raise the window being streamed.
@@ -1520,15 +1535,30 @@ public final class MirageHostService {
                     onResizeWindowForStream?(window, pointSize)
                 }
 
+                let presetConfig = request.preferredQuality.encoderConfiguration
+                let maxBitrate = request.maxBitrate ?? presetConfig.maxBitrate
+                let keyFrameInterval = request.keyFrameInterval ?? presetConfig.keyFrameInterval
+                let keyframeQuality = request.keyframeQuality ?? presetConfig.keyframeQuality
+
+                // Determine target frame rate based on client capability and quality preset
+                let clientMaxRefreshRate = request.maxRefreshRate
+                let qualityFrameRate = presetConfig.targetFrameRate
+                let allowsHighRefresh = request.preferredQuality == .high || request.preferredQuality == .ultra
+                let cappedQualityFrameRate = allowsHighRefresh ? qualityFrameRate : min(qualityFrameRate, 60)
+                let targetFrameRate = min(clientMaxRefreshRate, cappedQualityFrameRate)
+                MirageLogger.host("Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)")
+
                 // Start the stream - use virtual display if client provides display resolution
                 _ = try await startStream(
                     for: window,
                     to: client,
                     dataPort: request.dataPort,
                     clientDisplayResolution: clientDisplayResolution,
-                    maxBitrate: request.maxBitrate,
-                    keyFrameInterval: request.keyFrameInterval,
-                    keyframeQuality: request.keyframeQuality
+                    maxBitrate: maxBitrate,
+                    keyFrameInterval: keyFrameInterval,
+                    keyframeQuality: keyframeQuality,
+                    streamScale: request.streamScale,
+                    targetFrameRate: targetFrameRate
                 )
             } catch {
                 MirageLogger.error(.host, "Failed to handle startStream: \(error)")
@@ -1544,6 +1574,15 @@ public final class MirageHostService {
                 )
             } catch {
                 MirageLogger.error(.host, "Failed to handle displayResolutionChange: \(error)")
+            }
+
+        case .streamScaleChange:
+            do {
+                let request = try message.decode(StreamScaleChangeMessage.self)
+                MirageLogger.host("Client requested stream scale change for stream \(request.streamID): \(request.streamScale)")
+                await handleStreamScaleChange(streamID: request.streamID, streamScale: request.streamScale)
+            } catch {
+                MirageLogger.error(.host, "Failed to handle streamScaleChange: \(error)")
             }
 
         case .stopStream:

@@ -801,7 +801,13 @@ public class InputCapturingView: UIView {
     public override var safeAreaInsets: UIEdgeInsets { .zero }
 
     /// Callback for input events - set by the SwiftUI representable's coordinator
-    public var onInputEvent: ((MirageInputEvent) -> Void)?
+    public var onInputEvent: ((MirageInputEvent) -> Void)? {
+        didSet {
+            if onInputEvent != nil {
+                sendModifierStateIfNeeded(force: true)
+            }
+        }
+    }
 
     /// Callback when drawable size changes - reports actual pixel dimensions
     public var onDrawableSizeChanged: ((CGSize) -> Void)? {
@@ -829,6 +835,9 @@ public class InputCapturingView: UIView {
     /// Used to trigger stream recovery after app switching.
     public var onBecomeActive: (() -> Void)?
 
+    /// Whether input should snap to the dock edge.
+    public var dockSnapEnabled: Bool = false
+
     // Cursor state from host
     private var currentCursorType: MirageCursorType = .arrow
     private var cursorIsVisible: Bool = true
@@ -851,6 +860,8 @@ public class InputCapturingView: UIView {
     // Track keyboard modifier state - single source of truth
     // Gesture events read modifiers directly from gesture.modifierFlags at event time
     private var heldModifierKeys: Set<UIKeyboardHIDUsage> = []
+    private var capsLockEnabled: Bool = false
+    private var lastSentModifiers: MirageModifierFlags = []
 
     /// Get current modifier state from held keyboard keys
     private var keyboardModifiers: MirageModifierFlags {
@@ -860,7 +871,24 @@ public class InputCapturingView: UIView {
                 modifiers.insert(modifier)
             }
         }
+        if capsLockEnabled {
+            modifiers.insert(.capsLock)
+        }
         return modifiers
+    }
+
+    private func sendModifierStateIfNeeded(force: Bool = false) {
+        let modifiers = keyboardModifiers
+        guard force || modifiers != lastSentModifiers else { return }
+        lastSentModifiers = modifiers
+        onInputEvent?(.flagsChanged(modifiers))
+    }
+
+    private func updateCapsLockState(from modifierFlags: UIKeyModifierFlags) {
+        let isEnabled = modifierFlags.contains(.alphaShift)
+        guard isEnabled != capsLockEnabled else { return }
+        capsLockEnabled = isEnabled
+        sendModifierStateIfNeeded(force: true)
     }
 
     /// Clear all held modifiers with explicit keyUp events
@@ -875,7 +903,7 @@ public class InputCapturingView: UIView {
             onInputEvent?(.keyUp(keyEvent))
         }
         heldModifierKeys.removeAll()
-        onInputEvent?(.flagsChanged([]))
+        sendModifierStateIfNeeded(force: true)
     }
 
     // Double-click detection state (left click)
@@ -1057,6 +1085,8 @@ public class InputCapturingView: UIView {
             metalView.restartDisplayLinkIfNeeded()
         }
 
+        sendModifierStateIfNeeded(force: true)
+
         // Notify SwiftUI layer to trigger stream recovery
         onBecomeActive?()
     }
@@ -1159,10 +1189,12 @@ public class InputCapturingView: UIView {
             y: point.y / bounds.height
         )
 
-        // Snap cursor to bottom edge when in dock trigger zone (bottom 1%)
-        // This allows users to easily open the iPad dock without precise edge targeting
-        if normalized.y >= 0.99 {
-            normalized.y = 1.0
+        if dockSnapEnabled {
+            // Snap cursor to bottom edge when in dock trigger zone (bottom 1%)
+            // This allows users to easily open the iPad dock without precise edge targeting
+            if normalized.y >= 0.99 {
+                normalized.y = 1.0
+            }
         }
 
         return normalized
@@ -1369,6 +1401,18 @@ public class InputCapturingView: UIView {
     public override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         for press in presses {
             guard let key = press.key else { continue }
+            let isCapsLockKey = key.keyCode == .keyboardCapsLock
+
+            if isCapsLockKey {
+                if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) {
+                    onInputEvent?(.keyDown(keyEvent))
+                }
+                capsLockEnabled.toggle()
+                sendModifierStateIfNeeded(force: true)
+                continue
+            }
+
+            updateCapsLockState(from: key.modifierFlags)
             let isModifier = Self.modifierKeyMap[key.keyCode] != nil
 
             if isModifier {
@@ -1379,7 +1423,7 @@ public class InputCapturingView: UIView {
                 }
                 // NOW add to held set and send flagsChanged
                 heldModifierKeys.insert(key.keyCode)
-                onInputEvent?(.flagsChanged(keyboardModifiers))
+                sendModifierStateIfNeeded(force: true)
             } else {
                 // For non-modifier keys: start key repeat timer and send keyDown with current modifiers
                 startKeyRepeat(for: press)
@@ -1394,6 +1438,15 @@ public class InputCapturingView: UIView {
     public override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         for press in presses {
             guard let key = press.key else { continue }
+            let isCapsLockKey = key.keyCode == .keyboardCapsLock
+
+            if isCapsLockKey {
+                if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) {
+                    onInputEvent?(.keyUp(keyEvent))
+                }
+                continue
+            }
+
             let isModifier = Self.modifierKeyMap[key.keyCode] != nil
 
             if isModifier {
@@ -1404,7 +1457,7 @@ public class InputCapturingView: UIView {
                 }
                 // NOW remove from held set and send flagsChanged
                 heldModifierKeys.remove(key.keyCode)
-                onInputEvent?(.flagsChanged(keyboardModifiers))
+                sendModifierStateIfNeeded(force: true)
             } else {
                 // For non-modifier keys: stop key repeat and send keyUp
                 stopKeyRepeat(for: key.keyCode)
@@ -1418,6 +1471,15 @@ public class InputCapturingView: UIView {
     public override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         for press in presses {
             guard let key = press.key else { continue }
+            let isCapsLockKey = key.keyCode == .keyboardCapsLock
+
+            if isCapsLockKey {
+                if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) {
+                    onInputEvent?(.keyUp(keyEvent))
+                }
+                continue
+            }
+
             let isModifier = Self.modifierKeyMap[key.keyCode] != nil
 
             if isModifier {
@@ -1427,7 +1489,7 @@ public class InputCapturingView: UIView {
                 }
                 // NOW remove from held set and send flagsChanged
                 heldModifierKeys.remove(key.keyCode)
-                onInputEvent?(.flagsChanged(keyboardModifiers))
+                sendModifierStateIfNeeded(force: true)
             } else {
                 // For non-modifier keys: stop key repeat and send keyUp
                 stopKeyRepeat(for: key.keyCode)
@@ -2080,6 +2142,9 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
     /// Used to trigger stream recovery after app switching.
     public var onBecomeActive: (() -> Void)?
 
+    /// Whether input should snap to the dock edge.
+    public var dockSnapEnabled: Bool
+
     public init(
         streamID: StreamID,
         latestFrame: Binding<CVPixelBuffer?>,
@@ -2089,7 +2154,8 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
         frameProvider: (() -> (pixelBuffer: CVPixelBuffer, contentRect: CGRect)?)? = nil,
         cursorType: MirageCursorType = .arrow,
         cursorVisible: Bool = true,
-        onBecomeActive: (() -> Void)? = nil
+        onBecomeActive: (() -> Void)? = nil,
+        dockSnapEnabled: Bool = false
     ) {
         self.streamID = streamID
         self._latestFrame = latestFrame
@@ -2100,6 +2166,7 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
         self.cursorType = cursorType
         self.cursorVisible = cursorVisible
         self.onBecomeActive = onBecomeActive
+        self.dockSnapEnabled = dockSnapEnabled
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -2111,6 +2178,7 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
         view.onInputEvent = context.coordinator.handleInputEvent
         view.onDrawableSizeChanged = context.coordinator.handleDrawableSizeChanged
         view.onBecomeActive = context.coordinator.handleBecomeActive
+        view.dockSnapEnabled = dockSnapEnabled
         // Set stream ID for direct frame cache access (bypasses all actor machinery)
         view.streamID = streamID
         view.frameProvider = frameProvider
@@ -2129,6 +2197,8 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
 
         // Legacy frame provider (not needed if using direct cache access)
         uiView.frameProvider = frameProvider
+
+        uiView.dockSnapEnabled = dockSnapEnabled
 
         // Also push the frame via SwiftUI observation (works when not dragging)
         if let frame = latestFrame {

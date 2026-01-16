@@ -26,7 +26,7 @@ extension MirageHostService {
         MirageLogger.host("New independent window detected: \(window.id) '\(window.displayName)'")
 
         // Verify the original stream exists
-        guard streamsByID[originalStreamID] != nil else { return }
+        guard let originalContext = streamsByID[originalStreamID] else { return }
 
         // Get the virtual display resolution (client's display size)
         // Use SharedVirtualDisplayManager's getDisplayBounds which uses known resolution
@@ -38,17 +38,80 @@ extension MirageHostService {
             displayResolution = window.frame.size
         }
 
+        let streamScale = await originalContext.getStreamScale()
+        let encoderSettings = await originalContext.getEncoderSettings()
+        let targetFrameRate = await originalContext.getTargetFrameRate()
+
         // Auto-start a new stream for this window
         do {
             _ = try await startStream(
                 for: window,
                 to: client,
                 dataPort: nil,
-                clientDisplayResolution: displayResolution
+                clientDisplayResolution: displayResolution,
+                maxBitrate: encoderSettings.maxBitrate,
+                keyFrameInterval: encoderSettings.keyFrameInterval,
+                keyframeQuality: encoderSettings.keyframeQuality,
+                streamScale: streamScale,
+                targetFrameRate: targetFrameRate
             )
             MirageLogger.host("Auto-started stream for new independent window \(window.id)")
         } catch {
             MirageLogger.error(.host, "Failed to auto-start stream for new window: \(error)")
+        }
+    }
+
+    func handleStreamScaleChange(streamID: StreamID, streamScale: CGFloat) async {
+        let clampedScale = max(0.1, min(1.0, streamScale))
+        guard let context = streamsByID[streamID] else {
+            MirageLogger.debug(.host, "No stream found for stream scale change: \(streamID)")
+            return
+        }
+
+        do {
+            try await context.updateStreamScale(clampedScale)
+            let dimensionToken = await context.getDimensionToken()
+            let encodedDimensions = await context.getEncodedDimensions()
+
+            if streamID == desktopStreamID {
+                if let clientContext = desktopStreamClientContext {
+                    let message = DesktopStreamStartedMessage(
+                        streamID: streamID,
+                        width: encodedDimensions.width,
+                        height: encodedDimensions.height,
+                        frameRate: await context.getTargetFrameRate(),
+                        codec: await context.getCodec(),
+                        displayCount: 1,
+                        dimensionToken: dimensionToken
+                    )
+                    try? await clientContext.send(.desktopStreamStarted, content: message)
+                }
+                return
+            }
+
+            if streamID == loginDisplayStreamID {
+                loginDisplayResolution = CGSize(width: encodedDimensions.width, height: encodedDimensions.height)
+                await broadcastLoginDisplayReady()
+                return
+            }
+
+            guard let session = activeStreams.first(where: { $0.id == streamID }) else { return }
+            guard let clientContext = clientsByConnection.values.first(where: { $0.client.id == session.client.id }) else { return }
+
+            let message = StreamStartedMessage(
+                streamID: streamID,
+                windowID: session.window.id,
+                width: encodedDimensions.width,
+                height: encodedDimensions.height,
+                frameRate: await context.getTargetFrameRate(),
+                codec: await context.getCodec(),
+                minWidth: nil,
+                minHeight: nil,
+                dimensionToken: dimensionToken
+            )
+            try? await clientContext.send(.streamStarted, content: message)
+        } catch {
+            MirageLogger.error(.host, "Failed to update stream scale: \(error)")
         }
     }
 
@@ -87,12 +150,15 @@ extension MirageHostService {
                     // Get updated dimension token after resize
                     let dimensionToken = await desktopStreamContext?.getDimensionToken() ?? 0
 
+                    let encodedDimensions = await desktopStreamContext?.getEncodedDimensions() ?? (width: 0, height: 0)
+                    let targetFrameRate = await desktopStreamContext?.getTargetFrameRate() ?? encoderConfig.targetFrameRate
+                    let codec = await desktopStreamContext?.getCodec() ?? encoderConfig.codec
                     let message = DesktopStreamStartedMessage(
                         streamID: streamID,
-                        width: Int(newResolution.width),
-                        height: Int(newResolution.height),
-                        frameRate: encoderConfig.targetFrameRate,
-                        codec: encoderConfig.codec,
+                        width: encodedDimensions.0,
+                        height: encodedDimensions.1,
+                        frameRate: targetFrameRate,
+                        codec: codec,
                         displayCount: 1,
                         dimensionToken: dimensionToken
                     )

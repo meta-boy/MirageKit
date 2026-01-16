@@ -79,6 +79,9 @@ private final class FocusTrackingView: NSView {
     private func notifyHostWindowFocused() {
         guard let streamID else { return }
         clientService?.sendInputFireAndForget(.windowFocus, forStream: streamID)
+
+        let modifiers = MirageModifierFlags(nsEventFlags: NSEvent.modifierFlags)
+        clientService?.sendInputFireAndForget(.flagsChanged(modifiers), forStream: streamID)
     }
 
     deinit {

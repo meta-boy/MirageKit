@@ -49,6 +49,9 @@ extension MirageHostService {
                 }
             )
 
+            let encodedDimensions = await context.getEncodedDimensions()
+            loginDisplayResolution = CGSize(width: encodedDimensions.width, height: encodedDimensions.height)
+
             await broadcastLoginDisplayReady()
         } catch {
             MirageLogger.error(.host, "Failed to start login display stream: \(error)")

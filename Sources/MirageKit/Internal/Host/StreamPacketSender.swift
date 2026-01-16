@@ -67,6 +67,14 @@ actor StreamPacketSender {
         MirageLogger.stream("Packet send generation bumped to \(generation) (\(reason))")
     }
 
+    func resetQueue(reason: String) {
+        generation &+= 1
+        queueLock.withLock {
+            queuedBytes = 0
+        }
+        MirageLogger.stream("Packet send queue reset (gen \(generation), \(reason))")
+    }
+
     nonisolated func currentGenerationSnapshot() -> UInt32 {
         generation
     }

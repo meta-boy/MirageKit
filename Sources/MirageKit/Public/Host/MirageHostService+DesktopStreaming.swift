@@ -13,7 +13,11 @@ extension MirageHostService {
     func startDesktopStream(
         to clientContext: ClientContext,
         displayResolution: CGSize,
+        qualityPreset: MirageQualityPreset,
         maxBitrate: Int?,
+        keyFrameInterval: Int?,
+        keyframeQuality: Float?,
+        streamScale: CGFloat?,
         dataPort: UInt16?,
         targetFrameRate: Int? = nil
     ) async throws {
@@ -58,11 +62,22 @@ extension MirageHostService {
         let streamID = nextStreamID
         nextStreamID += 1
 
-        // Configure encoder with optional bitrate and frame rate overrides
+        // Configure encoder with quality preset and optional overrides
         var config = encoderConfig
-        if let maxBitrate {
-            config.maxBitrate = maxBitrate
-        }
+        let presetConfig = qualityPreset.encoderConfiguration
+        config.maxBitrate = presetConfig.maxBitrate
+        config.minBitrate = presetConfig.minBitrate
+        config.targetFrameRate = presetConfig.targetFrameRate
+        config.enableAdaptiveBitrate = presetConfig.enableAdaptiveBitrate
+        config.keyFrameInterval = presetConfig.keyFrameInterval
+        config.keyframeQuality = presetConfig.keyframeQuality
+
+        config = config.withOverrides(
+            maxBitrate: maxBitrate,
+            keyFrameInterval: keyFrameInterval,
+            keyframeQuality: keyframeQuality
+        )
+
         if let targetFrameRate {
             config = config.withTargetFrameRate(targetFrameRate)
         }
@@ -76,6 +91,7 @@ extension MirageHostService {
             streamID: streamID,
             windowID: 0,
             encoderConfig: config,
+            streamScale: streamScale ?? 1.0,
             maxPacketSize: networkConfig.maxPacketSize,
             additionalFrameFlags: [.desktopStream]
         )
@@ -119,18 +135,21 @@ extension MirageHostService {
         let dimensionToken = await streamContext.getDimensionToken()
 
         // Send confirmation to client
+        let encodedDimensions = await streamContext.getEncodedDimensions()
+        let targetFrameRate = await streamContext.getTargetFrameRate()
+        let codec = await streamContext.getCodec()
         let message = DesktopStreamStartedMessage(
             streamID: streamID,
-            width: Int(context.resolution.width),
-            height: Int(context.resolution.height),
-            frameRate: config.targetFrameRate,
-            codec: config.codec,
+            width: encodedDimensions.width,
+            height: encodedDimensions.height,
+            frameRate: targetFrameRate,
+            codec: codec,
             displayCount: 1,
             dimensionToken: dimensionToken
         )
         try? await clientContext.send(.desktopStreamStarted, content: message)
 
-        MirageLogger.host("Desktop stream started: streamID=\(streamID), resolution=\(Int(context.resolution.width))x\(Int(context.resolution.height))")
+        MirageLogger.host("Desktop stream started: streamID=\(streamID), resolution=\(encodedDimensions.width)x\(encodedDimensions.height)")
     }
 
     /// Stop the desktop stream

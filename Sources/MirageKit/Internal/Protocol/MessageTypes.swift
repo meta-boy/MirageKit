@@ -39,6 +39,7 @@ enum ControlMessageType: UInt8, Codable {
     // Virtual display updates
     case contentBoundsUpdate = 0x60
     case displayResolutionChange = 0x61
+    case streamScaleChange = 0x62
 
     // Session state and unlock (for headless Mac support)
     case sessionStateUpdate = 0x70
@@ -227,6 +228,9 @@ struct StartStreamMessage: Codable {
     /// Lower values reduce keyframe size with minimal visual impact
     /// If nil, host uses default from encoder configuration
     var keyframeQuality: Float? = nil
+    /// Client-requested stream scale (0.1-1.0)
+    /// Applies post-capture downscaling without resizing the host window
+    var streamScale: CGFloat? = nil
     /// Client's display maximum refresh rate in Hz (60 or 120)
     /// Used with P2P detection to enable 120fps streaming on capable displays
     var maxRefreshRate: Int = 60
@@ -361,6 +365,15 @@ struct DisplayResolutionChangeMessage: Codable {
     /// New display resolution in pixels
     let displayWidth: Int
     let displayHeight: Int
+}
+
+/// Stream scale change request sent from client to host
+/// Applies post-capture downscaling without resizing host windows
+struct StreamScaleChangeMessage: Codable {
+    /// The stream to update
+    let streamID: StreamID
+    /// Stream scale factor (0.1-1.0)
+    let streamScale: CGFloat
 }
 
 // MARK: - Session State Messages (Headless Mac Support)
@@ -518,6 +531,14 @@ struct SelectAppMessage: Codable {
     /// Client's display maximum refresh rate in Hz (60 or 120)
     /// Used with P2P detection to enable 120fps streaming on capable displays
     let maxRefreshRate: Int
+    /// Client-requested maximum bitrate in bits per second
+    let maxBitrate: Int?
+    /// Client-requested keyframe interval in frames
+    let keyFrameInterval: Int?
+    /// Client-requested keyframe quality (0.0-1.0)
+    let keyframeQuality: Float?
+    /// Client-requested stream scale (0.1-1.0)
+    let streamScale: CGFloat?
     // TODO: HDR support - requires proper virtual display EDR configuration
     // /// Whether to stream in HDR (Rec. 2020 with PQ transfer function)
     // var preferHDR: Bool = false
@@ -713,6 +734,12 @@ struct StartDesktopStreamMessage: Codable {
     let displayHeight: Int
     /// Maximum bitrate in bits per second
     let maxBitrate: Int?
+    /// Client-requested keyframe interval in frames
+    let keyFrameInterval: Int?
+    /// Client-requested keyframe quality (0.0-1.0)
+    let keyframeQuality: Float?
+    /// Client-requested stream scale (0.1-1.0)
+    let streamScale: CGFloat?
     /// UDP port the client is listening on for video data
     let dataPort: UInt16?
     /// Client's display maximum refresh rate in Hz (60 or 120)

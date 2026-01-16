@@ -25,6 +25,7 @@ public struct MirageStreamContentView: View {
     public let clientService: MirageClientService
     public let isDesktopStream: Bool
     public let onExitDesktopStream: (() -> Void)?
+    public let dockSnapEnabled: Bool
 
     /// Content rectangle for current frame (for SCK black bar cropping).
     @State private var contentRect: CGRect = .zero
@@ -66,18 +67,21 @@ public struct MirageStreamContentView: View {
     ///   - clientService: The client service used to send input and resize events.
     ///   - isDesktopStream: Whether the stream represents a desktop session.
     ///   - onExitDesktopStream: Optional handler for the desktop exit shortcut.
+    ///   - dockSnapEnabled: Whether input should snap to the dock edge on iPadOS.
     public init(
         session: MirageStreamSessionState,
         sessionStore: MirageClientSessionStore,
         clientService: MirageClientService,
         isDesktopStream: Bool = false,
-        onExitDesktopStream: (() -> Void)? = nil
+        onExitDesktopStream: (() -> Void)? = nil,
+        dockSnapEnabled: Bool = false
     ) {
         self.session = session
         self.sessionStore = sessionStore
         self.clientService = clientService
         self.isDesktopStream = isDesktopStream
         self.onExitDesktopStream = onExitDesktopStream
+        self.dockSnapEnabled = dockSnapEnabled
     }
 
     public var body: some View {
@@ -97,7 +101,8 @@ public struct MirageStreamContentView: View {
                 cursorVisible: sessionStore.cursorVisibility[session.streamID] ?? true,
                 onBecomeActive: {
                     handleForegroundRecovery()
-                }
+                },
+                dockSnapEnabled: dockSnapEnabled
             )
             .ignoresSafeArea()
             .blur(radius: isResizing ? 20 : 0)

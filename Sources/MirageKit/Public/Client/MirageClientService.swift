@@ -68,8 +68,8 @@ public final class MirageClientService {
     /// Desktop stream resolution
     public private(set) var desktopStreamResolution: CGSize?
 
-    /// Scale factor for outgoing stream resolution requests
-    /// 1.0 = native resolution
+    /// Stream scale for post-capture downscaling
+    /// 1.0 = native resolution, lower values reduce encoded size
     public var resolutionScale: CGFloat = 1.0
 
     /// Optional override for the maximum refresh rate sent to the host.
@@ -761,7 +761,10 @@ public final class MirageClientService {
         bundleIdentifier: String,
         quality: MirageQualityPreset = .adaptive,
         scaleFactor: CGFloat? = nil,
-        displayResolution: CGSize? = nil
+        displayResolution: CGSize? = nil,
+        maxBitrate: Int? = nil,
+        keyFrameInterval: Int? = nil,
+        keyframeQuality: Float? = nil
         // preferHDR: Bool = false
     ) async throws {
         guard case .connected = connectionState, let connection else {
@@ -778,7 +781,11 @@ public final class MirageClientService {
             scaleFactor: scaleFactor,
             displayWidth: effectiveDisplayResolution.width > 0 ? Int(effectiveDisplayResolution.width) : nil,
             displayHeight: effectiveDisplayResolution.height > 0 ? Int(effectiveDisplayResolution.height) : nil,
-            maxRefreshRate: getScreenMaxRefreshRate()
+            maxRefreshRate: getScreenMaxRefreshRate(),
+            maxBitrate: maxBitrate,
+            keyFrameInterval: keyFrameInterval,
+            keyframeQuality: keyframeQuality,
+            streamScale: clampedStreamScale()
         )
         // TODO: HDR support - requires proper virtual display EDR configuration
         // request.preferHDR = preferHDR
@@ -815,7 +822,9 @@ public final class MirageClientService {
         quality: MirageQualityPreset = .adaptive,
         scaleFactor: CGFloat? = nil,
         displayResolution: CGSize? = nil,
-        maxBitrate: Int? = nil
+        maxBitrate: Int? = nil,
+        keyFrameInterval: Int? = nil,
+        keyframeQuality: Float? = nil
         // preferHDR: Bool = false
     ) async throws {
         guard case .connected = connectionState, let connection else {
@@ -835,6 +844,9 @@ public final class MirageClientService {
             displayWidth: Int(effectiveDisplayResolution.width),
             displayHeight: Int(effectiveDisplayResolution.height),
             maxBitrate: maxBitrate,
+            keyFrameInterval: keyFrameInterval,
+            keyframeQuality: keyframeQuality,
+            streamScale: clampedStreamScale(),
             dataPort: nil,  // Host will use our UDP connection
             maxRefreshRate: getScreenMaxRefreshRate()
         )
@@ -930,6 +942,8 @@ public final class MirageClientService {
             request.keyframeQuality = keyframeQuality
             MirageLogger.client("Requesting keyframe quality: \(keyframeQuality)")
         }
+
+        request.streamScale = clampedStreamScale()
 
         // Include screen refresh rate for 120fps support on P2P connections
         request.maxRefreshRate = getScreenMaxRefreshRate()
@@ -1926,14 +1940,15 @@ public final class MirageClientService {
     /// Get the display resolution for the screen the window is currently on
     /// Intelligently detects which display the window is on (built-in vs external)
     private func scaledDisplayResolution(_ resolution: CGSize) -> CGSize {
-        let factor = resolutionScale
-        guard factor > 0 else { return resolution }
-        if factor == 1.0 {
-            return resolution
-        }
-        let width = max(2, floor(resolution.width * factor / 2) * 2)
-        let height = max(2, floor(resolution.height * factor / 2) * 2)
+        let width = max(2, floor(resolution.width / 2) * 2)
+        let height = max(2, floor(resolution.height / 2) * 2)
         return CGSize(width: width, height: height)
+    }
+
+    private func clampedStreamScale() -> CGFloat {
+        let scale = resolutionScale
+        guard scale > 0 else { return 1.0 }
+        return max(0.1, min(1.0, scale))
     }
 
     private func getMainDisplayResolution() -> CGSize {
@@ -2186,6 +2201,29 @@ public final class MirageClientService {
         let message = try ControlMessage(type: .displayResolutionChange, content: request)
 
         MirageLogger.client("Sending display resolution change for stream \(streamID): \(Int(scaledResolution.width))x\(Int(scaledResolution.height))")
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: message.serialize(), completion: .contentProcessed { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            })
+        }
+    }
+
+    public func sendStreamScaleChange(streamID: StreamID, scale: CGFloat) async throws {
+        guard case .connected = connectionState, let connection else {
+            throw MirageError.protocolError("Not connected")
+        }
+
+        let clampedScale = max(0.1, min(1.0, scale))
+        let request = StreamScaleChangeMessage(streamID: streamID, streamScale: clampedScale)
+        let message = try ControlMessage(type: .streamScaleChange, content: request)
+
+        let roundedScale = (clampedScale * 100).rounded() / 100
+        MirageLogger.client("Sending stream scale change for stream \(streamID): \(roundedScale)")
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: message.serialize(), completion: .contentProcessed { error in

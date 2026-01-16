@@ -278,13 +278,14 @@ actor HEVCEncoder {
     }
 
     /// Encode a frame
-    func encodeFrame(_ sampleBuffer: CMSampleBuffer, forceKeyframe: Bool = false) async throws {
+    func encodeFrame(_ wrapper: SampleBufferWrapper, forceKeyframe: Bool = false) async throws {
         let encodeStartTime = CFAbsoluteTimeGetCurrent()  // Timing: encode start
 
         // Drop frames during dimension update to prevent deadlock
         guard !isUpdatingDimensions else { return }
         guard isEncoding, let session = compressionSession else { return }
 
+        let sampleBuffer = wrapper.buffer
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             throw MirageError.encodingError(NSError(domain: "MirageKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "No pixel buffer"]))
         }
