@@ -8,6 +8,7 @@ import CoreGraphics
 actor HEVCDecoder {
     private var decompressionSession: VTDecompressionSession?
     private var formatDescription: CMFormatDescription?
+    private var outputPixelFormat: OSType = kCVPixelFormatType_ARGB2101010LEPacked
 
     /// Cached parameter sets for resilience against corrupted keyframes
     /// When a keyframe fails to parse, we can continue with cached format description
@@ -143,6 +144,7 @@ actor HEVCDecoder {
         }
         decompressionSession = nil
         formatDescription = nil
+        outputPixelFormat = kCVPixelFormatType_ARGB2101010LEPacked
 
         // Clear cached parameter sets
         cachedVPS = nil
@@ -161,6 +163,7 @@ actor HEVCDecoder {
         }
         decompressionSession = nil
         formatDescription = nil
+        outputPixelFormat = kCVPixelFormatType_ARGB2101010LEPacked
 
         // Clear cached parameter sets so next keyframe is used fresh
         cachedVPS = nil
@@ -364,6 +367,13 @@ actor HEVCDecoder {
 
     /// Extract format description from parameter sets and return data with parameter sets stripped
     private func extractFormatDescriptionAndStripParameterSets(from data: Data) throws -> Data {
+        if let framed = splitFramedKeyframeData(from: data) {
+            return try extractFormatDescriptionAndStripParameterSets(
+                parameterSetsData: framed.parameterSets,
+                frameData: framed.frameData
+            )
+        }
+
         // Parse HEVC NAL units to extract VPS, SPS, PPS (in Annex B format)
         // NAL unit types: VPS=32, SPS=33, PPS=34
         // After parameter sets, the data transitions to AVCC format (length-prefixed, no start codes)
@@ -455,7 +465,126 @@ actor HEVCDecoder {
         self.cachedSPS = spsData
         self.cachedPPS = ppsData
 
-        // Create format description from parameter sets
+        try updateFormatDescription(vpsData: vpsData, spsData: spsData, ppsData: ppsData)
+
+        // Return data with parameter sets stripped (the remaining AVCC data)
+        if parameterSetsEnd > 0 && parameterSetsEnd < data.count {
+            var strippedData = Data(data.suffix(from: parameterSetsEnd))
+
+            // Strip any leading SEI NAL units that may confuse VideoToolbox
+            // SEI (Supplemental Enhancement Information) contains metadata like HDR info
+            // VideoToolbox may not properly decode IDR when SEI comes first
+            strippedData = stripSEINALUnits(from: strippedData)
+
+            return strippedData
+        }
+
+        return data
+    }
+
+    private func splitFramedKeyframeData(from data: Data) -> (parameterSets: Data, frameData: Data)? {
+        guard data.count > 8 else { return nil }
+
+        let length = UInt32(data[0]) << 24 |
+                     UInt32(data[1]) << 16 |
+                     UInt32(data[2]) << 8 |
+                     UInt32(data[3])
+        guard length > 0 else { return nil }
+
+        let start = 4
+        let end = start + Int(length)
+        guard end > start, end <= data.count else { return nil }
+
+        let parameterSets = data.subdata(in: start..<end)
+        let hasStartCode = parameterSets.starts(with: [0x00, 0x00, 0x00, 0x01]) ||
+                           parameterSets.starts(with: [0x00, 0x00, 0x01])
+        guard hasStartCode else { return nil }
+
+        let frameData = data.subdata(in: end..<data.count)
+        guard !frameData.isEmpty else { return nil }
+
+        return (parameterSets, frameData)
+    }
+
+    private func extractFormatDescriptionAndStripParameterSets(
+        parameterSetsData: Data,
+        frameData: Data
+    ) throws -> Data {
+        let sets = extractParameterSets(from: parameterSetsData)
+        guard let vpsData = sets.vps, let spsData = sets.sps, let ppsData = sets.pps else {
+            MirageLogger.error(.decoder, "Missing parameter sets - VPS: \(sets.vps != nil), SPS: \(sets.sps != nil), PPS: \(sets.pps != nil)")
+
+            if let cached = cachedFormatDescription {
+                MirageLogger.decoder("Using cached format description due to corrupted keyframe")
+                self.formatDescription = cached
+            }
+
+            return stripSEINALUnits(from: frameData)
+        }
+
+        self.cachedVPS = vpsData
+        self.cachedSPS = spsData
+        self.cachedPPS = ppsData
+
+        try updateFormatDescription(vpsData: vpsData, spsData: spsData, ppsData: ppsData)
+
+        return stripSEINALUnits(from: frameData)
+    }
+
+    private func extractParameterSets(from data: Data) -> (vps: Data?, sps: Data?, pps: Data?) {
+        var startCodePositions: [(position: Int, length: Int)] = []
+        var i = 0
+        let searchLimit = max(0, data.count - 3)
+
+        while i < searchLimit {
+            if data[i] == 0x00 && data[i + 1] == 0x00 {
+                if data[i + 2] == 0x01 {
+                    startCodePositions.append((i, 3))
+                    i += 3
+                    continue
+                } else if i + 3 < data.count && data[i + 2] == 0x00 && data[i + 3] == 0x01 {
+                    startCodePositions.append((i, 4))
+                    i += 4
+                    continue
+                }
+            }
+            i += 1
+        }
+
+        guard startCodePositions.count >= 3 else {
+            MirageLogger.error(.decoder, "Not enough start codes found: \(startCodePositions.count)")
+            return (nil, nil, nil)
+        }
+
+        var vps: Data?
+        var sps: Data?
+        var pps: Data?
+
+        for (idx, startCode) in startCodePositions.enumerated() {
+            let nalStart = startCode.position + startCode.length
+            let nalEnd = idx + 1 < startCodePositions.count ? startCodePositions[idx + 1].position : data.count
+
+            guard nalEnd > nalStart && nalStart < data.count else { continue }
+            let nalData = data.subdata(in: nalStart..<nalEnd)
+            guard !nalData.isEmpty else { continue }
+
+            let nalType = (nalData[0] >> 1) & 0x3F
+            switch nalType {
+            case 32:
+                vps = nalData
+            case 33:
+                sps = nalData
+            case 34:
+                pps = nalData
+            default:
+                break
+            }
+        }
+
+        return (vps, sps, pps)
+    }
+
+    private func updateFormatDescription(vpsData: Data, spsData: Data, ppsData: Data) throws {
         try vpsData.withUnsafeBytes { vpsPtr in
             try spsData.withUnsafeBytes { spsPtr in
                 try ppsData.withUnsafeBytes { ppsPtr in
@@ -478,7 +607,6 @@ actor HEVCDecoder {
                     )
 
                     guard status == noErr, let desc = formatDesc else {
-                        // Format description creation failed - try to use cached version
                         if let cached = self.cachedFormatDescription {
                             MirageLogger.decoder("Format description creation failed (status \(status)), using cached")
                             self.formatDescription = cached
@@ -488,87 +616,64 @@ actor HEVCDecoder {
                             userInfo: [NSLocalizedDescriptionKey: "Failed to create format description"]))
                     }
 
-                    // Check if dimensions changed - need to recreate session
                     let oldDims = self.formatDescription.flatMap { CMVideoFormatDescriptionGetDimensions($0) }
                     let newDims = CMVideoFormatDescriptionGetDimensions(desc)
 
-                    let dimensionsChanged = oldDims.map { old in
+                    let dimensionsMismatch = oldDims.map { old in
                         old.width != newDims.width || old.height != newDims.height
                     } ?? false
 
-                    // Force session recreation if:
-                    // 1. Dimensions changed, OR
-                    // 2. We've had decode errors AND haven't recently attempted recreation
-                    // Note: For first keyframe (no existing formatDescription), we DON'T recreate
-                    // since there's no session to recreate - session will be created fresh
                     let isFirstKeyframe = oldDims == nil
                     let shouldRecreateForErrors = !isFirstKeyframe && (self.errorTracker?.shouldRecreateSession() ?? false)
-                    let shouldRecreateSession = dimensionsChanged || shouldRecreateForErrors
+                    let shouldRecreateSession = dimensionsMismatch || shouldRecreateForErrors
 
                     if isFirstKeyframe {
                         MirageLogger.decoder("First keyframe - session will be created fresh (\(newDims.width)x\(newDims.height))")
                     }
 
                     if shouldRecreateSession {
-                        if dimensionsChanged, let old = oldDims {
+                        if dimensionsMismatch, let old = oldDims {
                             MirageLogger.decoder("Dimensions changed from \(old.width)x\(old.height) to \(newDims.width)x\(newDims.height) - recreating session")
                         } else if shouldRecreateForErrors {
                             MirageLogger.decoder("Recreating session due to decode errors (dimensions unchanged: \(newDims.width)x\(newDims.height))")
                         }
 
-                        // Invalidate old session so it gets recreated
                         if let session = self.decompressionSession {
                             VTDecompressionSessionInvalidate(session)
                             self.decompressionSession = nil
                         }
 
-                        if dimensionsChanged {
-                            // Immediately request keyframe - all P-frames at old dimensions will fail
-                            // This speeds up recovery vs waiting for error threshold
+                        if dimensionsMismatch {
                             self.errorTracker?.requestKeyframeForDimensionChange()
-
-                            // Notify client to reset reassembler and discard pending old-dimension fragments
                             self.onDimensionChange?()
-
-                            // Clear error tracking state - dimension change gives decoder a clean slate
-                            // This prevents cooldown from blocking necessary session recreation if errors persist
                             self.errorTracker?.clearForDimensionChange()
                         } else if shouldRecreateForErrors {
-                            // Only mark recreation for error-based recreation (not dimension change)
-                            // Dimension change already cleared the error state above
                             self.errorTracker?.markSessionRecreated()
                         }
                     }
 
+                    self.outputPixelFormat = preferredOutputPixelFormat(for: desc)
                     self.formatDescription = desc
-                    self.cachedFormatDescription = desc  // Cache for resilience against corrupted keyframes
+                    self.cachedFormatDescription = desc
                     MirageLogger.decoder("Created format description successfully (\(newDims.width)x\(newDims.height))")
 
-                    // Clear dimension change awaiting flag - we now have valid format description
                     if self.awaitingDimensionChange {
                         self.awaitingDimensionChange = false
                         self.expectedDimensions = nil
                         MirageLogger.decoder("Dimension change complete - resuming normal P-frame processing")
-                        // Unblock input - keyframe received, decoder is healthy
                         self.onInputBlockingChanged?(false)
                     }
                 }
             }
         }
+    }
 
-        // Return data with parameter sets stripped (the remaining AVCC data)
-        if parameterSetsEnd > 0 && parameterSetsEnd < data.count {
-            var strippedData = Data(data.suffix(from: parameterSetsEnd))
-
-            // Strip any leading SEI NAL units that may confuse VideoToolbox
-            // SEI (Supplemental Enhancement Information) contains metadata like HDR info
-            // VideoToolbox may not properly decode IDR when SEI comes first
-            strippedData = stripSEINALUnits(from: strippedData)
-
-            return strippedData
+    private func preferredOutputPixelFormat(for formatDescription: CMFormatDescription) -> OSType {
+        guard let extensions = CMFormatDescriptionGetExtensions(formatDescription) as? [CFString: Any],
+              let bits = extensions[kCMFormatDescriptionExtension_BitsPerComponent] as? Int else {
+            return kCVPixelFormatType_ARGB2101010LEPacked
         }
-
-        return data
+        return bits > 8 ? kCVPixelFormatType_ARGB2101010LEPacked : kCVPixelFormatType_32BGRA
     }
 
     /// Strip leading SEI NAL units from AVCC data
@@ -754,7 +859,7 @@ actor HEVCDecoder {
 
     private func createSession(formatDescription: CMFormatDescription) throws {
         let destinationAttributes: [CFString: Any] = [
-            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_ARGB2101010LEPacked,
+            kCVPixelBufferPixelFormatTypeKey: outputPixelFormat,
             kCVPixelBufferMetalCompatibilityKey: true,
             kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
         ]

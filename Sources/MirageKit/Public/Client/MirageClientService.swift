@@ -761,7 +761,6 @@ public final class MirageClientService {
         quality: MirageQualityPreset = .medium,
         scaleFactor: CGFloat? = nil,
         displayResolution: CGSize? = nil,
-        maxBitrate: Int? = nil,
         keyFrameInterval: Int? = nil,
         keyframeQuality: Float? = nil
         // preferHDR: Bool = false
@@ -781,7 +780,6 @@ public final class MirageClientService {
             displayWidth: effectiveDisplayResolution.width > 0 ? Int(effectiveDisplayResolution.width) : nil,
             displayHeight: effectiveDisplayResolution.height > 0 ? Int(effectiveDisplayResolution.height) : nil,
             maxRefreshRate: getScreenMaxRefreshRate(),
-            maxBitrate: maxBitrate,
             keyFrameInterval: keyFrameInterval,
             keyframeQuality: keyframeQuality,
             streamScale: clampedStreamScale()
@@ -814,14 +812,12 @@ public final class MirageClientService {
     ///   - quality: Quality preset for the stream
     ///   - scaleFactor: Optional display scale factor
     ///   - displayResolution: Client's display resolution for virtual display sizing
-    ///   - maxBitrate: Optional maximum bitrate in bits per second
     // TODO: HDR support - requires proper virtual display EDR configuration
     // ///   - preferHDR: Whether to request HDR streaming (Rec. 2020 with PQ)
     public func startDesktopStream(
         quality: MirageQualityPreset = .medium,
         scaleFactor: CGFloat? = nil,
         displayResolution: CGSize? = nil,
-        maxBitrate: Int? = nil,
         keyFrameInterval: Int? = nil,
         keyframeQuality: Float? = nil
         // preferHDR: Bool = false
@@ -842,7 +838,6 @@ public final class MirageClientService {
             scaleFactor: scaleFactor,
             displayWidth: Int(effectiveDisplayResolution.width),
             displayHeight: Int(effectiveDisplayResolution.height),
-            maxBitrate: maxBitrate,
             keyFrameInterval: keyFrameInterval,
             keyframeQuality: keyframeQuality,
             streamScale: clampedStreamScale(),
@@ -886,8 +881,6 @@ public final class MirageClientService {
     ///     Used with expectedPixelSize to calculate point-based window size.
     ///   - displayResolution: Client's physical display resolution in pixels.
     ///     If provided, host creates a virtual display at this resolution for optimal quality.
-    ///   - maxBitrate: Optional maximum bitrate in bits per second. Higher values = sharper image.
-    ///     Examples: 150_000_000 (150Mbps), 300_000_000 (300Mbps), 500_000_000 (500Mbps)
     ///   - keyFrameInterval: Optional keyframe interval in frames. Higher = fewer lag spikes.
     ///     Examples: 600 (10 seconds @ 60fps), 300 (5 seconds @ 60fps)
     ///   - keyframeQuality: Optional encoder quality (0.0-1.0). Lower = smaller frames.
@@ -897,7 +890,6 @@ public final class MirageClientService {
         expectedPixelSize: CGSize? = nil,
         scaleFactor: CGFloat? = nil,
         displayResolution: CGSize? = nil,
-        maxBitrate: Int? = nil,
         keyFrameInterval: Int? = nil,
         keyframeQuality: Float? = nil
     ) async throws -> ClientStreamSession {
@@ -924,12 +916,6 @@ public final class MirageClientService {
             request.displayWidth = Int(effectiveDisplayResolution.width)
             request.displayHeight = Int(effectiveDisplayResolution.height)
             MirageLogger.client("Including display resolution: \(Int(effectiveDisplayResolution.width))x\(Int(effectiveDisplayResolution.height))")
-        }
-
-        // Include custom bitrate if specified
-        if let maxBitrate, maxBitrate > 0 {
-            request.maxBitrate = maxBitrate
-            MirageLogger.client("Requesting max bitrate: \(maxBitrate / 1_000_000)Mbps")
         }
 
         // Include encoder config overrides if specified

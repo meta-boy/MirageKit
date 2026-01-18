@@ -90,7 +90,6 @@ extension MirageHostService {
                 to: clientContext,
                 displayResolution: CGSize(width: request.displayWidth, height: request.displayHeight),
                 qualityPreset: request.preferredQuality,
-                maxBitrate: request.maxBitrate,
                 keyFrameInterval: request.keyFrameInterval,
                 keyframeQuality: request.keyframeQuality,
                 streamScale: request.streamScale,

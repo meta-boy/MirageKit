@@ -2,9 +2,6 @@ import Foundation
 
 /// Statistics for an active stream
 public struct MirageStreamStatistics: Sendable {
-    /// Current bitrate in bits per second
-    public let currentBitrate: Int
-
     /// Current frame rate
     public let currentFrameRate: Double
 
@@ -33,7 +30,6 @@ public struct MirageStreamStatistics: Sendable {
     public let uptime: TimeInterval
 
     public init(
-        currentBitrate: Int = 0,
         currentFrameRate: Double = 0,
         processedFrames: UInt64 = 0,
         droppedFrames: UInt64 = 0,
@@ -44,7 +40,6 @@ public struct MirageStreamStatistics: Sendable {
         qualityLevel: String = "Unknown",
         uptime: TimeInterval = 0
     ) {
-        self.currentBitrate = currentBitrate
         self.currentFrameRate = currentFrameRate
         self.processedFrames = processedFrames
         self.droppedFrames = droppedFrames
@@ -62,20 +57,10 @@ public struct MirageStreamStatistics: Sendable {
         return Double(droppedFrames) / Double(processedFrames + droppedFrames)
     }
 
-    /// Formatted bitrate string (e.g., "85.2 Mbps")
-    public var formattedBitrate: String {
-        if currentBitrate >= 1_000_000 {
-            return String(format: "%.1f Mbps", Double(currentBitrate) / 1_000_000)
-        } else if currentBitrate >= 1_000 {
-            return String(format: "%.1f Kbps", Double(currentBitrate) / 1_000)
-        } else {
-            return "\(currentBitrate) bps"
-        }
-    }
-
     /// Formatted latency string
     public var formattedLatency: String {
-        String(format: "%.1f ms", averageLatencyMs)
+        let value = averageLatencyMs.formatted(.number.precision(.fractionLength(1)))
+        return "\(value) ms"
     }
 }
 

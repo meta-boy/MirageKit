@@ -149,6 +149,16 @@ final class MetalRenderer {
 
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
+        let pixelFormatType = CVPixelBufferGetPixelFormatType(pixelBuffer)
+        let metalPixelFormat: MTLPixelFormat
+        switch pixelFormatType {
+        case kCVPixelFormatType_32BGRA:
+            metalPixelFormat = .bgra8Unorm
+        case kCVPixelFormatType_ARGB2101010LEPacked:
+            metalPixelFormat = .bgr10a2Unorm
+        default:
+            metalPixelFormat = .bgr10a2Unorm
+        }
 
         var metalTexture: CVMetalTexture?
         let status = CVMetalTextureCacheCreateTextureFromImage(
@@ -156,7 +166,7 @@ final class MetalRenderer {
             cache,
             pixelBuffer,
             nil,
-            .bgr10a2Unorm,
+            metalPixelFormat,
             width,
             height,
             0,
@@ -261,4 +271,3 @@ final class MetalRenderer {
         }
     }
 }
-

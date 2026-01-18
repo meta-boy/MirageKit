@@ -131,6 +131,7 @@ MirageStreamContentView(
 
 - Hosts advertise via Bonjour using `_mirage._tcp` and accept TCP control connections.
 - Video payloads stream over UDP; clients register stream IDs to receive data.
+- Host encode pipeline: limited in-flight frames with always-latest frame selection.
 - The host can create a shared virtual display sized to the client’s display for 1:1 pixels.
 - Session state updates allow remote unlock flows (login screen vs locked session).
 - Menu bar passthrough enables clients to render native menu structures and send actions back.
@@ -143,21 +144,21 @@ For a deeper dive into modules and data flows, see `Architecture.md`.
 
 ### Quality Presets
 
-`MirageQualityPreset` provides ready-made profiles that map to bitrate caps and encoder quality for 60/120Hz targets.
+`MirageQualityPreset` provides ready-made profiles with encoder quality targets for 60/120Hz.
 
-- `.ultra` / `.high`: higher bitrate and quality for 60/120Hz targets
-- `.medium`: balanced preset with higher caps at 120Hz
-- `.low`: low-bandwidth preset with stronger compression at 120Hz
+- `.ultra` / `.high`: highest quality targets for 60/120Hz
+- `.medium`: balanced quality with a lower target at 120Hz
+- `.low`: higher compression with a lower target at 120Hz
 - `.lowLatency`: text apps with aggressive frame skipping
 
-Each preset can be overridden per stream with `maxBitrate`, `keyFrameInterval`, and `keyframeQuality` (encoder quality for all frames) when starting a stream.
+Each preset can be overridden per stream with `keyFrameInterval` and `keyframeQuality` (encoder quality for all frames) when starting a stream.
 
 ### Encoder Settings
 
-`MirageEncoderConfiguration` lets you control codec, bitrate, frame rate, encoder quality, and color space.
+`MirageEncoderConfiguration` lets you control codec, frame rate, encoder quality, and color space.
 
 - Use `.highQuality`, `.balanced`, or `.lowLatency` presets.
-- Use `withOverrides` or `withMaxBitrate` to apply client-specific limits.
+- Use `withOverrides` to apply client-specific intervals or encoder quality.
 - Use `withTargetFrameRate` to request 60/120fps based on display capabilities.
 - `keyframeQuality` sets encoder quality for all frames and maps to QP bounds when supported.
 

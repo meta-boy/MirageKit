@@ -464,10 +464,10 @@ public final class MirageHostService {
     ///   - client: The client to stream to
     ///   - dataPort: Optional UDP port for video data
     ///   - clientDisplayResolution: Client's display resolution for virtual display sizing
-    ///   - maxBitrate: Optional client-requested bitrate override (in bits per second)
     ///   - keyFrameInterval: Optional client-requested keyframe interval (in frames)
     ///   - keyframeQuality: Optional client-requested encoder quality (0.0-1.0)
     ///   - targetFrameRate: Optional frame rate override (60 or 120fps, based on client capability and quality)
+    ///   - pixelFormat: Optional pixel format override for capture and encode
     // TODO: HDR support - requires proper virtual display EDR configuration
     // ///   - hdr: Whether to enable HDR streaming (Rec. 2020 with PQ transfer function)
     public func startStream(
@@ -475,11 +475,11 @@ public final class MirageHostService {
         to client: MirageConnectedClient,
         dataPort: UInt16? = nil,
         clientDisplayResolution: CGSize? = nil,
-        maxBitrate: Int? = nil,
         keyFrameInterval: Int? = nil,
         keyframeQuality: Float? = nil,
         streamScale: CGFloat? = nil,
-        targetFrameRate: Int? = nil
+        targetFrameRate: Int? = nil,
+        pixelFormat: MiragePixelFormat? = nil
         // hdr: Bool = false
     ) async throws -> MirageStreamSession {
         // Get the actual SCWindow, its owning application, and the display it's on
@@ -521,15 +521,12 @@ public final class MirageHostService {
 
         // Create encoder config with client-requested overrides
         var effectiveEncoderConfig: MirageEncoderConfiguration
-        if maxBitrate != nil || keyFrameInterval != nil || keyframeQuality != nil {
+        if keyFrameInterval != nil || keyframeQuality != nil || pixelFormat != nil {
             effectiveEncoderConfig = encoderConfig.withOverrides(
-                maxBitrate: maxBitrate,
                 keyFrameInterval: keyFrameInterval,
-                keyframeQuality: keyframeQuality
+                keyframeQuality: keyframeQuality,
+                pixelFormat: pixelFormat
             )
-            if let bitrate = maxBitrate {
-                MirageLogger.host("Using client-requested bitrate: \(bitrate / 1_000_000)Mbps")
-            }
             if let interval = keyFrameInterval {
                 MirageLogger.host("Using client-requested keyframe interval: \(interval) frames")
             }
@@ -1536,9 +1533,9 @@ public final class MirageHostService {
                 let targetFrameRate = clientMaxRefreshRate >= 120 ? 120 : 60
 
                 let presetConfig = request.preferredQuality.encoderConfiguration(for: targetFrameRate)
-                let maxBitrate = request.maxBitrate ?? presetConfig.maxBitrate
                 let keyFrameInterval = request.keyFrameInterval ?? presetConfig.keyFrameInterval
                 let keyframeQuality = request.keyframeQuality ?? presetConfig.keyframeQuality
+                let pixelFormat = presetConfig.pixelFormat
                 let requestedScale = request.streamScale ?? 1.0
                 MirageLogger.host("Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)")
 
@@ -1547,11 +1544,11 @@ public final class MirageHostService {
                     to: client,
                     dataPort: request.dataPort,
                     clientDisplayResolution: clientDisplayResolution,
-                    maxBitrate: maxBitrate,
                     keyFrameInterval: keyFrameInterval,
                     keyframeQuality: keyframeQuality,
                     streamScale: requestedScale,
-                    targetFrameRate: targetFrameRate
+                    targetFrameRate: targetFrameRate,
+                    pixelFormat: pixelFormat
                 )
             } catch {
                 MirageLogger.error(.host, "Failed to handle startStream: \(error)")

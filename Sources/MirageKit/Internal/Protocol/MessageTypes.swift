@@ -28,8 +28,7 @@ enum ControlMessageType: UInt8, Codable {
     // Input events
     case inputEvent = 0x30
 
-    // Quality control
-    case qualityChange = 0x41
+    // Keyframe control
     case keyframeRequest = 0x42
 
     // Cursor updates
@@ -215,10 +214,6 @@ struct StartStreamMessage: Codable {
     /// Virtual display will be created at this resolution
     var displayWidth: Int? = nil
     var displayHeight: Int? = nil
-    /// Client-requested maximum bitrate in bits per second
-    /// Use higher values (e.g., 300_000_000 = 300Mbps) for high-bandwidth networks
-    /// If nil, host uses default from encoder configuration
-    var maxBitrate: Int? = nil
     /// Client-requested keyframe interval in frames
     /// Higher values (e.g., 600 = 10 seconds @ 60fps) reduce periodic lag spikes
     /// If nil, host uses default from encoder configuration
@@ -278,13 +273,7 @@ struct InputEventMessage: Codable {
     let event: MirageInputEvent
 }
 
-// MARK: - Quality Messages
-
-struct QualityChangeMessage: Codable {
-    let streamID: StreamID
-    let newBitrate: Int
-    let newFrameRate: Int
-}
+// MARK: - Keyframe Messages
 
 struct KeyframeRequestMessage: Codable {
     let streamID: StreamID
@@ -522,8 +511,6 @@ struct SelectAppMessage: Codable {
     /// Client's display maximum refresh rate in Hz (60 or 120)
     /// Used with P2P detection to enable 120fps streaming on capable displays
     let maxRefreshRate: Int
-    /// Client-requested maximum bitrate in bits per second
-    let maxBitrate: Int?
     /// Client-requested keyframe interval in frames
     let keyFrameInterval: Int?
     /// Client-requested encoder quality (0.0-1.0)
@@ -723,8 +710,6 @@ struct StartDesktopStreamMessage: Codable {
     let displayWidth: Int
     /// Client's display height in pixels
     let displayHeight: Int
-    /// Maximum bitrate in bits per second
-    let maxBitrate: Int?
     /// Client-requested keyframe interval in frames
     let keyFrameInterval: Int?
     /// Client-requested encoder quality (0.0-1.0)

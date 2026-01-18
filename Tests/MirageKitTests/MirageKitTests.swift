@@ -115,31 +115,31 @@ struct MirageKitTests {
     func testQualityPresets() {
         let ultra60 = MirageQualityPreset.ultra.encoderConfiguration(for: 60)
         let ultra120 = MirageQualityPreset.ultra.encoderConfiguration(for: 120)
-        #expect(ultra60.maxBitrate == 200_000_000)
-        #expect(ultra120.maxBitrate == 200_000_000)
         #expect(ultra120.keyframeQuality == 1.0)
+        #expect(ultra60.keyframeQuality == 1.0)
+        #expect(ultra120.pixelFormat == .bgr10a2)
 
         let medium60 = MirageQualityPreset.medium.encoderConfiguration(for: 60)
         let medium120 = MirageQualityPreset.medium.encoderConfiguration(for: 120)
-        #expect(medium120.maxBitrate > medium60.maxBitrate)
         #expect(medium120.keyframeQuality < medium60.keyframeQuality)
+        #expect(medium120.pixelFormat == .bgr10a2)
 
         let low60 = MirageQualityPreset.low.encoderConfiguration(for: 60)
         let low120 = MirageQualityPreset.low.encoderConfiguration(for: 120)
-        #expect(low120.maxBitrate <= low60.maxBitrate)
+        #expect(low120.keyframeQuality < low60.keyframeQuality)
+        #expect(low120.keyframeQuality < medium120.keyframeQuality)
+        #expect(low120.pixelFormat == .bgra8)
     }
 
     @Test("Stream statistics formatting")
     func testStatisticsFormatting() {
         let stats = MirageStreamStatistics(
-            currentBitrate: 85_000_000,
             currentFrameRate: 120,
             processedFrames: 1000,
             droppedFrames: 5,
             averageLatencyMs: 25.5
         )
 
-        #expect(stats.formattedBitrate == "85.0 Mbps")
         #expect(stats.formattedLatency == "25.5 ms")
         #expect(stats.dropRate < 0.01)
     }

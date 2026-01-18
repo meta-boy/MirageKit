@@ -16,15 +16,11 @@ struct CapturedFrameInfo: Sendable {
     let dirtyRects: [CGRect]
     /// Total area of dirty regions as percentage of frame (0-100)
     let dirtyPercentage: Float
-    /// Keepalive frame - must be encoded even if 0% dirty to maintain stream continuity
-    /// Set for fallback frames sent during SCK pauses (menus, drags)
-    let isKeepalive: Bool
 
-    init(contentRect: CGRect, dirtyRects: [CGRect], dirtyPercentage: Float, isKeepalive: Bool = false) {
+    init(contentRect: CGRect, dirtyRects: [CGRect], dirtyPercentage: Float) {
         self.contentRect = contentRect
         self.dirtyRects = dirtyRects
         self.dirtyPercentage = dirtyPercentage
-        self.isKeepalive = isKeepalive
     }
 }
 
@@ -47,6 +43,15 @@ actor WindowCaptureEngine {
  
     init(configuration: MirageEncoderConfiguration) {
         self.configuration = configuration
+    }
+
+    private var pixelFormatType: OSType {
+        switch configuration.pixelFormat {
+        case .bgr10a2:
+            return kCVPixelFormatType_ARGB2101010LEPacked
+        case .bgra8:
+            return kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        }
     }
 
     private static func alignedEvenPixel(_ value: CGFloat) -> Int {
@@ -115,8 +120,8 @@ actor WindowCaptureEngine {
             timescale: CMTimeScale(configuration.targetFrameRate)
         )
 
-        // Color and format - 10-bit for full color gamut (P3)
-        streamConfig.pixelFormat = kCVPixelFormatType_ARGB2101010LEPacked
+        // Color and format - 10-bit ARGB2101010 or 8-bit NV12
+        streamConfig.pixelFormat = pixelFormatType
         switch configuration.colorSpace {
         case .displayP3:
             streamConfig.colorSpaceName = CGColorSpace.displayP3
@@ -216,7 +221,7 @@ actor WindowCaptureEngine {
             value: 1,
             timescale: CMTimeScale(configuration.targetFrameRate)
         )
-        streamConfig.pixelFormat = kCVPixelFormatType_ARGB2101010LEPacked
+        streamConfig.pixelFormat = pixelFormatType
         streamConfig.colorSpaceName = configuration.colorSpace == .displayP3
             ? CGColorSpace.displayP3
             : CGColorSpace.sRGB
@@ -256,7 +261,7 @@ actor WindowCaptureEngine {
             value: 1,
             timescale: CMTimeScale(configuration.targetFrameRate)
         )
-        streamConfig.pixelFormat = kCVPixelFormatType_ARGB2101010LEPacked
+        streamConfig.pixelFormat = pixelFormatType
         streamConfig.colorSpaceName = configuration.colorSpace == .displayP3
             ? CGColorSpace.displayP3
             : CGColorSpace.sRGB
@@ -299,7 +304,7 @@ actor WindowCaptureEngine {
             value: 1,
             timescale: CMTimeScale(configuration.targetFrameRate)
         )
-        streamConfig.pixelFormat = kCVPixelFormatType_ARGB2101010LEPacked
+        streamConfig.pixelFormat = pixelFormatType
         streamConfig.colorSpaceName = configuration.colorSpace == .displayP3
             ? CGColorSpace.displayP3
             : CGColorSpace.sRGB
@@ -331,7 +336,7 @@ actor WindowCaptureEngine {
             value: 1,
             timescale: CMTimeScale(fps)
         )
-        streamConfig.pixelFormat = kCVPixelFormatType_ARGB2101010LEPacked
+        streamConfig.pixelFormat = pixelFormatType
         streamConfig.colorSpaceName = configuration.colorSpace == .displayP3
             ? CGColorSpace.displayP3
             : CGColorSpace.sRGB
@@ -405,8 +410,8 @@ actor WindowCaptureEngine {
             timescale: CMTimeScale(configuration.targetFrameRate)
         )
 
-        // Color and format - 10-bit for full color gamut (P3)
-        streamConfig.pixelFormat = kCVPixelFormatType_ARGB2101010LEPacked
+        // Color and format
+        streamConfig.pixelFormat = pixelFormatType
         switch configuration.colorSpace {
         case .displayP3:
             streamConfig.colorSpaceName = CGColorSpace.displayP3
@@ -437,15 +442,13 @@ actor WindowCaptureEngine {
             throw MirageError.protocolError("Failed to create display stream")
         }
 
-        // Create output handler (reduced keepalive rate for display capture)
+        // Create output handler
         streamOutput = CaptureStreamOutput(
             onFrame: onFrame,
             onKeyframeRequest: { [weak self] in
                 Task { await self?.markKeyframeRequested() }
             },
-            frameGapThreshold: 0.300,
-            keepaliveInterval: 1.5,
-            cacheInterval: 0.5
+            frameGapThreshold: 0.300
         )
 
         // Use nil queue (like Ensemble) to avoid blocking encoder during drags/menus
@@ -504,17 +507,12 @@ private final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Se
     private let dirtyDetector = DirtyRegionDetector()
 
     // Frame gap watchdog: when SCK stops delivering frames (during menus/drags),
-    // cache the last frame and re-send it to keep the stream alive
+    // mark fallback mode so resume can trigger a keyframe request
     private var watchdogTimer: DispatchSourceTimer?
     private let watchdogQueue = DispatchQueue(label: "com.mirage.capture.watchdog", qos: .userInteractive)
     private var windowID: CGWindowID = 0
     private var lastDeliveredFrameTime: CFAbsoluteTime = 0
-    private var fallbackFrameCount: UInt64 = 0
     private let frameGapThreshold: CFAbsoluteTime
-    private var lastKeepaliveTime: CFAbsoluteTime = 0
-    private let keepaliveInterval: CFAbsoluteTime
-    private let cacheInterval: CFAbsoluteTime
-    private var lastCacheTime: CFAbsoluteTime = 0
 
     // Track if we've been in fallback mode - when SCK resumes, we may need a keyframe
     // to prevent decode errors from reference frame discontinuity
@@ -526,26 +524,16 @@ private final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Se
     // Brief fallbacks (<200ms) don't need keyframes - they're just normal SCK latency
     private let keyframeThreshold: CFAbsoluteTime = 0.200
 
-    // Cached last frame for re-sending during gaps
-    // We copy the pixel data since SCK may reuse buffers
-    private var cachedPixelBuffer: CVPixelBuffer?
-    private var cachedContentRect: CGRect = .zero
-    private let cacheLock = NSLock()
-
     init(
         onFrame: @escaping @Sendable (CMSampleBuffer, CapturedFrameInfo) -> Void,
         onKeyframeRequest: @escaping @Sendable () -> Void,
         windowID: CGWindowID = 0,
-        frameGapThreshold: CFAbsoluteTime = 0.100,
-        keepaliveInterval: CFAbsoluteTime = 0.250,
-        cacheInterval: CFAbsoluteTime = 0.100
+        frameGapThreshold: CFAbsoluteTime = 0.100
     ) {
         self.onFrame = onFrame
         self.onKeyframeRequest = onKeyframeRequest
         self.windowID = windowID
         self.frameGapThreshold = frameGapThreshold
-        self.keepaliveInterval = keepaliveInterval
-        self.cacheInterval = cacheInterval
         super.init()
         startWatchdogTimer()
     }
@@ -574,15 +562,13 @@ private final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Se
         watchdogTimer = nil
     }
 
-    /// Clear the cached fallback frame (called during dimension changes)
-    /// This prevents stale old-resolution frames from being sent during resize
+    /// Reset fallback state (called during dimension changes)
     func clearCache() {
-        cacheLock.lock()
-        cachedPixelBuffer = nil
-        cachedContentRect = .zero
-        lastCacheTime = 0
-        cacheLock.unlock()
-        MirageLogger.capture("Cleared cached fallback frame for resize")
+        fallbackLock.lock()
+        wasInFallbackMode = false
+        fallbackStartTime = 0
+        fallbackLock.unlock()
+        MirageLogger.capture("Reset fallback state for resize")
     }
 
     /// Check if SCK has stopped delivering frames and trigger fallback
@@ -593,166 +579,21 @@ private final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Se
         let gap = now - lastDeliveredFrameTime
         guard gap > frameGapThreshold else { return }
 
-        // SCK has stopped delivering - re-send the cached frame
-        resendCachedFrame()
+        // SCK has stopped delivering - mark fallback mode
+        markFallbackModeForGap()
     }
 
-    /// Cache a copy of the pixel buffer for re-sending during gaps
-    private func cacheFrame(_ pixelBuffer: CVPixelBuffer, contentRect: CGRect) {
-        guard cacheInterval > 0 else { return }
-        let now = CFAbsoluteTimeGetCurrent()
-        if lastCacheTime > 0, now - lastCacheTime < cacheInterval {
-            return
-        }
-
-        // Create a copy of the pixel buffer (SCK may reuse the original)
-        guard let copiedBuffer = copyPixelBuffer(pixelBuffer) else { return }
-        lastCacheTime = now
-
-        cacheLock.lock()
-        cachedPixelBuffer = copiedBuffer
-        cachedContentRect = contentRect
-        cacheLock.unlock()
-    }
-
-    /// Copy a CVPixelBuffer to our own buffer
-    private func copyPixelBuffer(_ source: CVPixelBuffer) -> CVPixelBuffer? {
-        let width = CVPixelBufferGetWidth(source)
-        let height = CVPixelBufferGetHeight(source)
-        let pixelFormat = CVPixelBufferGetPixelFormatType(source)
-
-        var destBuffer: CVPixelBuffer?
-        let attrs: [CFString: Any] = [
-            kCVPixelBufferMetalCompatibilityKey: true
-        ]
-
-        let status = CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            width,
-            height,
-            pixelFormat,
-            attrs as CFDictionary,
-            &destBuffer
-        )
-
-        guard status == kCVReturnSuccess, let dest = destBuffer else {
-            return nil
-        }
-
-        CVPixelBufferLockBaseAddress(source, .readOnly)
-        CVPixelBufferLockBaseAddress(dest, [])
-        defer {
-            CVPixelBufferUnlockBaseAddress(source, .readOnly)
-            CVPixelBufferUnlockBaseAddress(dest, [])
-        }
-
-        // Copy pixel data
-        let srcAddr = CVPixelBufferGetBaseAddress(source)
-        let dstAddr = CVPixelBufferGetBaseAddress(dest)
-        let srcBytesPerRow = CVPixelBufferGetBytesPerRow(source)
-        let dstBytesPerRow = CVPixelBufferGetBytesPerRow(dest)
-
-        if srcBytesPerRow == dstBytesPerRow {
-            // Fast path: same layout, single memcpy
-            memcpy(dstAddr, srcAddr, srcBytesPerRow * height)
-        } else {
-            // Slow path: copy row by row
-            let copyBytes = min(srcBytesPerRow, dstBytesPerRow)
-            for row in 0..<height {
-                let srcRow = srcAddr! + row * srcBytesPerRow
-                let dstRow = dstAddr! + row * dstBytesPerRow
-                memcpy(dstRow, srcRow, copyBytes)
-            }
-        }
-
-        return dest
-    }
-
-    /// Re-send cached frame when SCK stops delivering
-    /// Note: CGWindowListCreateImage was deprecated in macOS 15, so we rely on
-    /// queueDepth (2) and fallback frame re-sending during SCK pauses.
-    private func resendCachedFrame() {
-        let now = CFAbsoluteTimeGetCurrent()
-        if lastKeepaliveTime > 0, now - lastKeepaliveTime < keepaliveInterval {
-            return
-        }
-
+    /// Mark fallback mode when SCK stops delivering frames.
+    private func markFallbackModeForGap() {
         // Mark that we're in fallback mode and record start time
         fallbackLock.lock()
-        if !wasInFallbackMode {
-            // First fallback frame - record when fallback started
-            fallbackStartTime = now
+        if wasInFallbackMode {
+            fallbackLock.unlock()
+            return
         }
+        fallbackStartTime = CFAbsoluteTimeGetCurrent()
         wasInFallbackMode = true
         fallbackLock.unlock()
-
-        cacheLock.lock()
-        guard let pixelBuffer = cachedPixelBuffer else {
-            cacheLock.unlock()
-            MirageLogger.capture("Fallback: no cached frame available")
-            return
-        }
-        let contentRect = cachedContentRect
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        cacheLock.unlock()
-
-        guard let sampleBuffer = createSampleBuffer(from: pixelBuffer) else {
-            MirageLogger.capture("Fallback: failed to create sample buffer from cached frame")
-            return
-        }
-
-        lastKeepaliveTime = now
-        fallbackFrameCount += 1
-        MirageLogger.capture("Fallback frame \(fallbackFrameCount): \(width)x\(height), contentRect=\(Int(contentRect.width))x\(Int(contentRect.height))")
-
-        // Update timing to pace keepalive fallback frames
-        lastDeliveredFrameTime = now
-
-        // Create frame info - mark as keepalive so it won't be dropped by StreamContext's 0% dirty filter
-        let frameInfo = CapturedFrameInfo(
-            contentRect: contentRect,
-            dirtyRects: [],
-            dirtyPercentage: 0.0,
-            isKeepalive: true
-        )
-
-        onFrame(sampleBuffer, frameInfo)
-    }
-
-    /// Create a CMSampleBuffer from a CVPixelBuffer
-    private func createSampleBuffer(from pixelBuffer: CVPixelBuffer) -> CMSampleBuffer? {
-        var formatDescription: CMFormatDescription?
-        let status = CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescriptionOut: &formatDescription
-        )
-
-        guard status == noErr, let format = formatDescription else {
-            return nil
-        }
-
-        var sampleBuffer: CMSampleBuffer?
-        var timingInfo = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 60),
-            presentationTimeStamp: CMTime(seconds: CACurrentMediaTime(), preferredTimescale: 1_000_000_000),
-            decodeTimeStamp: .invalid
-        )
-
-        let sampleStatus = CMSampleBufferCreateReadyWithImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescription: format,
-            sampleTiming: &timingInfo,
-            sampleBufferOut: &sampleBuffer
-        )
-
-        guard sampleStatus == noErr else {
-            return nil
-        }
-
-        return sampleBuffer
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -962,12 +803,6 @@ private final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Se
             dirtyRects: finalDirtyRects,
             dirtyPercentage: dirtyPercentage
         )
-
-        // Cache frame for re-sending during SCK pauses (menus, drags)
-        // Only cache frames with content changes to avoid stale cache
-        if dirtyPercentage > 0 {
-            cacheFrame(pixelBuffer, contentRect: contentRect)
-        }
 
         onFrame(sampleBuffer, frameInfo)
     }

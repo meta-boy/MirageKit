@@ -14,7 +14,6 @@ extension MirageHostService {
         to clientContext: ClientContext,
         displayResolution: CGSize,
         qualityPreset: MirageQualityPreset,
-        maxBitrate: Int?,
         keyFrameInterval: Int?,
         keyframeQuality: Float?,
         streamScale: CGFloat?,
@@ -66,13 +65,11 @@ extension MirageHostService {
         var config = encoderConfig
         let presetFrameRate = targetFrameRate ?? 60
         let presetConfig = qualityPreset.encoderConfiguration(for: presetFrameRate)
-        config.maxBitrate = presetConfig.maxBitrate
-        config.minBitrate = presetConfig.minBitrate
         config.keyFrameInterval = presetConfig.keyFrameInterval
         config.keyframeQuality = presetConfig.keyframeQuality
+        config.pixelFormat = presetConfig.pixelFormat
 
         config = config.withOverrides(
-            maxBitrate: maxBitrate,
             keyFrameInterval: keyFrameInterval,
             keyframeQuality: keyframeQuality
         )

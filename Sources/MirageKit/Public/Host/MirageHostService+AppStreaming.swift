@@ -87,11 +87,11 @@ extension MirageHostService {
                         to: clientContext.client,
                         dataPort: nil,
                         clientDisplayResolution: nil,
-                        maxBitrate: encoderSettings?.maxBitrate,
                         keyFrameInterval: encoderSettings?.keyFrameInterval,
                         keyframeQuality: encoderSettings?.keyframeQuality,
                         streamScale: streamScale,
-                        targetFrameRate: targetFrameRate
+                        targetFrameRate: targetFrameRate,
+                        pixelFormat: encoderSettings?.pixelFormat
                     )
 
                     let isResizable = await appStreamManager.checkWindowResizability(
@@ -141,11 +141,11 @@ extension MirageHostService {
                 to: clientContext.client,
                 dataPort: nil,
                 clientDisplayResolution: nil,
-                maxBitrate: encoderSettings?.maxBitrate,
                 keyFrameInterval: encoderSettings?.keyFrameInterval,
                 keyframeQuality: encoderSettings?.keyframeQuality,
                 streamScale: streamScale,
-                targetFrameRate: targetFrameRate
+                targetFrameRate: targetFrameRate,
+                pixelFormat: encoderSettings?.pixelFormat
             )
 
             let isResizable = await appStreamManager.checkWindowResizability(
@@ -295,9 +295,9 @@ extension MirageHostService {
             MirageLogger.host("Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)")
 
             let presetConfig = request.preferredQuality.encoderConfiguration(for: targetFrameRate)
-            let maxBitrate = request.maxBitrate ?? presetConfig.maxBitrate
             let keyFrameInterval = request.keyFrameInterval ?? presetConfig.keyFrameInterval
             let keyframeQuality = request.keyframeQuality ?? presetConfig.keyframeQuality
+            let pixelFormat = presetConfig.pixelFormat
             let streamScale = request.streamScale ?? 1.0
 
             // Check if app is available for streaming
@@ -366,11 +366,11 @@ extension MirageHostService {
                         clientDisplayResolution: request.displayWidth != nil && request.displayHeight != nil
                             ? CGSize(width: request.displayWidth!, height: request.displayHeight!)
                             : nil,
-                        maxBitrate: maxBitrate,
                         keyFrameInterval: keyFrameInterval,
                         keyframeQuality: keyframeQuality,
                         streamScale: streamScale,
-                        targetFrameRate: targetFrameRate
+                        targetFrameRate: targetFrameRate,
+                        pixelFormat: pixelFormat
                     )
 
                     // Check window resizability

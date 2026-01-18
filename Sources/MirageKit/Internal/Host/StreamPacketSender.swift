@@ -15,7 +15,6 @@ actor StreamPacketSender {
         let sequenceNumberStart: UInt32
         let additionalFlags: FrameFlags
         let dimensionToken: UInt16
-        let targetBitrate: Int
         let logPrefix: String
         let generation: UInt32
     }
@@ -28,9 +27,8 @@ actor StreamPacketSender {
     // Snapshot read from encoder callbacks to tag enqueued frames.
     nonisolated(unsafe) private var generation: UInt32 = 0
     nonisolated(unsafe) private var queuedBytes: Int = 0
-    nonisolated(unsafe) private let queueLock = NSLock()
+    private let queueLock = NSLock()
     private let pacingBurstSize = 8
-    private let minimumPacedFrameBytes = 32 * 1024
 
     init(maxPayloadSize: Int, onEncodedFrame: @escaping @Sendable (Data, FrameHeader) -> Void) {
         self.maxPayloadSize = maxPayloadSize
@@ -75,6 +73,10 @@ actor StreamPacketSender {
         MirageLogger.stream("Packet send queue reset (gen \(generation), \(reason))")
     }
 
+    nonisolated func queuedBytesSnapshot() -> Int {
+        queueLock.withLock { queuedBytes }
+    }
+
     nonisolated func currentGenerationSnapshot() -> UInt32 {
         generation
     }
@@ -85,12 +87,6 @@ actor StreamPacketSender {
             queuedBytes += item.encodedData.count
         }
         sendContinuation?.yield(item)
-    }
-
-    func estimatedQueueDelay(bitrate: Int) -> CFAbsoluteTime {
-        guard bitrate > 0 else { return 0 }
-        let bytes = queueLock.withLock { queuedBytes }
-        return Double(bytes * 8) / Double(bitrate)
     }
 
     private func handle(_ item: WorkItem) async {
@@ -117,13 +113,8 @@ actor StreamPacketSender {
         let totalFragments = (item.encodedData.count + maxPayload - 1) / maxPayload
         let timestamp = UInt64(CMTimeGetSeconds(item.presentationTime) * 1_000_000_000)
 
-        let shouldPace = item.targetBitrate > 0 && item.encodedData.count >= minimumPacedFrameBytes
-        let sendDuration = shouldPace
-            ? Double(item.encodedData.count * 8) / Double(item.targetBitrate)
-            : 0
-        let burstSize = shouldPace ? min(pacingBurstSize, totalFragments) : totalFragments
+        let burstSize = min(pacingBurstSize, totalFragments)
         let burstCount = max(1, (totalFragments + burstSize - 1) / burstSize)
-        let startTime = CFAbsoluteTimeGetCurrent()
 
         var currentSequence = item.sequenceNumberStart
 
@@ -166,16 +157,6 @@ actor StreamPacketSender {
                 packet.append(fragmentData)
 
                 onEncodedFrame(packet, header)
-            }
-
-            if shouldPace {
-                let targetTime = startTime + sendDuration * Double(burstIndex + 1) / Double(burstCount)
-                let now = CFAbsoluteTimeGetCurrent()
-                let remaining = targetTime - now
-                if remaining > 0.000_5 {
-                    let sleepMicros = max(1, Int(remaining * 1_000_000))
-                    try? await Task.sleep(for: .microseconds(sleepMicros))
-                }
             }
         }
 

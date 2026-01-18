@@ -49,11 +49,11 @@ extension MirageHostService {
                 to: client,
                 dataPort: nil,
                 clientDisplayResolution: displayResolution,
-                maxBitrate: encoderSettings.maxBitrate,
                 keyFrameInterval: encoderSettings.keyFrameInterval,
                 keyframeQuality: encoderSettings.keyframeQuality,
                 streamScale: streamScale,
-                targetFrameRate: targetFrameRate
+                targetFrameRate: targetFrameRate,
+                pixelFormat: encoderSettings.pixelFormat
             )
             MirageLogger.host("Auto-started stream for new independent window \(window.id)")
         } catch {

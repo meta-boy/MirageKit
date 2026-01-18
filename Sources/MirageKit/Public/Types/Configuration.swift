@@ -8,12 +8,6 @@ public struct MirageEncoderConfiguration: Sendable {
     /// Video codec to use
     public var codec: MirageVideoCodec
 
-    /// Maximum bitrate in bits per second
-    public var maxBitrate: Int
-
-    /// Minimum bitrate in bits per second
-    public var minBitrate: Int
-
     /// Target frame rate
     public var targetFrameRate: Int
 
@@ -26,6 +20,9 @@ public struct MirageEncoderConfiguration: Sendable {
     /// Scale factor for retina displays
     public var scaleFactor: CGFloat
 
+    /// Pixel format for capture and encode
+    public var pixelFormat: MiragePixelFormat
+
     /// Quality level for encoded frames (0.0-1.0, where 1.0 is maximum quality)
     /// Lower values reduce frame size significantly with minimal visual impact
     /// Default 0.8 reduces frame size by ~40-50% for better UDP reliability
@@ -33,38 +30,36 @@ public struct MirageEncoderConfiguration: Sendable {
 
     public init(
         codec: MirageVideoCodec = .hevc,
-        maxBitrate: Int = 100_000_000,
-        minBitrate: Int = 5_000_000,
         targetFrameRate: Int = 60,
         keyFrameInterval: Int = 600,
         colorSpace: MirageColorSpace = .displayP3,
         scaleFactor: CGFloat = 2.0,
+        pixelFormat: MiragePixelFormat = .bgr10a2,
         keyframeQuality: Float = 0.8  // Lower quality yields smaller frames for better UDP reliability
     ) {
         self.codec = codec
-        self.maxBitrate = maxBitrate
-        self.minBitrate = minBitrate
         self.targetFrameRate = targetFrameRate
         self.keyFrameInterval = keyFrameInterval
         self.colorSpace = colorSpace
         self.scaleFactor = scaleFactor
+        self.pixelFormat = pixelFormat
         self.keyframeQuality = keyframeQuality
     }
 
     /// Default configuration for high-bandwidth local network
     public static let highQuality = MirageEncoderConfiguration(
-        maxBitrate: 200_000_000,
-        minBitrate: 50_000_000,
         targetFrameRate: 120,
-        keyFrameInterval: 600
+        keyFrameInterval: 600,
+        pixelFormat: .bgr10a2,
+        keyframeQuality: 1.0
     )
 
     /// Default configuration for lower bandwidth
     public static let balanced = MirageEncoderConfiguration(
-        maxBitrate: 50_000_000,
-        minBitrate: 10_000_000,
         targetFrameRate: 120,
-        keyFrameInterval: 600
+        keyFrameInterval: 600,
+        pixelFormat: .bgra8,
+        keyframeQuality: 0.75
     )
 
     /// Configuration optimized for low-latency text applications
@@ -72,45 +67,34 @@ public struct MirageEncoderConfiguration: Sendable {
     /// - Longer keyframe interval (fewer large frames to fragment)
     /// - Lower quality (30-50% smaller frames)
     /// - Aggressive frame skipping (always-latest-frame strategy)
+    /// - 8-bit pixel format for faster encode
     /// Best for: IDEs, text editors, terminals - any app where responsiveness matters
     public static let lowLatency = MirageEncoderConfiguration(
         codec: .hevc,
-        maxBitrate: 150_000_000,
-        minBitrate: 20_000_000,
         targetFrameRate: 120,
         keyFrameInterval: 600,
         colorSpace: .displayP3,
         scaleFactor: 2.0,
+        pixelFormat: .bgra8,
         keyframeQuality: 0.85
     )
-
-    /// Create a copy with a different max bitrate
-    /// Use this to override the default bitrate based on client network capabilities
-    public func withMaxBitrate(_ newMaxBitrate: Int) -> MirageEncoderConfiguration {
-        var config = self
-        config.maxBitrate = newMaxBitrate
-        // Also update minBitrate to be proportional (10% of max as a floor)
-        config.minBitrate = max(5_000_000, newMaxBitrate / 10)
-        return config
-    }
 
     /// Create a copy with multiple encoder setting overrides
     /// Use this for full client control over encoding parameters
     public func withOverrides(
-        maxBitrate: Int? = nil,
         keyFrameInterval: Int? = nil,
-        keyframeQuality: Float? = nil
+        keyframeQuality: Float? = nil,
+        pixelFormat: MiragePixelFormat? = nil
     ) -> MirageEncoderConfiguration {
         var config = self
-        if let bitrate = maxBitrate {
-            config.maxBitrate = bitrate
-            config.minBitrate = max(5_000_000, bitrate / 10)
-        }
         if let interval = keyFrameInterval {
             config.keyFrameInterval = interval
         }
         if let quality = keyframeQuality {
             config.keyframeQuality = quality
+        }
+        if let pixelFormat {
+            config.pixelFormat = pixelFormat
         }
         return config
     }
@@ -149,6 +133,19 @@ public enum MirageColorSpace: String, Sendable, CaseIterable, Codable {
         case .sRGB: return "sRGB"
         case .displayP3: return "Display P3"
         // case .hdr: return "HDR (Rec. 2020)"
+        }
+    }
+}
+
+/// Pixel format for stream capture and encoding.
+public enum MiragePixelFormat: String, Sendable, CaseIterable, Codable {
+    case bgr10a2
+    case bgra8
+
+    public var displayName: String {
+        switch self {
+        case .bgr10a2: return "10-bit"
+        case .bgra8: return "8-bit"
         }
     }
 }
@@ -204,12 +201,12 @@ public struct MirageNetworkConfiguration: Sendable {
 // MARK: - Quality Presets
 
 /// Quality preset for quick configuration.
-/// Presets define fixed encoder caps that can be overridden by the client.
+/// Presets define encoder quality defaults that can be overridden by the client.
 public enum MirageQualityPreset: String, Sendable, CaseIterable, Codable {
-    case ultra       // Highest bitrate
-    case high        // High bitrate
-    case medium      // Balanced bitrate
-    case low         // Low bitrate
+    case ultra       // Highest quality
+    case high        // High quality
+    case medium      // Balanced quality
+    case low         // Low quality
     case lowLatency  // Optimized for text apps - aggressive frame skipping, full quality
 
     public var displayName: String {
@@ -231,23 +228,25 @@ public enum MirageQualityPreset: String, Sendable, CaseIterable, Codable {
         switch self {
         case .ultra:
             return MirageEncoderConfiguration(
-                maxBitrate: 200_000_000,
+                pixelFormat: .bgr10a2,
                 keyframeQuality: 1.0
             )
         case .high:
             return MirageEncoderConfiguration(
-                maxBitrate: isHighRefresh ? 130_000_000 : 100_000_000,
+                pixelFormat: .bgr10a2,
                 keyframeQuality: isHighRefresh ? 0.88 : 0.95
             )
         case .medium:
             return MirageEncoderConfiguration(
-                maxBitrate: isHighRefresh ? 85_000_000 : 50_000_000,
-                keyframeQuality: isHighRefresh ? 0.60 : 0.75
+                colorSpace: .displayP3,
+                pixelFormat: .bgr10a2,
+                keyframeQuality: isHighRefresh ? 0.70 : 0.80
             )
         case .low:
             return MirageEncoderConfiguration(
-                maxBitrate: isHighRefresh ? 8_000_000 : 12_000_000,
-                keyframeQuality: isHighRefresh ? 0.06 : 0.12
+                colorSpace: .sRGB,
+                pixelFormat: .bgra8,
+                keyframeQuality: isHighRefresh ? 0.18 : 0.24
             )
         case .lowLatency:
             return .lowLatency

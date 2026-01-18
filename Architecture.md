@@ -104,13 +104,13 @@ flowchart LR
 - **TCP control**: `ControlMessage` envelopes typed JSON payloads (window lists, input events, session state, app streaming, menu bar).
 - **UDP video**: `FrameHeader` carries sequencing, checksum, content rect, and dimension tokens.
 - **Peer-to-peer**: `enablePeerToPeer` configures AWDL for discovery and transport.
-- **Fragmentation**: large encoded frames are split into multiple UDP packets; keyframes are paced to reduce burst loss.
+- **Fragmentation**: large encoded frames are split into multiple UDP packets; keyframes are sent in bounded bursts.
 
 ## Quality and Performance Tuning
 
 ### Quality Presets
 
-`MirageQualityPreset` configures bitrate and encoder quality per 60/120Hz target. `.lowLatency` uses aggressive frame skipping and smaller frames for responsiveness.
+`MirageQualityPreset` configures encoder quality per 60/120Hz target. `.lowLatency` uses aggressive frame skipping and smaller frames for responsiveness.
 
 ### Backpressure
 

@@ -50,21 +50,18 @@ actor StreamContext {
     /// Using nonisolated(unsafe) because we need to access from @Sendable encoder callback
     /// and the access pattern is safe (always set before read, in frame order)
     nonisolated(unsafe) private var currentContentRect: CGRect = .zero
-    /// Snapshot of current bitrate for encoder callbacks
-    /// Updated on the actor whenever bitrate changes
-    nonisolated(unsafe) private var bitrateSnapshot: Int = 0
-    /// Snapshot of current max bitrate for keyframe pacing
-    nonisolated(unsafe) private var maxBitrateSnapshot: Int = 0
 
     // Always-latest-frame tracking: ensures we encode the most recent frame, dropping stale ones
     private var pendingFrame: (wrapper: SampleBufferWrapper, frameInfo: CapturedFrameInfo)?
-    private var isCurrentlyEncoding: Bool = false
-    private var encodeStartTime: CFAbsoluteTime = 0
+    private var inFlightCount: Int = 0
+    private let maxInFlightFrames: Int
+    private var lastEncodeActivityTime: CFAbsoluteTime = 0
+    private var isProcessingPendingFrame: Bool = false
     private var droppedFrameCount: UInt64 = 0
 
-    /// Maximum time to wait for an encode before considering encoder stuck (ms)
+    /// Maximum time to wait for encode progress before considering encoder stuck (ms)
     /// During drag operations, VideoToolbox can block - we need to detect this and recover
-    private let maxEncodeTimeMs: Double = 200
+    private let maxEncodeTimeMs: Double
 
     /// Flag indicating encoder needs to be reset on next encode attempt
     /// Set when encoder is detected as stuck, cleared after reset
@@ -82,18 +79,13 @@ actor StreamContext {
     /// Set before dimension updates begin, cleared after completion
     private var isResizing: Bool = false
 
-    // MARK: - Bitrate
+    // MARK: - Backpressure
 
-    /// Bitrate bounds for current stream scale
-    private let baseMaxBitrate: Int
-    private let baseMinBitrate: Int
-    private var maxBitrate: Int
-    private var minBitrate: Int
-    private var currentBitrate: Int
-
-    /// Packet queue backpressure thresholds (seconds)
-    private let maxQueueDelay: CFAbsoluteTime = 0.120
-    private let queueDelayHighThreshold: CFAbsoluteTime = 0.090
+    /// Packet queue backpressure thresholds (bytes)
+    private let minQueuedBytes: Int = 1_000_000
+    private let maxQueuedBytesCap: Int = 8_000_000
+    private var maxQueuedBytes: Int = 2_000_000
+    private var queuePressureBytes: Int = 1_500_000
     private let backpressureLogInterval: CFAbsoluteTime = 1.0
     private var lastBackpressureLogTime: CFAbsoluteTime = 0
 
@@ -108,7 +100,7 @@ actor StreamContext {
     private var keyframeMaxIntervalSeconds: CFAbsoluteTime = 0
     private var lastKeyframeTime: CFAbsoluteTime = 0
 
-    /// Frame rate used for bitrate budgeting
+    /// Frame rate for cadence and queue limits
     private var currentFrameRate: Int
 
     /// Smoothed dirty percentage (0-1) used to avoid keyframes during high motion.
@@ -146,19 +138,10 @@ actor StreamContext {
         self.streamScale = clampedScale
         self.additionalFrameFlags = additionalFrameFlags
         self.maxPayloadSize = miragePayloadSize(maxPacketSize: maxPacketSize)
-        self.baseMaxBitrate = encoderConfig.maxBitrate
-        self.baseMinBitrate = encoderConfig.minBitrate
-        let bounds = StreamContext.scaledBitrateBounds(
-            maxBitrate: encoderConfig.maxBitrate,
-            minBitrate: encoderConfig.minBitrate,
-            scale: clampedScale
-        )
-        self.maxBitrate = bounds.max
-        self.minBitrate = bounds.min
-        self.currentBitrate = self.maxBitrate
-        self.bitrateSnapshot = self.currentBitrate
-        self.maxBitrateSnapshot = self.maxBitrate
         self.currentFrameRate = encoderConfig.targetFrameRate
+        let pipelineDepth = encoderConfig.targetFrameRate >= 120 ? 2 : 1
+        self.maxInFlightFrames = max(1, pipelineDepth)
+        self.maxEncodeTimeMs = encoderConfig.targetFrameRate >= 120 ? 900 : 600
         self.shouldEncodeFrames = false
         let cadence = Self.keyframeCadence(
             intervalFrames: encoderConfig.keyFrameInterval,
@@ -171,23 +154,6 @@ actor StreamContext {
     private static func clampStreamScale(_ scale: CGFloat) -> CGFloat {
         guard scale > 0 else { return 1.0 }
         return max(0.1, min(1.0, scale))
-    }
-
-    private static func scaledBitrate(_ bitrate: Int, scale: CGFloat) -> Int {
-        guard bitrate > 0 else { return 0 }
-        let clampedScale = clampStreamScale(scale)
-        let factor = Double(clampedScale * clampedScale)
-        return Int((Double(bitrate) * factor).rounded())
-    }
-
-    private static func scaledBitrateBounds(
-        maxBitrate: Int,
-        minBitrate: Int,
-        scale: CGFloat
-    ) -> (max: Int, min: Int) {
-        let scaledMax = max(1_000_000, scaledBitrate(maxBitrate, scale: scale))
-        let scaledMin = max(500_000, scaledBitrate(minBitrate, scale: scale))
-        return (max: scaledMax, min: min(scaledMax, scaledMin))
     }
 
     private static func alignedEvenPixel(_ value: CGFloat) -> Int {
@@ -216,44 +182,21 @@ actor StreamContext {
         if streamScale > 0 {
             baseCaptureSize = CGSize(width: bufferSize.width / streamScale, height: bufferSize.height / streamScale)
         }
-        updateResolutionAwareBitrateFloor()
+        updateQueueLimits()
     }
 
-    private func updateResolutionAwareBitrateFloor() {
+    private func updateQueueLimits() {
         guard currentEncodedSize.width > 0, currentEncodedSize.height > 0 else { return }
         let pixelCount = Double(currentEncodedSize.width * currentEncodedSize.height)
-        let frameRate = max(1.0, Double(currentFrameRate))
-        let bytesPerPixel = 0.06
-        let targetBitsPerSecond = pixelCount * frameRate * bytesPerPixel * 8.0
-        let resolutionFloor = Int(targetBitsPerSecond.rounded())
-        let floorBitrate = min(maxBitrate, resolutionFloor)
-        if floorBitrate > minBitrate {
-            minBitrate = floorBitrate
-        }
-        if minBitrate > maxBitrate {
-            minBitrate = maxBitrate
-        }
-        if currentBitrate < minBitrate {
-            currentBitrate = minBitrate
-            bitrateSnapshot = currentBitrate
-            maxBitrateSnapshot = maxBitrate
-            Task { await encoder?.updateBitrate(currentBitrate) }
-        }
-
-        if currentBitrate > maxBitrate {
-            currentBitrate = maxBitrate
-            bitrateSnapshot = currentBitrate
-            maxBitrateSnapshot = maxBitrate
-            Task { await encoder?.updateBitrate(currentBitrate) }
-        }
+        let frameRateFactor = currentFrameRate >= 120 ? 0.30 : 0.20
+        let computed = Int((pixelCount * frameRateFactor).rounded())
+        let clamped = max(minQueuedBytes, min(maxQueuedBytesCap, computed))
+        maxQueuedBytes = clamped
+        queuePressureBytes = max(minQueuedBytes, Int(Double(clamped) * 0.75))
     }
 
-    private func recordKeyframeSendEstimate(frameSize: Int, bitrate: Int) {
-        guard frameSize > 0, bitrate > 0 else { return }
-        let now = CFAbsoluteTimeGetCurrent()
-        let estimatedDuration = Double(frameSize * 8) / Double(bitrate)
-        let clampedDuration = min(estimatedDuration, keyframeInFlightCap)
-        let deadline = now + clampedDuration
+    private func markKeyframeInFlight() {
+        let deadline = CFAbsoluteTimeGetCurrent() + keyframeInFlightCap
         if deadline > keyframeSendDeadline {
             keyframeSendDeadline = deadline
         }
@@ -305,7 +248,6 @@ actor StreamContext {
     }
 
     private func updateMotionState(with frameInfo: CapturedFrameInfo) {
-        guard !frameInfo.isKeepalive else { return }
         let normalized = max(0.0, min(1.0, Double(frameInfo.dirtyPercentage) / 100.0))
         if smoothedDirtyPercentage == 0 {
             smoothedDirtyPercentage = normalized
@@ -315,7 +257,7 @@ actor StreamContext {
         }
     }
 
-    private func shouldSendScheduledKeyframe(queueDelay: CFAbsoluteTime) -> Bool {
+    private func shouldSendScheduledKeyframe(queueBytes: Int) -> Bool {
         guard shouldEncodeFrames else { return false }
         guard !isResizing else { return false }
         guard lastKeyframeTime > 0 else { return false }
@@ -324,7 +266,7 @@ actor StreamContext {
         guard elapsed >= keyframeIntervalSeconds else { return false }
 
         let highMotion = smoothedDirtyPercentage >= keyframeMotionThreshold
-        let queueBackedUp = queueDelay >= queueDelayHighThreshold
+        let queueBackedUp = queueBytes >= queuePressureBytes
         let allowDespitePressure = elapsed >= keyframeMaxIntervalSeconds
 
         if (highMotion || queueBackedUp) && !allowDespitePressure {
@@ -355,25 +297,29 @@ actor StreamContext {
 
         // Check if encoder has been stuck for too long (common during drag operations)
         // If so, mark for reset and process new frame
-        let encoderStuck = isCurrentlyEncoding && encodeStartTime > 0 &&
-            (CFAbsoluteTimeGetCurrent() - encodeStartTime) * 1000 > maxEncodeTimeMs
+        let encoderStuck = inFlightCount > 0 && lastEncodeActivityTime > 0 &&
+            (CFAbsoluteTimeGetCurrent() - lastEncodeActivityTime) * 1000 > maxEncodeTimeMs
 
         if encoderStuck {
-            let stuckTime = (CFAbsoluteTimeGetCurrent() - encodeStartTime) * 1000
+            let stuckTime = (CFAbsoluteTimeGetCurrent() - lastEncodeActivityTime) * 1000
             MirageLogger.stream("Encoder stuck for \(Int(stuckTime))ms, scheduling reset")
-            isCurrentlyEncoding = false
+            inFlightCount = 0
+            lastEncodeActivityTime = 0
             needsEncoderReset = true  // Will be handled in processLatestFrame
         }
 
-        // If we're not currently encoding (or encoder was stuck), start encoding the latest
-        if !isCurrentlyEncoding {
-            Task { await processLatestFrame() }
-        }
-        // If we ARE encoding, the new frame will be picked up when encoding completes
+        scheduleProcessing()
     }
 
-    /// Process the pending frame (encodes it using HEVC and checks for newer frames)
-    private func processLatestFrame() async {
+    private func scheduleProcessing() {
+        guard !isProcessingPendingFrame else { return }
+        isProcessingPendingFrame = true
+        Task { await processPendingFrames() }
+    }
+
+    /// Process pending frames (encodes using HEVC and keeps only the most recent)
+    private func processPendingFrames() async {
+        defer { isProcessingPendingFrame = false }
         // Skip encoding during resize operations - prevents decode errors and wasted CPU
         // Frames are dropped but connection stays alive; keyframe forced after resize
         if isResizing || !shouldEncodeFrames {
@@ -381,115 +327,96 @@ actor StreamContext {
             return
         }
 
-        guard !isCurrentlyEncoding else {
-            if let (_, frameInfo) = pendingFrame, frameInfo.isKeepalive {
-                MirageLogger.stream("Keepalive frame waiting (encoder busy)")
+        while inFlightCount < maxInFlightFrames {
+            guard let (wrapper, frameInfo) = pendingFrame else { return }
+            pendingFrame = nil  // Clear - we're processing this one
+
+            if let pixelBuffer = CMSampleBufferGetImageBuffer(wrapper.buffer) {
+                let bufferSize = CGSize(
+                    width: CVPixelBufferGetWidth(pixelBuffer),
+                    height: CVPixelBufferGetHeight(pixelBuffer)
+                )
+                updateCaptureSizesIfNeeded(bufferSize)
             }
-            return
-        }
-        guard let (wrapper, frameInfo) = pendingFrame else { return }
+            updateMotionState(with: frameInfo)
 
-        pendingFrame = nil  // Clear - we're processing this one
+            // Reset encoder if it was stuck on previous frame
+            // This invalidates the VTCompressionSession and creates a new one
+            // Uses cooldown to prevent cascading resets during SCK pauses
+            var didResetEncoder = false
+            if needsEncoderReset {
+                let now = CFAbsoluteTimeGetCurrent()
+                if now - lastEncoderResetTime > encoderResetCooldown {
+                    MirageLogger.stream("Resetting stuck encoder before next frame")
 
-        if let pixelBuffer = CMSampleBufferGetImageBuffer(wrapper.buffer) {
-            let bufferSize = CGSize(
-                width: CVPixelBufferGetWidth(pixelBuffer),
-                height: CVPixelBufferGetHeight(pixelBuffer)
-            )
-            updateCaptureSizesIfNeeded(bufferSize)
-        }
-        updateMotionState(with: frameInfo)
-
-        // Reset encoder if it was stuck on previous frame
-        // This invalidates the VTCompressionSession and creates a new one
-        // Uses cooldown to prevent cascading resets during SCK pauses
-        var didResetEncoder = false
-        if needsEncoderReset {
-            let now = CFAbsoluteTimeGetCurrent()
-            if now - lastEncoderResetTime > encoderResetCooldown {
-                MirageLogger.stream("Resetting stuck encoder before next frame")
-
-                do {
-                    await packetSender?.bumpGeneration(reason: "encoder reset")
-                    try await encoder?.reset()
-                    didResetEncoder = true
-                    lastEncoderResetTime = now
-                } catch {
-                    MirageLogger.error(.stream, "Encoder reset failed: \(error)")
+                    do {
+                        await packetSender?.bumpGeneration(reason: "encoder reset")
+                        try await encoder?.reset()
+                        didResetEncoder = true
+                        lastEncoderResetTime = now
+                    } catch {
+                        MirageLogger.error(.stream, "Encoder reset failed: \(error)")
+                    }
+                } else {
+                    let remainingSeconds = (encoderResetCooldown - (now - lastEncoderResetTime))
+                        .formatted(.number.precision(.fractionLength(1)))
+                    MirageLogger.stream("Encoder reset skipped (cooldown active, \(remainingSeconds)s remaining)")
                 }
-            } else {
-                let remainingSeconds = (encoderResetCooldown - (now - lastEncoderResetTime))
-                    .formatted(.number.precision(.fractionLength(1)))
-                MirageLogger.stream("Encoder reset skipped (cooldown active, \(remainingSeconds)s remaining)")
+                needsEncoderReset = false  // Clear flag even if we skipped due to cooldown
             }
-            needsEncoderReset = false  // Clear flag even if we skipped due to cooldown
-        }
 
-        // Skip encoding if nothing changed (client keeps previous frame)
-        // EXCEPT for keepalive frames - these must be sent to maintain stream during SCK pauses
-        // This should rarely happen as CaptureStreamOutput already filters these
-        if frameInfo.dirtyPercentage == 0 && frameInfo.dirtyRects.isEmpty && !frameInfo.isKeepalive {
-            // Check for newer frames
-            if pendingFrame != nil {
-                Task { await processLatestFrame() }
+            // Skip encoding if nothing changed (client keeps previous frame)
+            if frameInfo.dirtyPercentage == 0 && frameInfo.dirtyRects.isEmpty {
+                continue
             }
-            return
-        }
 
-        let queueDelay = await packetSender?.estimatedQueueDelay(bitrate: currentBitrate) ?? 0
+            let queueBytes = packetSender?.queuedBytesSnapshot() ?? 0
 
-        // Encode using HEVC - P-frames automatically encode only what changed
-        // Keyframes are handled by scheduled cadence + recovery; don't use capture hints.
-        var forceKeyframe = didResetEncoder
-        var scheduledKeyframe = false
-        if shouldSendScheduledKeyframe(queueDelay: queueDelay) {
-            forceKeyframe = true
-            scheduledKeyframe = true
-        }
-        if !forceKeyframe, let captureEngine {
-            let shouldRequest = await captureEngine.consumePendingKeyframeRequest()
-            if shouldRequest, !shouldThrottleKeyframeRequest(requestLabel: "Fallback keyframe", checkInFlight: true) {
-                markKeyframeSent()
+            // Encode using HEVC - P-frames automatically encode only what changed
+            // Keyframes are handled by scheduled cadence + recovery; don't use capture hints.
+            var forceKeyframe = didResetEncoder
+            if shouldSendScheduledKeyframe(queueBytes: queueBytes) {
                 forceKeyframe = true
-                scheduledKeyframe = true
             }
-        }
-
-        if queueDelay > maxQueueDelay && !forceKeyframe && !frameInfo.isKeepalive {
-            let now = CFAbsoluteTimeGetCurrent()
-            droppedFrameCount += 1
-            if now - lastBackpressureLogTime > backpressureLogInterval {
-                lastBackpressureLogTime = now
-                MirageLogger.stream("Backpressure: dropping frame (queue \(Int(queueDelay * 1000))ms)")
+            if !forceKeyframe, let captureEngine {
+                let shouldRequest = await captureEngine.consumePendingKeyframeRequest()
+                if shouldRequest, !shouldThrottleKeyframeRequest(requestLabel: "Fallback keyframe", checkInFlight: true) {
+                    markKeyframeSent()
+                    forceKeyframe = true
+                }
             }
-            if pendingFrame != nil {
-                Task { await processLatestFrame() }
+
+            if queueBytes > maxQueuedBytes && !forceKeyframe {
+                let now = CFAbsoluteTimeGetCurrent()
+                droppedFrameCount += 1
+                if now - lastBackpressureLogTime > backpressureLogInterval {
+                    lastBackpressureLogTime = now
+                    let queuedKB = (Double(queueBytes) / 1024.0).rounded()
+                    MirageLogger.stream("Backpressure: dropping frame (queue \(Int(queuedKB))KB)")
+                }
+                continue
             }
-            return
-        }
 
-        if frameInfo.isKeepalive {
-            MirageLogger.stream("Encoding keepalive frame (dirty=\(frameInfo.dirtyPercentage)%)")
-        }
+            let encodeStartTime = CFAbsoluteTimeGetCurrent()
+            if inFlightCount == 0 {
+                lastEncodeActivityTime = encodeStartTime
+            }
+            inFlightCount += 1
 
-        isCurrentlyEncoding = true
-        encodeStartTime = CFAbsoluteTimeGetCurrent()
+            // Store contentRect for use in frame header
+            setContentRect(frameInfo.contentRect)
 
-        // Store contentRect for use in frame header
-        setContentRect(frameInfo.contentRect)
-
-        do {
-            try await encoder?.encodeFrame(wrapper, forceKeyframe: forceKeyframe)
-        } catch {
-            MirageLogger.error(.stream, "Encode error: \(error)")
-        }
-
-        isCurrentlyEncoding = false
-        encodeStartTime = 0
-
-        // If a new frame arrived while encoding, process it immediately
-        if pendingFrame != nil {
-            Task { await processLatestFrame() }
+            do {
+                guard let encoder else {
+                    await finishEncoding()
+                    continue
+                }
+                try await encoder.encodeFrame(wrapper, forceKeyframe: forceKeyframe)
+            } catch {
+                MirageLogger.error(.stream, "Encode error: \(error)")
+                await finishEncoding()
+                continue
+            }
         }
     }
 
@@ -510,6 +437,16 @@ actor StreamContext {
         }
 
         MirageLogger.stream("UDP registration confirmed, encoding resumed")
+    }
+
+    private func finishEncoding() async {
+        guard inFlightCount > 0 else { return }
+        inFlightCount -= 1
+        lastEncodeActivityTime = CFAbsoluteTimeGetCurrent()
+
+        if pendingFrame != nil && inFlightCount < maxInFlightFrames {
+            scheduleProcessing()
+        }
     }
 
     func start(
@@ -543,10 +480,9 @@ actor StreamContext {
         currentEncodedSize = outputSize
         captureMode = .window
         lastWindowFrame = window.frame
-        updateResolutionAwareBitrateFloor()
-        MirageLogger.stream("Stream init: scale=\(streamScale), encoded=\(Int(outputSize.width))x\(Int(outputSize.height)), bitrate=\(currentBitrate / 1_000_000)Mbps (min=\(minBitrate / 1_000_000), max=\(maxBitrate / 1_000_000))")
+        updateQueueLimits()
+        MirageLogger.stream("Stream init: scale=\(streamScale), encoded=\(Int(outputSize.width))x\(Int(outputSize.height)), queue=\(maxQueuedBytes / 1024)KB")
         try await encoder.createSession(width: Int(outputSize.width), height: Int(outputSize.height))
-        await encoder.updateBitrate(currentBitrate)
 
         // Pre-heat encoder to eliminate warm-up latency on first real frames
         // Without this, first 5-10 frames take 70-80ms instead of 3-4ms
@@ -559,7 +495,8 @@ actor StreamContext {
         var localFrameNumber: UInt32 = 0
         var localSequenceNumber: UInt32 = 0
 
-        await encoder.startEncoding { [weak self] encodedData, isKeyframe, presentationTime in
+        await encoder.startEncoding(
+            onEncodedFrame: { [weak self] encodedData, isKeyframe, presentationTime in
             // CRITICAL: Return immediately from VT callback to avoid blocking encoder during drags/menus
             // Packets are enqueued for serialized fragmentation/sending
             guard let self else { return }
@@ -574,17 +511,13 @@ actor StreamContext {
             localSequenceNumber += UInt32(totalFragments)
             localFrameNumber += 1
 
-            let frameSize = encodedData.count
-
             let flags = self.additionalFrameFlags
             let dimToken = self.dimensionToken
 
             let generation = packetSender.currentGenerationSnapshot()
-            let targetBitrate = self.bitrateSnapshot
-            let maxBitrate = self.maxBitrateSnapshot
             if isKeyframe {
                 Task {
-                    await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: maxBitrate)
+                    await self.markKeyframeInFlight()
                     await self.markKeyframeSent()
                 }
             }
@@ -598,12 +531,13 @@ actor StreamContext {
                 sequenceNumberStart: seqStart,
                 additionalFlags: flags,
                 dimensionToken: dimToken,
-                targetBitrate: isKeyframe ? maxBitrate : targetBitrate,
                 logPrefix: "Frame",
                 generation: generation
             )
             packetSender.enqueue(workItem)
-        }
+        }, onFrameComplete: { [weak self] in
+            Task { await self?.finishEncoding() }
+        })
 
         // Create capture engine and start capturing
         // Uses app-level capture to include alerts, sheets, and dialogs
@@ -665,12 +599,11 @@ actor StreamContext {
         currentCaptureSize = outputSize
         currentEncodedSize = outputSize
         captureMode = .display
-        updateResolutionAwareBitrateFloor()
+        updateQueueLimits()
         let width = max(1, Int(outputSize.width))
         let height = max(1, Int(outputSize.height))
-        MirageLogger.stream("Display init: scale=\(streamScale), encoded=\(width)x\(height), bitrate=\(currentBitrate / 1_000_000)Mbps (min=\(minBitrate / 1_000_000), max=\(maxBitrate / 1_000_000))")
+        MirageLogger.stream("Display init: scale=\(streamScale), encoded=\(width)x\(height), queue=\(maxQueuedBytes / 1024)KB")
         try await encoder.createSession(width: width, height: height)
-        await encoder.updateBitrate(currentBitrate)
 
         // Pre-heat encoder to eliminate warm-up latency
         try await encoder.preheat()
@@ -682,7 +615,8 @@ actor StreamContext {
         var localFrameNumber: UInt32 = 0
         var localSequenceNumber: UInt32 = 0
 
-        await encoder.startEncoding { [weak self] encodedData, isKeyframe, presentationTime in
+        await encoder.startEncoding(
+            onEncodedFrame: { [weak self] encodedData, isKeyframe, presentationTime in
             // CRITICAL: Return immediately from VT callback to avoid blocking encoder during drags/menus
             // Packets are enqueued for serialized fragmentation/sending
             guard let self else { return }
@@ -695,17 +629,13 @@ actor StreamContext {
             localSequenceNumber += UInt32(totalFragments)
             localFrameNumber += 1
 
-            let frameSize = encodedData.count
-
             let flags = self.additionalFrameFlags
             let dimToken = self.dimensionToken
 
             let generation = packetSender.currentGenerationSnapshot()
-            let targetBitrate = self.bitrateSnapshot
-            let maxBitrate = self.maxBitrateSnapshot
             if isKeyframe {
                 Task {
-                    await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: maxBitrate)
+                    await self.markKeyframeInFlight()
                     await self.markKeyframeSent()
                 }
             }
@@ -719,12 +649,13 @@ actor StreamContext {
                 sequenceNumberStart: seqStart,
                 additionalFlags: flags,
                 dimensionToken: dimToken,
-                targetBitrate: isKeyframe ? maxBitrate : targetBitrate,
                 logPrefix: "Login frame",
                 generation: generation
             )
             packetSender.enqueue(workItem)
-        }
+        }, onFrameComplete: { [weak self] in
+            Task { await self?.finishEncoding() }
+        })
 
         let captureEngine = WindowCaptureEngine(configuration: encoderConfig)
         self.captureEngine = captureEngine
@@ -779,12 +710,11 @@ actor StreamContext {
         currentCaptureSize = outputSize
         currentEncodedSize = outputSize
         captureMode = .display
-        updateResolutionAwareBitrateFloor()
+        updateQueueLimits()
         let width = max(1, Int(outputSize.width))
         let height = max(1, Int(outputSize.height))
-        MirageLogger.stream("Desktop encoding at \(width)x\(height) (scale=\(streamScale), bitrate=\(currentBitrate / 1_000_000)Mbps min=\(minBitrate / 1_000_000) max=\(maxBitrate / 1_000_000))")
+        MirageLogger.stream("Desktop encoding at \(width)x\(height) (scale=\(streamScale), queue=\(maxQueuedBytes / 1024)KB)")
         try await encoder.createSession(width: width, height: height)
-        await encoder.updateBitrate(currentBitrate)
 
         // Pre-heat encoder to eliminate warm-up latency
         try await encoder.preheat()
@@ -796,7 +726,8 @@ actor StreamContext {
         var localFrameNumber: UInt32 = 0
         var localSequenceNumber: UInt32 = 0
 
-        await encoder.startEncoding { [weak self] encodedData, isKeyframe, presentationTime in
+        await encoder.startEncoding(
+            onEncodedFrame: { [weak self] encodedData, isKeyframe, presentationTime in
             // CRITICAL: Return immediately from VT callback to avoid blocking encoder during drags/menus
             // Packets are enqueued for serialized fragmentation/sending
             guard let self else { return }
@@ -804,8 +735,6 @@ actor StreamContext {
             let contentRect = self.currentContentRect
             let frameNum = localFrameNumber
             let seqStart = localSequenceNumber
-            let frameSize = encodedData.count
-
             let totalFragments = (encodedData.count + maxPayloadSize - 1) / maxPayloadSize
             localSequenceNumber += UInt32(totalFragments)
             localFrameNumber += 1
@@ -814,11 +743,9 @@ actor StreamContext {
             let dimToken = self.dimensionToken
 
             let generation = packetSender.currentGenerationSnapshot()
-            let targetBitrate = self.bitrateSnapshot
-            let maxBitrate = self.maxBitrateSnapshot
             if isKeyframe {
                 Task {
-                    await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: maxBitrate)
+                    await self.markKeyframeInFlight()
                     await self.markKeyframeSent()
                 }
             }
@@ -832,12 +759,13 @@ actor StreamContext {
                 sequenceNumberStart: seqStart,
                 additionalFlags: flags,
                 dimensionToken: dimToken,
-                targetBitrate: isKeyframe ? maxBitrate : targetBitrate,
                 logPrefix: "Desktop frame",
                 generation: generation
             )
             packetSender.enqueue(workItem)
-        }
+        }, onFrameComplete: { [weak self] in
+            Task { await self?.finishEncoding() }
+        })
 
         let captureEngine = WindowCaptureEngine(configuration: encoderConfig)
         self.captureEngine = captureEngine
@@ -955,13 +883,12 @@ actor StreamContext {
         currentEncodedSize = outputSize
         captureMode = .window
         lastWindowFrame = scWindow.frame
-        updateResolutionAwareBitrateFloor()
-        MirageLogger.stream("Virtual display init: scale=\(streamScale), encoded=\(Int(outputSize.width))x\(Int(outputSize.height)), bitrate=\(currentBitrate / 1_000_000)Mbps (min=\(minBitrate / 1_000_000), max=\(maxBitrate / 1_000_000))")
+        updateQueueLimits()
+        MirageLogger.stream("Virtual display init: scale=\(streamScale), encoded=\(Int(outputSize.width))x\(Int(outputSize.height)), queue=\(maxQueuedBytes / 1024)KB")
         try await encoder.createSession(
             width: Int(outputSize.width),
             height: Int(outputSize.height)
         )
-        await encoder.updateBitrate(currentBitrate)
         MirageLogger.encoder("Encoder created at scaled dimensions \(Int(outputSize.width))x\(Int(outputSize.height)) (capture \(captureTarget.width)x\(captureTarget.height), window \(Int(scWindow.frame.width))x\(Int(scWindow.frame.height)) × \(captureScaleFactor))")
 
         // Pre-heat encoder to eliminate warm-up latency
@@ -974,7 +901,8 @@ actor StreamContext {
         var localFrameNumber: UInt32 = 0
         var localSequenceNumber: UInt32 = 0
 
-        await encoder.startEncoding { [weak self] encodedData, isKeyframe, presentationTime in
+        await encoder.startEncoding(
+            onEncodedFrame: { [weak self] encodedData, isKeyframe, presentationTime in
             // CRITICAL: Return immediately from VT callback to avoid blocking encoder during drags/menus
             // Packets are enqueued for serialized fragmentation/sending
             guard let self else { return }
@@ -987,17 +915,13 @@ actor StreamContext {
             localSequenceNumber += UInt32(totalFragments)
             localFrameNumber += 1
 
-            let frameSize = encodedData.count
-
             let flags = self.additionalFrameFlags
             let dimToken = self.dimensionToken
 
             let generation = packetSender.currentGenerationSnapshot()
-            let targetBitrate = self.bitrateSnapshot
-            let maxBitrate = self.maxBitrateSnapshot
             if isKeyframe {
                 Task {
-                    await self.recordKeyframeSendEstimate(frameSize: encodedData.count, bitrate: maxBitrate)
+                    await self.markKeyframeInFlight()
                     await self.markKeyframeSent()
                 }
             }
@@ -1011,12 +935,13 @@ actor StreamContext {
                 sequenceNumberStart: seqStart,
                 additionalFlags: flags,
                 dimensionToken: dimToken,
-                targetBitrate: isKeyframe ? maxBitrate : targetBitrate,
                 logPrefix: "VD Frame",
                 generation: generation
             )
             packetSender.enqueue(workItem)
-        }
+        }, onFrameComplete: { [weak self] in
+            Task { await self?.finishEncoding() }
+        })
 
         // 5. Start WINDOW capture (not display capture)
         // Using WindowCaptureEngine captures the window content regardless of its position
@@ -1121,13 +1046,12 @@ actor StreamContext {
         currentEncodedSize = outputSize
         captureMode = .window
         lastWindowFrame = scWindow.frame
+        updateQueueLimits()
         if let encoder {
             try await encoder.updateDimensions(
                 width: Int(outputSize.width),
                 height: Int(outputSize.height)
             )
-            await encoder.updateBitrate(currentBitrate)
-            maxBitrateSnapshot = maxBitrate
             MirageLogger.encoder("Encoder updated to \(Int(outputSize.width))x\(Int(outputSize.height)) for resolution change")
         }
 
@@ -1156,7 +1080,6 @@ actor StreamContext {
     }
 
     /// Request a keyframe from the encoder
-    /// Uses reduced bitrate for recovery keyframes during stream recovery.
     /// CRITICAL: Uses flush() to clear the encoder pipeline, preventing old P-frames
     /// from being sent after the keyframe (which would cause decode errors)
     func requestKeyframe() async {
@@ -1166,37 +1089,12 @@ actor StreamContext {
 
         markKeyframeRequestIssued()
 
-        // Temporarily reduce bitrate for recovery keyframe
-        // Recovery happens during stream errors when bandwidth matters more
-        let previousBitrate = currentBitrate
-        let reducedBitrate = max(minBitrate, Int(Double(currentBitrate) * 0.6))
-        if reducedBitrate < currentBitrate {
-            currentBitrate = reducedBitrate
-            bitrateSnapshot = currentBitrate
-            maxBitrateSnapshot = maxBitrate
-            await encoder?.updateBitrate(currentBitrate)
-            MirageLogger.stream("Recovery keyframe: temporarily reduced bitrate to \(currentBitrate / 1_000_000)Mbps")
-        }
-
         // CRITICAL: flush() instead of forceKeyframe() - clears the encoder pipeline
         // This prevents old P-frames (encoded before the reset) from being sent after
         // the keyframe, which would cause decode errors because they reference frames
         // from the old encoder session that don't exist in the new session.
         await packetSender?.bumpGeneration(reason: "keyframe request")
         await encoder?.flush()
-
-        // Schedule bitrate restoration after the keyframe is likely sent
-        // This gives time for the keyframe to be encoded at lower bitrate
-        Task {
-            try? await Task.sleep(for: .milliseconds(100))
-            if currentBitrate == reducedBitrate {
-                currentBitrate = min(previousBitrate, maxBitrate)
-                bitrateSnapshot = currentBitrate
-                maxBitrateSnapshot = maxBitrate
-                await encoder?.updateBitrate(currentBitrate)
-                MirageLogger.stream("Recovery keyframe sent, restored bitrate to \(currentBitrate / 1_000_000)Mbps")
-            }
-        }
     }
 
     /// Force an immediate keyframe by flushing the encoder pipeline.
@@ -1210,32 +1108,9 @@ actor StreamContext {
 
         markKeyframeRequestIssued()
 
-        // Temporarily reduce bitrate for recovery keyframe
-        let previousBitrate = currentBitrate
-        let reducedBitrate = max(minBitrate, Int(Double(currentBitrate) * 0.6))
-        if reducedBitrate < currentBitrate {
-            currentBitrate = reducedBitrate
-            bitrateSnapshot = currentBitrate
-            maxBitrateSnapshot = maxBitrate
-            await encoder?.updateBitrate(currentBitrate)
-            MirageLogger.stream("Immediate keyframe: temporarily reduced bitrate to \(currentBitrate / 1_000_000)Mbps")
-        }
-
         await packetSender?.bumpGeneration(reason: "immediate keyframe")
         await encoder?.flush()
         MirageLogger.stream("Forced immediate keyframe for stream \(streamID)")
-
-        // Schedule bitrate restoration
-        Task {
-            try? await Task.sleep(for: .milliseconds(100))
-            if currentBitrate == reducedBitrate {
-                currentBitrate = min(previousBitrate, maxBitrate)
-                bitrateSnapshot = currentBitrate
-                maxBitrateSnapshot = maxBitrate
-                await encoder?.updateBitrate(currentBitrate)
-                MirageLogger.stream("Immediate keyframe sent, restored bitrate to \(currentBitrate / 1_000_000)Mbps")
-            }
-        }
     }
 
     /// Update stream frame rate for activity-based throttling
@@ -1244,6 +1119,7 @@ actor StreamContext {
         guard isRunning, let captureEngine else { return }
         currentFrameRate = fps
         updateKeyframeCadence()
+        updateQueueLimits()
         try await captureEngine.updateFrameRate(fps)
         MirageLogger.stream("Stream \(streamID) frame rate updated to \(fps) fps")
     }
@@ -1286,8 +1162,6 @@ actor StreamContext {
         // Update the encoder session (requires recreation)
         if let encoder {
             try await encoder.updateDimensions(width: width, height: height)
-            await encoder.updateBitrate(currentBitrate)
-            maxBitrateSnapshot = maxBitrate
         }
 
 
@@ -1330,13 +1204,12 @@ actor StreamContext {
 
         currentCaptureSize = outputSize
         currentEncodedSize = outputSize
-        updateResolutionAwareBitrateFloor()
+        updateQueueLimits()
 
         // Update the encoder to match scaled output
         if let encoder {
             try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight)
-            await encoder.updateBitrate(currentBitrate)
-            maxBitrateSnapshot = maxBitrate
+            updateQueueLimits()
         }
 
         // Force keyframe after resize for clean restart
@@ -1399,37 +1272,9 @@ actor StreamContext {
 
         if let encoder {
             try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight)
-            await encoder.updateBitrate(currentBitrate)
-            maxBitrateSnapshot = maxBitrate
+            updateQueueLimits()
         }
-
-        let previousMaxBitrate = maxBitrate
-        let previousMinBitrate = minBitrate
-        let bounds = StreamContext.scaledBitrateBounds(
-            maxBitrate: baseMaxBitrate,
-            minBitrate: baseMinBitrate,
-            scale: streamScale
-        )
-        maxBitrate = bounds.max
-        minBitrate = bounds.min
-        updateResolutionAwareBitrateFloor()
-
-        if previousMaxBitrate != maxBitrate || previousMinBitrate != minBitrate {
-            let scaledCurrent: Int
-            if previousMaxBitrate > 0 {
-                scaledCurrent = Int((Double(currentBitrate) * Double(maxBitrate) / Double(previousMaxBitrate)).rounded())
-            } else {
-                scaledCurrent = maxBitrate
-            }
-            let clampedBitrate = max(minBitrate, min(maxBitrate, scaledCurrent))
-            if clampedBitrate != currentBitrate {
-                currentBitrate = clampedBitrate
-                bitrateSnapshot = currentBitrate
-                maxBitrateSnapshot = maxBitrate
-                await encoder?.updateBitrate(currentBitrate)
-            }
-            MirageLogger.stream("Stream scale bitrate bounds updated: \(maxBitrate / 1_000_000)Mbps max, \(minBitrate / 1_000_000)Mbps min")
-        }
+        updateQueueLimits()
 
         await encoder?.forceKeyframe()
         MirageLogger.stream("Stream scale updated to \(streamScale), encoding at \(Int(outputSize.width))x\(Int(outputSize.height))")
@@ -1467,13 +1312,11 @@ actor StreamContext {
         currentCaptureSize = outputSize
         currentEncodedSize = outputSize
         captureMode = .display
-        updateResolutionAwareBitrateFloor()
+        updateQueueLimits()
 
         // Update the encoder to match the new resolution
         if let encoder {
             try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight)
-            await encoder.updateBitrate(currentBitrate)
-            maxBitrateSnapshot = maxBitrate
         }
 
         // Force keyframe after display switch for clean restart
@@ -1553,8 +1396,8 @@ actor StreamContext {
         streamScale
     }
 
-    func getEncoderSettings() -> (maxBitrate: Int, keyFrameInterval: Int, keyframeQuality: Float) {
-        (baseMaxBitrate, encoderConfig.keyFrameInterval, encoderConfig.keyframeQuality)
+    func getEncoderSettings() -> (keyFrameInterval: Int, keyframeQuality: Float, pixelFormat: MiragePixelFormat) {
+        (encoderConfig.keyFrameInterval, encoderConfig.keyframeQuality, encoderConfig.pixelFormat)
     }
 }
 
