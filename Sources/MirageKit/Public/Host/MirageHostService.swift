@@ -468,6 +468,7 @@ public final class MirageHostService {
     ///   - keyFrameInterval: Optional client-requested keyframe interval (in frames)
     ///   - frameQuality: Optional client-requested inter-frame quality (0.0-1.0)
     ///   - keyframeQuality: Optional client-requested keyframe quality (0.0-1.0)
+    ///   - qualityPreset: Optional preset for latency-sensitive defaults
     ///   - colorSpace: Optional color space override for capture and encode
     ///   - captureQueueDepth: Optional ScreenCaptureKit queue depth override
     ///   - minBitrate: Optional minimum target bitrate (bits per second)
@@ -485,6 +486,7 @@ public final class MirageHostService {
         frameQuality: Float? = nil,
         keyframeQuality: Float? = nil,
         streamScale: CGFloat? = nil,
+        qualityPreset: MirageQualityPreset? = nil,
         targetFrameRate: Int? = nil,
         pixelFormat: MiragePixelFormat? = nil,
         colorSpace: MirageColorSpace? = nil,
@@ -586,6 +588,7 @@ public final class MirageHostService {
             streamID: streamID,
             windowID: window.id,
             encoderConfig: effectiveEncoderConfig,
+            qualityPreset: qualityPreset,
             streamScale: streamScale ?? 1.0,
             maxPacketSize: networkConfig.maxPacketSize
         )
@@ -1594,6 +1597,7 @@ public final class MirageHostService {
                     frameQuality: frameQuality,
                     keyframeQuality: keyframeQuality,
                     streamScale: requestedScale,
+                    qualityPreset: request.preferredQuality,
                     targetFrameRate: targetFrameRate,
                     pixelFormat: pixelFormat,
                     colorSpace: colorSpace,

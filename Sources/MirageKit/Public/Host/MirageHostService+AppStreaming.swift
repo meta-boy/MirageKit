@@ -66,6 +66,7 @@ extension MirageHostService {
         let streamScale = await existingContext?.getStreamScale() ?? 1.0
         let encoderSettings = await existingContext?.getEncoderSettings()
         let targetFrameRate = await existingContext?.getTargetFrameRate()
+        let qualityPreset = await existingContext?.getQualityPreset()
 
         // Check if there's a window in cooldown - if so, redirect to it
         if !session.windowsInCooldown.isEmpty {
@@ -91,6 +92,7 @@ extension MirageHostService {
                         frameQuality: encoderSettings?.frameQuality,
                         keyframeQuality: encoderSettings?.keyframeQuality,
                         streamScale: streamScale,
+                        qualityPreset: qualityPreset,
                         targetFrameRate: targetFrameRate,
                         pixelFormat: encoderSettings?.pixelFormat,
                         colorSpace: encoderSettings?.colorSpace,
@@ -150,6 +152,7 @@ extension MirageHostService {
                 frameQuality: encoderSettings?.frameQuality,
                 keyframeQuality: encoderSettings?.keyframeQuality,
                 streamScale: streamScale,
+                qualityPreset: qualityPreset,
                 targetFrameRate: targetFrameRate,
                 pixelFormat: encoderSettings?.pixelFormat,
                 colorSpace: encoderSettings?.colorSpace,
@@ -384,6 +387,7 @@ extension MirageHostService {
                         frameQuality: frameQuality,
                         keyframeQuality: keyframeQuality,
                         streamScale: streamScale,
+                        qualityPreset: request.preferredQuality,
                         targetFrameRate: targetFrameRate,
                         pixelFormat: pixelFormat,
                         colorSpace: colorSpace,

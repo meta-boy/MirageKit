@@ -29,7 +29,7 @@ actor HEVCEncoder {
     private var currentWidth: Int = 0
     private var currentHeight: Int = 0
 
-    nonisolated(unsafe) private let encoderInFlightLimit: Int
+    nonisolated(unsafe) private var encoderInFlightLimit: Int
     nonisolated(unsafe) private var encoderInFlightCount: Int = 0
     nonisolated(unsafe) private let encoderInFlightLock = NSLock()
 
@@ -39,10 +39,11 @@ actor HEVCEncoder {
     /// and needs to be compared atomically
     nonisolated(unsafe) private var sessionVersion: UInt64 = 0
 
-    init(configuration: MirageEncoderConfiguration) {
+    init(configuration: MirageEncoderConfiguration, inFlightLimit: Int? = nil) {
         self.configuration = configuration
         self.activePixelFormat = configuration.pixelFormat
-        self.encoderInFlightLimit = configuration.targetFrameRate >= 120 ? 2 : 1
+        let defaultLimit = configuration.targetFrameRate >= 120 ? 2 : 1
+        self.encoderInFlightLimit = max(1, inFlightLimit ?? defaultLimit)
         self.baseQuality = configuration.frameQuality
     }
 
@@ -686,6 +687,21 @@ actor HEVCEncoder {
         guard qualityOverrideActive, let session = compressionSession else { return }
         qualityOverrideActive = false
         applyQualitySettings(session, quality: baseQuality, log: false)
+    }
+
+    func updateFrameRate(_ fps: Int) {
+        guard let session = compressionSession else { return }
+        let clamped = max(1, fps)
+        setProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: clamped as CFNumber)
+        let intervalSeconds = max(1.0, Double(configuration.keyFrameInterval) / Double(clamped))
+        setProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: intervalSeconds as CFNumber)
+    }
+
+    func updateInFlightLimit(_ limit: Int) {
+        let clamped = max(1, limit)
+        encoderInFlightLock.lock()
+        encoderInFlightLimit = clamped
+        encoderInFlightLock.unlock()
     }
 
     // No explicit bitrate caps; encoder quality and QP bounds define compression.

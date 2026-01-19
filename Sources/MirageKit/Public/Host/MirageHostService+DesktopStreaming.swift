@@ -122,6 +122,7 @@ extension MirageHostService {
             streamID: streamID,
             windowID: 0,
             encoderConfig: config,
+            qualityPreset: qualityPreset,
             streamScale: effectiveScale,
             maxPacketSize: networkConfig.maxPacketSize,
             additionalFrameFlags: [.desktopStream]

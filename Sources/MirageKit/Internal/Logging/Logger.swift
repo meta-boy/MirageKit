@@ -36,6 +36,7 @@ actor MirageLogSinkStore {
 /// Use MIRAGE_LOG environment variable to enable: "all", "none", or comma-separated list
 public enum LogCategory: String, CaseIterable, Sendable {
     case timing         // Frame capture/encode timing
+    case metrics        // Pipeline throughput metrics
     case capture        // Screen capture engine
     case encoder        // Video encoding
     case decoder        // Video decoding
@@ -60,7 +61,7 @@ public enum LogCategory: String, CaseIterable, Sendable {
 /// Set `MIRAGE_LOG` environment variable in Xcode scheme:
 /// - `all` - Enable all log categories
 /// - `none` - Disable all logging (except errors)
-/// - `timing,encoder,decoder` - Enable specific categories (comma-separated)
+/// - `metrics,timing,encoder` - Enable specific categories (comma-separated)
 /// - Not set - Default: essential logs only (host, client, appState)
 public struct MirageLogger: Sendable {
     /// Subsystem identifier for os.Logger (appears in Console.app)
@@ -166,6 +167,11 @@ public extension MirageLogger {
     /// Log timing information (frame processing, encoding duration, etc.)
     static func timing(_ message: @autoclosure () -> String) {
         log(.timing, message())
+    }
+
+    /// Log pipeline throughput metrics
+    static func metrics(_ message: @autoclosure () -> String) {
+        log(.metrics, message())
     }
 
     /// Log capture engine events
