@@ -119,8 +119,15 @@ public class InputCapturingView: UIView {
     func resyncModifierState(from modifierFlags: UIKeyModifierFlags) {
         let flags = MirageModifierFlags(uiKeyModifierFlags: modifierFlags)
         var newHeldKeys = Set<UIKeyboardHIDUsage>()
-        for (flag, keyCode) in Self.modifierFlagToKey where flags.contains(flag) {
-            newHeldKeys.insert(keyCode)
+        for (flag, keys) in Self.modifierFlagToKeys where flags.contains(flag) {
+            let existingKeys = keys.filter { heldModifierKeys.contains($0) }
+            if existingKeys.isEmpty {
+                if let primaryKey = keys.first {
+                    newHeldKeys.insert(primaryKey)
+                }
+            } else {
+                newHeldKeys.formUnion(existingKeys)
+            }
         }
 
         let newCapsLockEnabled = flags.contains(.capsLock)
@@ -176,12 +183,12 @@ public class InputCapturingView: UIView {
         .keyboardCapsLock: .capsLock
     ]
 
-    /// Canonical key codes for modifier flag resync
-    static let modifierFlagToKey: [(flag: MirageModifierFlags, keyCode: UIKeyboardHIDUsage)] = [
-        (.shift, .keyboardLeftShift),
-        (.control, .keyboardLeftControl),
-        (.option, .keyboardLeftAlt),
-        (.command, .keyboardLeftGUI)
+    /// Preferred key codes for modifier flag resync (preserve left/right when possible)
+    static let modifierFlagToKeys: [(flag: MirageModifierFlags, keys: [UIKeyboardHIDUsage])] = [
+        (.shift, [.keyboardLeftShift, .keyboardRightShift]),
+        (.control, [.keyboardLeftControl, .keyboardRightControl]),
+        (.option, [.keyboardLeftAlt, .keyboardRightAlt]),
+        (.command, [.keyboardLeftGUI, .keyboardRightGUI])
     ]
 
     // Key repeat handling
