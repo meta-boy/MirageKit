@@ -88,6 +88,23 @@ public final class MirageHostService {
     var loginDisplayStreamID: StreamID?
     var loginDisplayResolution: CGSize?
     let loginDisplayInputState = LoginDisplayInputState()
+    var loginDisplayStartInProgress = false
+    var loginDisplayStartGeneration: UInt64 = 0
+    var loginDisplayIsBorrowedStream = false
+    var loginDisplayPowerAssertionEnabled = false
+    var loginDisplaySharedDisplayConsumerActive = false
+    var loginDisplayRetryAttempts: Int = 0
+    let loginDisplayRetryLimit: Int = 5
+    let loginDisplayRetryDelay: Duration = .seconds(2)
+    var loginDisplayRetryTask: Task<Void, Never>?
+    var loginDisplayWatchdogTask: Task<Void, Never>?
+    var loginDisplayWatchdogGeneration: UInt64 = 0
+    var loginDisplayWatchdogStartTime: CFAbsoluteTime = 0
+    var lastLoginDisplayRestartTime: CFAbsoluteTime = 0
+    let loginDisplayWatchdogInterval: Duration = .seconds(2)
+    let loginDisplayWatchdogStartGraceSeconds: CFAbsoluteTime = 4.0
+    let loginDisplayWatchdogStaleThresholdSeconds: CFAbsoluteTime = 6.0
+    let loginDisplayRestartCooldownSeconds: CFAbsoluteTime = 8.0
 
     // Desktop stream (full virtual display mirroring) - internal for extension access
     var desktopStreamContext: StreamContext?
@@ -106,6 +123,9 @@ public final class MirageHostService {
     var sessionStateMonitor: SessionStateMonitor?
     var unlockManager: UnlockManager?
     var currentSessionToken: String = ""
+    var sessionRefreshTask: Task<Void, Never>?
+    var sessionRefreshGeneration: UInt64 = 0
+    let sessionRefreshInterval: Duration = .seconds(3)
 
     // Window activity monitoring (for throttling inactive streams) - internal for extension access
     var windowActivityMonitor: WindowActivityMonitor?

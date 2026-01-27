@@ -132,6 +132,7 @@ extension MirageHostService {
         connectedClients.append(client)
         delegate?.hostService(self, didConnectClient: client)
 
+        startSessionRefreshLoopIfNeeded()
         await refreshSessionStateIfNeeded()
         await sendSessionState(to: clientContext)
 

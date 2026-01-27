@@ -70,6 +70,10 @@ extension MirageHostService {
     }
 
     public func stop() async {
+        sessionRefreshTask?.cancel()
+        sessionRefreshTask = nil
+        stopLoginDisplayWatchdog()
+
         // Stop cursor monitoring
         await cursorMonitor?.stop()
         cursorMonitor = nil

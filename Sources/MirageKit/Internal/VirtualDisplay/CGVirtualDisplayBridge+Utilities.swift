@@ -26,7 +26,7 @@ extension CGVirtualDisplayBridge {
     static func waitForDisplayReady(
         _ displayID: CGDirectDisplayID,
         expectedResolution: CGSize,
-        timeout: TimeInterval = 2.0,
+        timeout: TimeInterval = 4.0,
         pollInterval: TimeInterval = 0.05
     ) async -> CGRect? {
         let deadline = Date().addingTimeInterval(timeout)
@@ -53,7 +53,8 @@ extension CGVirtualDisplayBridge {
             return fallbackBounds
         }
 
-        MirageLogger.error(.host, "Display \(displayID) not ready after \(String(format: "%.2f", timeout))s (online: \(online), lastBounds: \(lastBounds))")
+        let timeoutText = timeout.formatted(.number.precision(.fractionLength(2)))
+        MirageLogger.error(.host, "Display \(displayID) not ready after \(timeoutText)s (online: \(online), lastBounds: \(lastBounds))")
         return nil
     }
 

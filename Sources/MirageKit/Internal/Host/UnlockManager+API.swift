@@ -57,21 +57,38 @@ extension UnlockManager {
         MirageLogger.host("Attempting unlock for user: \(resolvedUsername)")
 
         // Step 1: Verify credentials using Authorization Services
-        let credentialsValid = verifyCredentialsViaAuthorization(username: resolvedUsername, password: password)
-
-        if !credentialsValid {
-            MirageLogger.host("Password verification failed for user \(username)")
+        let verificationResult = await verifyCredentialsViaAuthorization(username: resolvedUsername, password: password)
+        switch verificationResult {
+        case .valid:
+            break
+        case .invalid:
+            MirageLogger.host("Password verification failed for user \(resolvedUsername)")
             return (.failure(.invalidCredentials, "Incorrect password"), remaining, nil)
+        case .timedOut:
+            MirageLogger.error(.host, "Password verification timed out for user \(resolvedUsername)")
+            return (.failure(.timeout, "Credential verification timed out. Try again."), remaining, nil)
+        case .failedToRun(let reason):
+            MirageLogger.error(.host, "Password verification failed to run: \(reason)")
+            return (.failure(.internalError, "Unable to verify credentials on the host."), remaining, nil)
         }
 
-        MirageLogger.host("Password verified successfully for user \(username)")
+        MirageLogger.host("Password verified successfully for user \(resolvedUsername)")
 
         // Step 2: Ensure virtual display exists (for headless Macs)
         await ensureVirtualDisplay()
+        defer { Task { await self.releaseVirtualDisplay() } }
+        defer { Task { await self.releaseDisplayAssertion() } }
 
         // Step 3: Wake display
         wakeDisplayNonBlocking()
-        try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+        try? await Task.sleep(for: .milliseconds(400))
+
+        // Loginwindow can appear after the display wakes on headless Macs.
+        // A second readiness check reduces queued HID events.
+        let loginReadyAfterWake = await waitForLoginWindowReady(timeout: 6.0)
+        if !loginReadyAfterWake {
+            MirageLogger.host("Login window not detected after wake; continuing unlock attempt")
+        }
 
         // Step 4: Try multiple unlock methods
         var unlocked = false
@@ -80,7 +97,7 @@ extension UnlockManager {
         MirageLogger.host("Trying SkyLight session switch...")
         let skylightResult = trySkyLightUnlock(username: resolvedUsername)
         if skylightResult {
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(for: .milliseconds(300))
             if await sessionMonitor.refreshState() == .active {
                 unlocked = true
             }
@@ -98,17 +115,15 @@ extension UnlockManager {
 
         // Poll for unlock completion instead of fixed wait
         // This handles cases where unlock takes longer than expected on headless Macs
-        let newState = await pollForUnlockCompletion(timeout: 10.0, pollInterval: 0.3)
+        let newState = await pollForUnlockCompletion(timeout: 25.0, pollInterval: 0.35)
 
         if newState == .active {
             MirageLogger.host("Unlock successful!")
-            await releaseVirtualDisplay()
             return (.success, remaining, nil)
         } else {
             // Even though password was correct, unlock might have failed
             // This can happen if keyboard simulation didn't work or loginwindow didn't receive events
             MirageLogger.host("Password correct but session still locked (state: \(newState))")
-            await releaseVirtualDisplay()
             return (.failure(.invalidCredentials, "Password verified but unlock failed. Try again."), remaining, nil)
         }
     }

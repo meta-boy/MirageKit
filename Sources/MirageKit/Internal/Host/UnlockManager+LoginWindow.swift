@@ -58,7 +58,7 @@ extension UnlockManager {
 
     /// Wait for loginwindow to render on the virtual display
     /// This ensures HID events will be delivered to loginwindow instead of being queued
-    func waitForLoginWindowReady(timeout: TimeInterval = 5.0) async -> Bool {
+    func waitForLoginWindowReady(timeout: TimeInterval = 8.0) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         var pollCount = 0
 

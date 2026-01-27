@@ -30,7 +30,7 @@ extension UnlockManager {
             // Wait for loginwindow to actually render on the display
             // This is critical on headless Macs - without this, HID events get queued
             // and delivered later when another display (like Jump Desktop) connects
-            let loginWindowReady = await waitForLoginWindowReady(timeout: 5.0)
+            let loginWindowReady = await waitForLoginWindowReady(timeout: 8.0)
             if !loginWindowReady {
                 MirageLogger.error(.host, "Proceeding with unlock despite loginwindow not being detected - HID events may be queued")
             }

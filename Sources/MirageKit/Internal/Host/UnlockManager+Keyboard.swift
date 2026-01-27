@@ -28,7 +28,7 @@ extension UnlockManager {
         let point = CGPoint(x: bounds.midX, y: bounds.midY)
 
         postMouseClick(at: point)
-        try? await Task.sleep(nanoseconds: 120_000_000)
+        try? await Task.sleep(for: .milliseconds(120))
     }
 
     private func postMouseClick(at point: CGPoint) {
@@ -46,7 +46,7 @@ extension UnlockManager {
 
         for char in text {
             postKeyEvent(for: char)
-            try? await Task.sleep(nanoseconds: 30_000_000)
+            try? await Task.sleep(for: .milliseconds(30))
         }
     }
 

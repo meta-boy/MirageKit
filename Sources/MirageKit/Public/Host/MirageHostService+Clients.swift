@@ -32,6 +32,7 @@ extension MirageHostService {
 
         connectedClients.removeAll { $0.id == client.id }
 
+        stopSessionRefreshLoopIfIdle()
         if clientsByConnection.isEmpty {
             await stopLoginDisplayStream(newState: sessionState)
             await cleanupSharedVirtualDisplayIfIdle()

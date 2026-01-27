@@ -33,6 +33,8 @@ extension MirageHostService {
         if refreshed != sessionState {
             await handleSessionStateChange(refreshed)
         }
+
+        startSessionRefreshLoopIfNeeded()
     }
 
     func refreshSessionStateIfNeeded() async {
@@ -87,6 +89,36 @@ extension MirageHostService {
         } catch {
             MirageLogger.error(.host, "Failed to send window list: \(error)")
         }
+    }
+
+    func startSessionRefreshLoopIfNeeded() {
+        guard sessionRefreshTask == nil else { return }
+        guard !clientsByConnection.isEmpty else { return }
+
+        let interval = sessionRefreshInterval
+        sessionRefreshGeneration &+= 1
+        let generation = sessionRefreshGeneration
+        sessionRefreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            MirageLogger.host("Session refresh loop started (interval: \(interval))")
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                if Task.isCancelled { break }
+                if clientsByConnection.isEmpty { break }
+                await refreshSessionStateIfNeeded()
+            }
+            if generation == sessionRefreshGeneration {
+                sessionRefreshTask = nil
+            }
+            MirageLogger.host("Session refresh loop stopped")
+        }
+    }
+
+    func stopSessionRefreshLoopIfIdle() {
+        guard clientsByConnection.isEmpty else { return }
+        sessionRefreshTask?.cancel()
+        sessionRefreshTask = nil
+        sessionRefreshGeneration &+= 1
     }
 }
 #endif

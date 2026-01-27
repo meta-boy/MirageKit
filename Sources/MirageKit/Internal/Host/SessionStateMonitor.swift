@@ -138,8 +138,13 @@ actor SessionStateMonitor {
             }
 
             if anyOffConsole {
-                MirageLogger.log(.host, "User session not on console - treating as screenLocked")
-                return .screenLocked
+                let fallbackLocked = isScreenLocked()
+                if fallbackLocked {
+                    MirageLogger.log(.host, "User session not on console and lock detected - treating as screenLocked")
+                    return .screenLocked
+                }
+                MirageLogger.log(.host, "User session not on console but no lock detected - treating as active (headless console session)")
+                return .active
             }
 
             if hasLoggedInUser {
@@ -152,8 +157,13 @@ actor SessionStateMonitor {
             // No session dictionary - could be headless Mac or early boot
             // Try alternative detection: check if console user exists
             if let consoleUser = getConsoleUser(), !consoleUser.isEmpty, consoleUser != "loginwindow" {
-                MirageLogger.log(.host, "No CGSession dict but console user '\(consoleUser)' exists - assuming screenLocked")
-                return .screenLocked  // User logged in but no session info
+                let locked = isScreenLocked()
+                if locked {
+                    MirageLogger.log(.host, "No CGSession dict but console user '\(consoleUser)' exists and lock detected - assuming screenLocked")
+                    return .screenLocked
+                }
+                MirageLogger.log(.host, "No CGSession dict but console user '\(consoleUser)' exists without lock - assuming active (headless console session)")
+                return .active
             }
             return .loginScreen
         }
@@ -188,8 +198,12 @@ actor SessionStateMonitor {
             }
 
             if !onConsole {
-                MirageLogger.log(.host, "User session not on console - treating as screenLocked")
-                return .screenLocked
+                if isLocked {
+                    MirageLogger.log(.host, "User session not on console and lock detected - treating as screenLocked")
+                    return .screenLocked
+                }
+                MirageLogger.log(.host, "User session not on console but not locked - treating as active (headless console session)")
+                return .active
             }
 
             // If loginCompleted is false but we have a user, it might be a headless Mac

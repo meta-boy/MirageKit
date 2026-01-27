@@ -19,8 +19,8 @@ extension UnlockManager {
     /// Poll session state until unlock is detected or timeout
     /// This replaces the fixed 1.5s wait with dynamic polling
     func pollForUnlockCompletion(
-        timeout: TimeInterval = 10.0,
-        pollInterval: TimeInterval = 0.3
+        timeout: TimeInterval = 25.0,
+        pollInterval: TimeInterval = 0.35
     ) async -> HostSessionState {
         let startTime = Date()
         var lastState = await sessionMonitor.refreshState(notify: false)
@@ -36,7 +36,8 @@ extension UnlockManager {
 
             if newState == .active {
                 let elapsed = Date().timeIntervalSince(startTime)
-                MirageLogger.host("Unlock detected after \(String(format: "%.2f", elapsed))s (\(pollCount) polls)")
+                let elapsedText = elapsed.formatted(.number.precision(.fractionLength(2)))
+                MirageLogger.host("Unlock detected after \(elapsedText)s (\(pollCount) polls)")
                 return newState
             }
 

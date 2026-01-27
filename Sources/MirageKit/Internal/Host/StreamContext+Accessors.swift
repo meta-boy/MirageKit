@@ -46,6 +46,10 @@ extension StreamContext {
         return (width, height)
     }
 
+    func getLastCapturedFrameTime() -> CFAbsoluteTime {
+        lastCapturedFrameTime
+    }
+
     func getTargetFrameRate() -> Int {
         encoderConfig.targetFrameRate
     }

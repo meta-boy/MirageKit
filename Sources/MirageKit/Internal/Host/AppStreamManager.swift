@@ -52,6 +52,14 @@ public actor AppStreamManager {
 
     /// Application scanner for getting installed apps
     let applicationScanner: ApplicationScanner
+    var cachedAppsWithIcons: [MirageInstalledApp] = []
+    var cachedAppsWithoutIcons: [MirageInstalledApp] = []
+    var lastAppsScanWithIconsAt: Date?
+    var lastAppsScanWithoutIconsAt: Date?
+    var appScanTaskWithIcons: Task<[MirageInstalledApp], Never>?
+    var appScanTaskWithoutIcons: Task<[MirageInstalledApp], Never>?
+    let appScanWithIconsTTL: TimeInterval = 120
+    let appScanWithoutIconsTTL: TimeInterval = 30
 
     /// Timer for periodic window monitoring
     var monitoringTask: Task<Void, Never>?

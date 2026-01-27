@@ -20,7 +20,12 @@ extension MirageHostService {
             let request = try message.decode(AppListRequestMessage.self)
             MirageLogger.host("Client \(client.name) requested app list (icons: \(request.includeIcons))")
 
-            let apps = await appStreamManager.getInstalledApps(includeIcons: request.includeIcons)
+            let includeIcons = request.includeIcons && sessionState == .active
+            if request.includeIcons && !includeIcons {
+                MirageLogger.host("Session is \(sessionState); responding with app list without icons")
+            }
+
+            let apps = await appStreamManager.getInstalledApps(includeIcons: includeIcons)
 
             let response = AppListMessage(apps: apps)
             let responseMessage = try ControlMessage(type: .appList, content: response)

@@ -174,6 +174,11 @@ extension MirageHostService {
                 )
                 try? await clientContext.send(.desktopStreamStarted, content: message)
             }
+
+            if loginDisplayIsBorrowedStream, loginDisplayStreamID == streamID {
+                loginDisplayResolution = CGSize(width: encodedDimensions.width, height: encodedDimensions.height)
+                await broadcastLoginDisplayReady()
+            }
             return
         }
 

@@ -37,7 +37,7 @@ extension UnlockManager {
         if requiresUsername, let username {
             await typeStringViaCGEvent(username)
             postKeyEvent(keyCode: UInt16(kVK_Tab), shift: false)
-            try? await Task.sleep(nanoseconds: 80_000_000)
+            try? await Task.sleep(for: .milliseconds(80))
         }
 
         await typeStringViaCGEvent(password)

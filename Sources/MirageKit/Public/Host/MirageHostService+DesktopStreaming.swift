@@ -223,12 +223,18 @@ extension MirageHostService {
 
         MirageLogger.host("Stopping desktop stream: streamID=\(streamID), reason=\(reason)")
 
+        let wasUsingVirtualDisplay = desktopUsesVirtualDisplay
+        let borrowedByLoginDisplay = loginDisplayIsBorrowedStream && loginDisplayStreamID == streamID
+        let sharedDisplayID = wasUsingVirtualDisplay
+            ? await SharedVirtualDisplayManager.shared.getDisplayID()
+            : nil
+
         if let context = desktopStreamContext {
             await context.stop()
         }
 
-        if desktopUsesVirtualDisplay, let displayID = await SharedVirtualDisplayManager.shared.getDisplayID() {
-            await disableDisplayMirroring(displayID: displayID)
+        if let sharedDisplayID {
+            await disableDisplayMirroring(displayID: sharedDisplayID)
         }
 
         if let clientContext = desktopStreamClientContext {
@@ -246,8 +252,35 @@ extension MirageHostService {
         udpConnectionsByStream.removeValue(forKey: streamID)?.cancel()
         inputStreamCacheActor.remove(streamID)
 
-        if desktopUsesVirtualDisplay {
+        if wasUsingVirtualDisplay {
             await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.desktopStream)
+        }
+
+        if borrowedByLoginDisplay {
+            MirageLogger.host("Desktop stream was borrowed for login display; clearing borrowed login-display state")
+            stopLoginDisplayWatchdog()
+            loginDisplayWatchdogStartTime = 0
+            loginDisplayStartInProgress = false
+            loginDisplayStartGeneration &+= 1
+            loginDisplayRetryTask?.cancel()
+            loginDisplayRetryTask = nil
+            loginDisplayRetryAttempts = 0
+            let sharedConsumerActive = loginDisplaySharedDisplayConsumerActive
+            loginDisplaySharedDisplayConsumerActive = false
+            loginDisplayContext = nil
+            loginDisplayStreamID = nil
+            loginDisplayResolution = nil
+            loginDisplayIsBorrowedStream = false
+            loginDisplayPowerAssertionEnabled = false
+            loginDisplayInputState.clear()
+
+            if sharedConsumerActive {
+                await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.loginDisplay)
+            }
+
+            if sessionState != .active, !clientsByConnection.isEmpty {
+                await startLoginDisplayStreamIfNeeded()
+            }
         }
 
         if activeStreams.isEmpty && loginDisplayContext == nil {
