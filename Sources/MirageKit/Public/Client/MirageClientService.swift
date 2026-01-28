@@ -282,7 +282,7 @@ public final class MirageClientService {
         self.sessionStore.clientService = self
     }
 
-    #if os(iOS)
+    #if os(iOS) || os(visionOS)
     /// Cached drawable size from the Metal view.
     public static var lastKnownDrawableSize: CGSize = .zero
     #endif

@@ -175,9 +175,9 @@ extension MirageScrollPhase {
 }
 #endif
 
-// MARK: - iOS/iPadOS UIKit Conversion Extensions
+// MARK: - iOS/iPadOS/visionOS UIKit Conversion Extensions
 
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 import UIKit
 
 extension MirageModifierFlags {

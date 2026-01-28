@@ -219,7 +219,7 @@ public struct MirageStreamContentView: View {
             }
         }
 
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         MirageClientService.lastKnownDrawableSize = metrics.pixelSize
         let fallbackScreenSize = CGSize(width: 1920, height: 1080)
         #else

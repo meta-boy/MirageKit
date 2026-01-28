@@ -128,9 +128,9 @@ extension MirageCursorType {
 }
 #endif
 
-// MARK: - iOS/iPadOS UIPointerStyle Conversion
+// MARK: - iOS/iPadOS/visionOS UIPointerStyle Conversion
 
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 import UIKit
 
 extension MirageCursorType {

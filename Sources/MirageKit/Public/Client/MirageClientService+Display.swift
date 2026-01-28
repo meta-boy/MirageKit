@@ -58,6 +58,10 @@ extension MirageClientService {
             height: screen.bounds.height * scale
         )
         #elseif os(visionOS)
+        // Use cached drawable size if available, otherwise default resolution
+        if Self.lastKnownDrawableSize.width > 0, Self.lastKnownDrawableSize.height > 0 {
+            return Self.lastKnownDrawableSize
+        }
         return CGSize(width: 2560, height: 1600)
         #else
         return CGSize(width: 2560, height: 1600)
