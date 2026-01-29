@@ -139,7 +139,8 @@ public final class MirageClientService {
     var transport: HybridTransport?
     var connection: NWConnection?
     var connectedHost: MirageHost?
-    let deviceID: UUID
+    /// Stable device identifier for the client, persisted in UserDefaults.
+    public let deviceID: UUID
     let deviceName: String
     var receiveBuffer = Data()
 
