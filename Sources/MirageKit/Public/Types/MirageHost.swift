@@ -98,13 +98,17 @@ public struct MirageHostCapabilities: Codable, Hashable, Sendable {
     /// Protocol version
     public let protocolVersion: Int
 
+    /// Stable device identifier for self-filtering (advertised via Bonjour TXT record)
+    public let deviceID: UUID?
+
     public init(
         maxStreams: Int = 4,
         supportsHEVC: Bool = true,
         supportsP3ColorSpace: Bool = true,
         // supportsHDR: Bool = true,
         maxFrameRate: Int = 120,
-        protocolVersion: Int = Int(MirageKit.protocolVersion)
+        protocolVersion: Int = Int(MirageKit.protocolVersion),
+        deviceID: UUID? = nil
     ) {
         self.maxStreams = maxStreams
         self.supportsHEVC = supportsHEVC
@@ -112,11 +116,12 @@ public struct MirageHostCapabilities: Codable, Hashable, Sendable {
         // self.supportsHDR = supportsHDR
         self.maxFrameRate = maxFrameRate
         self.protocolVersion = protocolVersion
+        self.deviceID = deviceID
     }
 
     /// Encode to TXT record data for Bonjour
     public func toTXTRecord() -> [String: String] {
-        [
+        var record: [String: String] = [
             "maxStreams": String(maxStreams),
             "hevc": supportsHEVC ? "1" : "0",
             "p3": supportsP3ColorSpace ? "1" : "0",
@@ -124,16 +129,30 @@ public struct MirageHostCapabilities: Codable, Hashable, Sendable {
             "maxFps": String(maxFrameRate),
             "proto": String(protocolVersion)
         ]
+
+        // Add device ID for self-filtering
+        if let deviceID {
+            record["did"] = deviceID.uuidString
+        }
+
+        return record
     }
 
     /// Decode from TXT record data
     public static func from(txtRecord: [String: String]) -> MirageHostCapabilities {
-        MirageHostCapabilities(
+        // Parse device ID if present
+        var parsedDeviceID: UUID?
+        if let didString = txtRecord["did"] {
+            parsedDeviceID = UUID(uuidString: didString)
+        }
+
+        return MirageHostCapabilities(
             maxStreams: Int(txtRecord["maxStreams"] ?? "4") ?? 4,
             supportsHEVC: txtRecord["hevc"] == "1",
-            supportsP3ColorSpace: txtRecord["p3"] == "1"
+            supportsP3ColorSpace: txtRecord["p3"] == "1",
             // supportsHDR: txtRecord["hdr"] == "1",
             // maxFrameRate and protocolVersion use defaults
+            deviceID: parsedDeviceID
         )
     }
 }

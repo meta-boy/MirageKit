@@ -76,30 +76,51 @@ public final class MirageCloudKitShareManager: Sendable {
     ///
     /// Call this after the CloudKit manager is initialized to set up sharing.
     public func setup() async {
-        guard cloudKitManager.isAvailable, let container = cloudKitManager.container else { return }
+        MirageLogger.appState("ShareManager: Starting setup...")
+
+        guard cloudKitManager.isAvailable else {
+            MirageLogger.appState("ShareManager: Skipping setup - CloudKit not available (isAvailable=false)")
+            return
+        }
+
+        guard let container = cloudKitManager.container else {
+            MirageLogger.appState("ShareManager: Skipping setup - CloudKit container is nil")
+            return
+        }
 
         isLoading = true
         defer { isLoading = false }
 
         do {
             // Create zone if needed
+            MirageLogger.appState("ShareManager: Creating zone '\(hostZoneID.zoneName)'...")
             let zone = CKRecordZone(zoneID: hostZoneID)
-            _ = try await container.privateCloudDatabase.modifyRecordZones(
+            let (savedZones, _) = try await container.privateCloudDatabase.modifyRecordZones(
                 saving: [zone],
                 deleting: []
             )
+            MirageLogger.appState("ShareManager: Zone creation result - saved \(savedZones.count) zones")
 
             // Fetch existing host record
+            MirageLogger.appState("ShareManager: Fetching existing host record...")
             await fetchHostRecord()
 
             // Fetch existing share if host record exists
             if let hostRecord {
+                MirageLogger.appState("ShareManager: Found host record, fetching share...")
                 await fetchShare(for: hostRecord)
+            } else {
+                MirageLogger.appState("ShareManager: No existing host record found")
             }
+
+            MirageLogger.appState("ShareManager: Setup complete")
 
         } catch {
             lastError = error
-            MirageLogger.error(.appState, "Failed to setup share manager: \(error)")
+            MirageLogger.error(.appState, "ShareManager: Failed to setup: \(error.localizedDescription)")
+            if let ckError = error as? CKError {
+                MirageLogger.error(.appState, "ShareManager: CKError code=\(ckError.code.rawValue), userInfo=\(ckError.userInfo)")
+            }
         }
     }
 
@@ -182,20 +203,32 @@ public final class MirageCloudKitShareManager: Sendable {
         name: String,
         capabilities: MirageHostCapabilities
     ) async throws {
-        guard cloudKitManager.isAvailable, let container = cloudKitManager.container else {
-            MirageLogger.appState("CloudKit unavailable, skipping host registration")
+        MirageLogger.appState("ShareManager: registerHost called for '\(name)' (deviceID: \(deviceID))")
+
+        guard cloudKitManager.isAvailable else {
+            MirageLogger.appState("ShareManager: Skipping host registration - CloudKit not available")
+            return
+        }
+
+        guard let container = cloudKitManager.container else {
+            MirageLogger.appState("ShareManager: Skipping host registration - container is nil")
             return
         }
 
         let database = container.privateCloudDatabase
 
         // First ensure zone exists
+        MirageLogger.appState("ShareManager: Ensuring zone '\(hostZoneID.zoneName)' exists...")
         let zone = CKRecordZone(zoneID: hostZoneID)
         do {
-            _ = try await database.modifyRecordZones(saving: [zone], deleting: [])
+            let (savedZones, _) = try await database.modifyRecordZones(saving: [zone], deleting: [])
+            MirageLogger.appState("ShareManager: Zone save successful - \(savedZones.count) zones saved")
         } catch {
             // Zone may already exist, continue
-            MirageLogger.appState("Zone creation returned: \(error.localizedDescription)")
+            MirageLogger.appState("ShareManager: Zone creation returned: \(error.localizedDescription)")
+            if let ckError = error as? CKError {
+                MirageLogger.appState("ShareManager: CKError code=\(ckError.code.rawValue)")
+            }
         }
 
         // Query for existing host record with this device ID

@@ -179,6 +179,7 @@ public final class MirageHostService {
 
     public init(
         hostName: String? = nil,
+        deviceID: UUID? = nil,
         encoderConfiguration: MirageEncoderConfiguration = .highQuality,
         networkConfiguration: MirageNetworkConfiguration = .default
     ) {
@@ -188,7 +189,8 @@ public final class MirageHostService {
             supportsHEVC: true,
             supportsP3ColorSpace: true,
             maxFrameRate: 120,
-            protocolVersion: Int(MirageKit.protocolVersion)
+            protocolVersion: Int(MirageKit.protocolVersion),
+            deviceID: deviceID
         )
 
         self.advertiser = BonjourAdvertiser(

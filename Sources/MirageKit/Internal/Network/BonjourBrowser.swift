@@ -124,8 +124,11 @@ public final class MirageDiscovery {
             capabilities = MirageHostCapabilities.from(txtRecord: txtDict)
         }
 
+        // Use parsed device ID from TXT record if available, otherwise generate one
+        let hostID = capabilities.deviceID ?? UUID()
+
         let host = MirageHost(
-            id: UUID(),
+            id: hostID,
             name: hostName,
             deviceType: .mac,  // Hosts are always Macs
             endpoint: result.endpoint,

@@ -88,11 +88,14 @@ public final class MirageCloudKitManager: Sendable {
     public func initialize() async {
         guard !isInitialized else { return }
 
+        MirageLogger.appState("CloudKit: Starting initialization for container '\(configuration.containerIdentifier)'")
+
         // Create the container lazily to avoid crashes during app launch
         // when CloudKit is misconfigured or unavailable
         if container == nil {
             do {
                 container = try createContainer()
+                MirageLogger.appState("CloudKit: Container created successfully")
             } catch {
                 lastError = error
                 isAvailable = false
@@ -103,6 +106,7 @@ public final class MirageCloudKitManager: Sendable {
         }
 
         guard let container else {
+            MirageLogger.error(.appState, "CloudKit: Container is nil after creation attempt")
             isAvailable = false
             isInitialized = true
             return
@@ -110,46 +114,67 @@ public final class MirageCloudKitManager: Sendable {
 
         do {
             // Check account status
+            MirageLogger.appState("CloudKit: Checking account status...")
             let status = try await container.accountStatus()
+            MirageLogger.appState("CloudKit: Account status = \(Self.describeAccountStatus(status))")
 
             switch status {
             case .available:
                 isAvailable = true
-                MirageLogger.appState("CloudKit available")
+                MirageLogger.appState("CloudKit: Account available, proceeding with setup")
 
             case .noAccount:
                 isAvailable = false
-                MirageLogger.appState("CloudKit: No iCloud account signed in")
+                MirageLogger.appState("CloudKit: No iCloud account signed in - iCloud features disabled")
                 isInitialized = true
                 return
 
-            case .restricted, .couldNotDetermine, .temporarilyUnavailable:
+            case .restricted:
                 isAvailable = false
-                MirageLogger.appState("CloudKit: Account status \(status)")
+                MirageLogger.appState("CloudKit: Account restricted (parental controls or MDM)")
+                isInitialized = true
+                return
+
+            case .couldNotDetermine:
+                isAvailable = false
+                MirageLogger.appState("CloudKit: Could not determine account status")
+                isInitialized = true
+                return
+
+            case .temporarilyUnavailable:
+                isAvailable = false
+                MirageLogger.appState("CloudKit: Account temporarily unavailable")
                 isInitialized = true
                 return
 
             @unknown default:
                 isAvailable = false
+                MirageLogger.appState("CloudKit: Unknown account status")
                 isInitialized = true
                 return
             }
 
             // Fetch current user's record ID
+            MirageLogger.appState("CloudKit: Fetching user record ID...")
             let userRecordID = try await container.userRecordID()
             currentUserRecordID = userRecordID.recordName
-            MirageLogger.appState("CloudKit user ID: \(userRecordID.recordName)")
+            MirageLogger.appState("CloudKit: User record ID = \(userRecordID.recordName)")
 
             // Register this device
+            MirageLogger.appState("CloudKit: Registering current device...")
             await registerCurrentDevice()
 
             isInitialized = true
+            MirageLogger.appState("CloudKit: Initialization complete")
 
         } catch {
             lastError = error
             isAvailable = false
             isInitialized = true
-            MirageLogger.error(.appState, "CloudKit initialization failed: \(error)")
+            MirageLogger.error(.appState, "CloudKit initialization failed: \(error.localizedDescription)")
+            if let ckError = error as? CKError {
+                MirageLogger.error(.appState, "CloudKit error code: \(ckError.code.rawValue), userInfo: \(ckError.userInfo)")
+            }
         }
     }
 
@@ -308,5 +333,21 @@ public final class MirageCloudKitManager: Sendable {
     public func handleAccountChange() async {
         MirageLogger.appState("iCloud account changed, reinitializing CloudKit")
         await reinitialize()
+    }
+}
+
+// MARK: - Helpers
+
+extension MirageCloudKitManager {
+    /// Returns a human-readable description of a CloudKit account status.
+    static func describeAccountStatus(_ status: CKAccountStatus) -> String {
+        switch status {
+        case .available: return "available"
+        case .noAccount: return "noAccount"
+        case .restricted: return "restricted"
+        case .couldNotDetermine: return "couldNotDetermine"
+        case .temporarilyUnavailable: return "temporarilyUnavailable"
+        @unknown default: return "unknown(\(status.rawValue))"
+        }
     }
 }
