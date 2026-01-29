@@ -10,25 +10,24 @@ import UIKit
 
 extension InputCapturingView {
     func setupGestureRecognizers() {
-        // Tap gesture (works with touch and pointer click)
-        tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-        tapGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue),
-                                         NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
-        addGestureRecognizer(tapGesture)
+        // Long press gesture for immediate click detection
+        // minimumPressDuration=0 fires immediately on touch down
+        // allowableMovement is ignored after recognition, so .changed fires for all movement
+        // This replaces both tap and pan gestures for unified mouse handling
+        longPressGesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        longPressGesture.minimumPressDuration = 0
+        longPressGesture.allowedTouchTypes = [
+            NSNumber(value: UITouch.TouchType.direct.rawValue),
+            NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)
+        ]
+        longPressGesture.delegate = self
+        addGestureRecognizer(longPressGesture)
 
         // Right-click gesture (secondary click with pointer)
         rightClickGesture = UITapGestureRecognizer(target: self, action: #selector(handleRightClick(_:)))
         rightClickGesture.buttonMaskRequired = .secondary
         rightClickGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         addGestureRecognizer(rightClickGesture)
-
-        // Pan gesture for dragging (touch and pointer)
-        panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        panGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue),
-                                         NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
-        panGesture.minimumNumberOfTouches = 1
-        panGesture.maximumNumberOfTouches = 1
-        addGestureRecognizer(panGesture)
 
         // Scroll gesture - ONLY for direct touch (2-finger pan on screen)
         // Trackpad scrolling uses ScrollPhysicsCapturingView for native momentum/bounce
@@ -37,6 +36,7 @@ extension InputCapturingView {
         scrollGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         scrollGesture.minimumNumberOfTouches = 2
         scrollGesture.maximumNumberOfTouches = 2
+        scrollGesture.delegate = self
         addGestureRecognizer(scrollGesture)
 
         // Hover gesture for pointer movement tracking
@@ -54,11 +54,6 @@ extension InputCapturingView {
         directRotationGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         directRotationGesture.delegate = self
         addGestureRecognizer(directRotationGesture)
-
-        // Allow simultaneous recognition
-        tapGesture.delegate = self
-        panGesture.delegate = self
-        scrollGesture.delegate = self
     }
 
     // MARK: - Coordinate Helpers
@@ -90,52 +85,87 @@ extension InputCapturingView {
     }
 
     /// Get combined modifiers from a gesture (at event time) and keyboard state
-    /// This is the proper way to get modifiers for pointer events - read from gesture directly
+    /// Polls hardware keyboard for accurate modifier state to avoid stuck modifiers
     func modifiers(from gesture: UIGestureRecognizer) -> MirageModifierFlags {
+        // Poll hardware keyboard for accurate modifier state
+        refreshModifierStateFromHardware()
+
+        // Fall back to gesture flags if hardware unavailable
         resyncModifierState(from: gesture.modifierFlags)
+
         let gestureModifiers = MirageModifierFlags(uiKeyModifierFlags: gesture.modifierFlags)
         return gestureModifiers.union(keyboardModifiers)
     }
 
     // MARK: - Gesture Handlers
 
-    @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+    @objc func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
         let rawLocation = gesture.location(in: self)
         let location = normalizedLocation(rawLocation)
-        let now = CACurrentMediaTime()
-
-        // Detect multi-click: check if this tap is close enough in time and space to the previous one
-        let timeSinceLastTap = now - lastTapTime
-        let distance = hypot(location.x - lastTapLocation.x, location.y - lastTapLocation.y)
-
-        if timeSinceLastTap < Self.multiClickTimeThreshold && distance < Self.multiClickDistanceThreshold {
-            // Increment click count for multi-click (double-click, triple-click, etc.)
-            currentClickCount += 1
-        } else {
-            // Reset to single click
-            currentClickCount = 1
-        }
-
-        // Update tracking state for next tap
-        lastTapTime = now
-        lastTapLocation = location
-
-        // Debug logging for coordinate tracking
-        MirageLogger.client("TAP: raw=(\(Int(rawLocation.x)), \(Int(rawLocation.y))), bounds=(\(Int(bounds.width))x\(Int(bounds.height))), normalized=(\(String(format: "%.3f", location.x)), \(String(format: "%.3f", location.y))), clickCount=\(currentClickCount)")
-
-        // Read modifiers directly from gesture at event time
         let eventModifiers = modifiers(from: gesture)
 
-        let mouseEvent = MirageMouseEvent(
-            button: .left,
-            location: location,
-            clickCount: currentClickCount,
-            modifiers: eventModifiers
-        )
+        switch gesture.state {
+        case .began:
+            // Detect multi-click timing
+            let now = CACurrentMediaTime()
+            let timeSinceLastTap = now - lastTapTime
+            let distance = hypot(location.x - lastTapLocation.x, location.y - lastTapLocation.y)
 
-        // Send mouse down then mouse up for a click
-        onInputEvent?(.mouseDown(mouseEvent))
-        onInputEvent?(.mouseUp(mouseEvent))
+            if timeSinceLastTap < Self.multiClickTimeThreshold && distance < Self.multiClickDistanceThreshold {
+                currentClickCount += 1
+            } else {
+                currentClickCount = 1
+            }
+
+            lastTapTime = now
+            lastTapLocation = location
+            isDragging = false
+            lastPanLocation = location
+
+            MirageLogger.client("PRESS: normalized=(\(String(format: "%.3f", location.x)), \(String(format: "%.3f", location.y))), clickCount=\(currentClickCount)")
+
+            let mouseEvent = MirageMouseEvent(
+                button: .left,
+                location: location,
+                clickCount: currentClickCount,
+                modifiers: eventModifiers
+            )
+            onInputEvent?(.mouseDown(mouseEvent))
+
+        case .changed:
+            // Track all movement - no threshold, pixel-perfect dragging
+            let distance = hypot(location.x - lastPanLocation.x, location.y - lastPanLocation.y)
+            if distance > 0.0001 {  // Any actual movement
+                isDragging = true
+                let mouseEvent = MirageMouseEvent(button: .left, location: location, modifiers: eventModifiers)
+                onInputEvent?(.mouseDragged(mouseEvent))
+                lastPanLocation = location
+            }
+
+        case .ended:
+            let mouseEvent = MirageMouseEvent(
+                button: .left,
+                location: location,
+                clickCount: currentClickCount,
+                modifiers: eventModifiers
+            )
+            onInputEvent?(.mouseUp(mouseEvent))
+            isDragging = false
+
+        case .cancelled:
+            // Send mouseUp on cancel to avoid stuck mouse state
+            let mouseEvent = MirageMouseEvent(
+                button: .left,
+                location: location,
+                clickCount: currentClickCount,
+                modifiers: eventModifiers
+            )
+            onInputEvent?(.mouseUp(mouseEvent))
+            isDragging = false
+
+        default:
+            break
+        }
     }
 
     @objc func handleRightClick(_ gesture: UITapGestureRecognizer) {
@@ -165,32 +195,6 @@ extension InputCapturingView {
 
         onInputEvent?(.rightMouseDown(mouseEvent))
         onInputEvent?(.rightMouseUp(mouseEvent))
-    }
-
-    @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-        let location = normalizedLocation(gesture.location(in: self))
-        let eventModifiers = modifiers(from: gesture)
-
-        switch gesture.state {
-        case .began:
-            isDragging = true
-            lastPanLocation = location
-            let mouseEvent = MirageMouseEvent(button: .left, location: location, modifiers: eventModifiers)
-            onInputEvent?(.mouseDown(mouseEvent))
-
-        case .changed:
-            let mouseEvent = MirageMouseEvent(button: .left, location: location, modifiers: eventModifiers)
-            onInputEvent?(.mouseDragged(mouseEvent))
-            lastPanLocation = location
-
-        case .ended, .cancelled:
-            isDragging = false
-            let mouseEvent = MirageMouseEvent(button: .left, location: location, modifiers: eventModifiers)
-            onInputEvent?(.mouseUp(mouseEvent))
-
-        default:
-            break
-        }
     }
 
     @objc func handleScroll(_ gesture: UIPanGestureRecognizer) {

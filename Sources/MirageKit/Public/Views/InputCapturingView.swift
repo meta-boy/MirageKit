@@ -89,8 +89,7 @@ public class InputCapturingView: UIView {
     private nonisolated(unsafe) var registeredCursorStreamID: StreamID?
 
     // Gesture recognizers
-    var tapGesture: UITapGestureRecognizer!
-    var panGesture: UIPanGestureRecognizer!
+    var longPressGesture: UILongPressGestureRecognizer!
     var scrollGesture: UIPanGestureRecognizer!
     var hoverGesture: UIHoverGestureRecognizer!
     var rightClickGesture: UITapGestureRecognizer!

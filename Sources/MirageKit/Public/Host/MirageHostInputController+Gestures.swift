@@ -17,6 +17,9 @@ import ApplicationServices
 extension MirageHostInputController {
     // MARK: - Gesture Translation (runs on accessibilityQueue)
 
+    /// Threshold for magnify gesture before triggering a zoom keystroke
+    private static let magnifyKeyThreshold: CGFloat = 0.08
+
     func handleMagnifyGesture(_ event: MirageMagnifyEvent, windowFrame: CGRect) {
         switch event.phase {
         case .began:
@@ -24,28 +27,40 @@ extension MirageHostInputController {
         case .changed:
             magnifyAccumulator += event.magnification
 
-            if abs(magnifyAccumulator) >= magnifyScrollThreshold {
-                let scrollDelta = Int32(-magnifyAccumulator * 50)
-                injectScrollWithModifier(
-                    deltaY: scrollDelta,
-                    modifier: .maskCommand,
-                    windowFrame: windowFrame
-                )
+            // Use CMD++/- keyboard shortcuts for zoom (more universally recognized than CMD+scroll)
+            if magnifyAccumulator >= Self.magnifyKeyThreshold {
+                // CMD+= (zoom in) - keyCode 0x18 is '='
+                injectKeyboardShortcut(keyCode: 0x18, modifiers: .maskCommand)
+                magnifyAccumulator = 0
+            } else if magnifyAccumulator <= -Self.magnifyKeyThreshold {
+                // CMD+- (zoom out) - keyCode 0x1B is '-'
+                injectKeyboardShortcut(keyCode: 0x1B, modifiers: .maskCommand)
                 magnifyAccumulator = 0
             }
         case .ended, .cancelled:
-            if abs(magnifyAccumulator) > 0.005 {
-                let scrollDelta = Int32(-magnifyAccumulator * 50)
-                injectScrollWithModifier(
-                    deltaY: scrollDelta,
-                    modifier: .maskCommand,
-                    windowFrame: windowFrame
-                )
+            // Trigger final zoom if accumulated enough
+            if magnifyAccumulator >= Self.magnifyKeyThreshold * 0.5 {
+                injectKeyboardShortcut(keyCode: 0x18, modifiers: .maskCommand)
+            } else if magnifyAccumulator <= -Self.magnifyKeyThreshold * 0.5 {
+                injectKeyboardShortcut(keyCode: 0x1B, modifiers: .maskCommand)
             }
             magnifyAccumulator = 0
         default:
             break
         }
+    }
+
+    /// Inject a keyboard shortcut (key down + key up)
+    private func injectKeyboardShortcut(keyCode: CGKeyCode, modifiers: CGEventFlags) {
+        // Key down
+        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) else { return }
+        keyDown.flags = modifiers
+        postEvent(keyDown)
+
+        // Key up
+        guard let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else { return }
+        keyUp.flags = modifiers
+        postEvent(keyUp)
     }
 
     func handleRotateGesture(_ event: MirageRotateEvent, windowFrame: CGRect) {

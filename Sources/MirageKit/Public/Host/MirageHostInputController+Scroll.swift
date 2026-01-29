@@ -38,6 +38,8 @@ extension MirageHostInputController {
         ) else { return }
 
         cgEvent.location = scrollPoint
+        // Apply modifier flags so CMD+scroll zoom works in Preview/Safari
+        cgEvent.flags = event.modifiers.cgEventFlags
         postEvent(cgEvent)
     }
 
