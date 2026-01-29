@@ -16,7 +16,7 @@ extension MirageHostService {
     /// Handle input events for the login display
     func handleLoginDisplayInputEvent(
         _ event: MirageInputEvent,
-        loginInfo: (bounds: CGRect, lastCursorPosition: CGPoint, hasCursorPosition: Bool)
+        loginInfo: (bounds: CGRect, lastCursorPosition: CGPoint, hasCursorPosition: Bool, hasReceivedFocusEvent: Bool)
     ) {
         let bounds = loginInfo.bounds
 
@@ -43,6 +43,7 @@ extension MirageHostService {
         case .mouseDown(let e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
+            loginDisplayInputState.markFocusReceived()
             warpCursorIfNeeded(to: point, type: .leftMouseDown)
             postHIDMouseEvent(.leftMouseDown, event: e, location: point)
         case .mouseUp(let e):
@@ -96,6 +97,11 @@ extension MirageHostService {
                 : CGPoint(x: bounds.midX, y: bounds.midY)
             postHIDScrollEvent(e, location: location)
         case .keyDown(let e):
+            // If first keyboard event without a prior mouse click, click to focus the login field
+            if !loginInfo.hasReceivedFocusEvent {
+                let centerPoint = CGPoint(x: bounds.midX, y: bounds.midY)
+                clickToFocusLoginField(at: centerPoint)
+            }
             postHIDKeyEvent(isKeyDown: true, event: e)
         case .keyUp(let e):
             postHIDKeyEvent(isKeyDown: false, event: e)
@@ -159,6 +165,29 @@ extension MirageHostService {
         cgEvent.type = .flagsChanged
         cgEvent.flags = modifiers.cgEventFlags
         cgEvent.post(tap: .cghidEventTap)
+    }
+
+    /// Click to focus the login field before keyboard input.
+    /// System-level UIs (login screen, screensaver) require a click to establish focus.
+    func clickToFocusLoginField(at point: CGPoint) {
+        loginDisplayInputState.markFocusReceived()
+
+        // Click at the center to focus the password field
+        guard let downEvent = CGEvent(
+            mouseEventSource: nil,
+            mouseType: .leftMouseDown,
+            mouseCursorPosition: point,
+            mouseButton: .left
+        ) else { return }
+        downEvent.post(tap: .cghidEventTap)
+
+        guard let upEvent = CGEvent(
+            mouseEventSource: nil,
+            mouseType: .leftMouseUp,
+            mouseCursorPosition: point,
+            mouseButton: .left
+        ) else { return }
+        upEvent.post(tap: .cghidEventTap)
     }
 }
 

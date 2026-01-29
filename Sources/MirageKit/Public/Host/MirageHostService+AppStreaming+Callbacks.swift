@@ -241,6 +241,9 @@ extension MirageHostService {
             return
         }
 
+        // Clear any stuck modifiers when app terminates
+        inputController.clearAllModifiers()
+
         // Stop all streams for this app
         let windowIDs = Array(session.windowStreams.keys)
         for windowID in windowIDs {

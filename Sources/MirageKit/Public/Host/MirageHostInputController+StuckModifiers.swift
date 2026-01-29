@@ -39,13 +39,23 @@ extension MirageHostInputController {
 
     private func checkForStuckModifiers() {
         let now = CACurrentMediaTime()
-        let timeSinceLastModifierEvent = now - lastModifierEventTime
+        var stuckModifiers: MirageModifierFlags = []
 
-        if !lastSentModifiers.isEmpty && timeSinceLastModifierEvent > modifierStuckTimeoutSeconds {
-            let roundedDuration = (timeSinceLastModifierEvent * 10).rounded() / 10
-            MirageLogger.host("Clearing stuck modifiers after \(roundedDuration)s of inactivity")
-            injectFlagsChanged([], app: nil)
+        // Check each active modifier individually for staleness
+        for (flag, timestamp) in modifierLastEventTimes {
+            if now - timestamp > modifierStuckTimeoutSeconds {
+                stuckModifiers.insert(flag)
+            }
         }
+
+        if !stuckModifiers.isEmpty {
+            MirageLogger.host("Clearing stuck modifiers: \(stuckModifiers)")
+            let remainingModifiers = lastSentModifiers.subtracting(stuckModifiers)
+            injectFlagsChanged(remainingModifiers, app: nil)
+        }
+
+        // Also verify system state matches tracked state
+        clearUnexpectedSystemModifiers()
     }
 
     /// Query the actual system modifier state and clear any modifiers that shouldn't be there.
@@ -103,6 +113,7 @@ extension MirageHostInputController {
             }
 
             self.lastSentModifiers = []
+            self.modifierLastEventTimes.removeAll()
             self.stopModifierResetTimer()
         }
     }

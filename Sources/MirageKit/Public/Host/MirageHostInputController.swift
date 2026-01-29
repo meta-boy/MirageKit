@@ -62,8 +62,8 @@ public final class MirageHostInputController: @unchecked Sendable {
 
     // MARK: - Modifier State Tracking (accessed from accessibilityQueue only)
 
-    /// Track the last time modifiers were updated.
-    var lastModifierEventTime: TimeInterval = 0
+    /// Track the last event time per modifier flag for individual staleness detection.
+    var modifierLastEventTimes: [MirageModifierFlags: TimeInterval] = [:]
 
     /// Track the last sent modifier state (for detecting stuck modifiers).
     var lastSentModifiers: MirageModifierFlags = []

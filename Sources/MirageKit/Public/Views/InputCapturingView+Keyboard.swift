@@ -76,6 +76,11 @@ extension InputCapturingView {
             let isCapsLockKey = key.keyCode == .keyboardCapsLock
             let fallbackFlags = key.modifierFlags
 
+            // Escape without modifiers clears any stuck modifier state as a recovery mechanism
+            if key.keyCode == .keyboardEscape && heldModifierKeys.isEmpty {
+                resetAllModifiers()
+            }
+
             if isCapsLockKey {
                 capsLockEnabled.toggle()
                 sendModifierStateIfNeeded(force: true)

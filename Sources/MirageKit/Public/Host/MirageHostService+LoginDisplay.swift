@@ -158,6 +158,9 @@ extension MirageHostService {
             loginDisplayResolution = displayInfo.resolution
             loginDisplayInputState.update(streamID: streamID, bounds: displayInfo.bounds)
 
+            // Clear any stuck modifiers before starting capture
+            inputController.clearAllModifiers()
+
             try await context.startLoginDisplay(
                 displayWrapper: displayInfo.displayWrapper,
                 resolution: displayInfo.resolution,
@@ -196,6 +199,9 @@ extension MirageHostService {
 
     /// Stop the login display stream
     func stopLoginDisplayStream(newState: HostSessionState) async {
+        // Clear any stuck modifiers before stopping
+        inputController.clearAllModifiers()
+
         stopLoginDisplayWatchdog()
         loginDisplayWatchdogStartTime = 0
         loginDisplayStartInProgress = false
@@ -315,6 +321,9 @@ extension MirageHostService {
             return
         }
         guard !loginDisplayStartInProgress else { return }
+
+        // Clear any stuck modifiers before restarting
+        inputController.clearAllModifiers()
 
         MirageLogger.host("Restarting login display stream: \(reason)")
         await stopLoginDisplayStream(newState: sessionState)

@@ -34,6 +34,9 @@ extension MirageHostService {
         maxBitrate: Int? = nil
         // hdr: Bool = false
     ) async throws -> MirageStreamSession {
+        // Clear any stuck modifier state from previous streams
+        inputController.clearAllModifiers()
+
         // Get the actual SCWindow, its owning application, and the display it's on
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         guard let scWindow = content.windows.first(where: { $0.windowID == window.id }) else {
@@ -297,6 +300,9 @@ extension MirageHostService {
 
     public func stopStream(_ session: MirageStreamSession, minimizeWindow: Bool = false) async {
         guard let context = streamsByID[session.id] else { return }
+
+        // Clear any stuck modifier state when stream ends
+        inputController.clearAllModifiers()
 
         // Stop menu bar monitoring for this stream
         await stopMenuBarMonitoring(streamID: session.id)

@@ -32,8 +32,12 @@ extension MirageHostInputController {
 
         postEvent(cgEvent)
 
+        // Update per-modifier timestamps for any active modifiers
         if !event.modifiers.isEmpty {
-            lastModifierEventTime = CACurrentMediaTime()
+            let now = CACurrentMediaTime()
+            for (flag, _) in Self.modifierKeyCodes where event.modifiers.contains(flag) {
+                modifierLastEventTimes[flag] = now
+            }
         }
     }
 
@@ -79,7 +83,16 @@ extension MirageHostInputController {
         }
 
         lastSentModifiers = modifiers
-        lastModifierEventTime = CACurrentMediaTime()
+
+        // Update per-modifier timestamps
+        let now = CACurrentMediaTime()
+        for (flag, _) in Self.modifierKeyCodes where modifiers.contains(flag) {
+            modifierLastEventTimes[flag] = now
+        }
+        // Remove timestamps for released modifiers
+        for (flag, _) in Self.modifierKeyCodes where !modifiers.contains(flag) {
+            modifierLastEventTimes.removeValue(forKey: flag)
+        }
 
         if !modifiers.isEmpty {
             startModifierResetTimerIfNeeded()

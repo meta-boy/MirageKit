@@ -62,6 +62,9 @@ extension MirageHostService {
         await stopAllStreamsForDesktopMode()
         logDesktopStartStep("other streams stopped")
 
+        // Clear any stuck modifiers from previous streams
+        inputController.clearAllModifiers()
+
         // Configure encoder with quality preset and optional overrides
         var config = encoderConfig
         let presetFrameRate = targetFrameRate ?? 60
@@ -240,6 +243,9 @@ extension MirageHostService {
 
     /// Stop the desktop stream
     func stopDesktopStream(reason: DesktopStreamStopReason = .clientRequested) async {
+        // Clear any stuck modifiers before stopping
+        inputController.clearAllModifiers()
+
         guard let streamID = desktopStreamID else { return }
 
         MirageLogger.host("Stopping desktop stream: streamID=\(streamID), reason=\(reason)")

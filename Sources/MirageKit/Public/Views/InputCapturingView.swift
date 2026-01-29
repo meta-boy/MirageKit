@@ -107,6 +107,7 @@ public class InputCapturingView: UIView {
     var capsLockEnabled: Bool = false
     var lastSentModifiers: MirageModifierFlags = []
     var modifierRefreshTask: Task<Void, Never>?
+    var hardwareRefreshFailureCount: Int = 0
 #if canImport(GameController)
     static let hardwareModifierKeyCodes: Set<GCKeyCode> = [
         .leftShift,
@@ -185,9 +186,17 @@ public class InputCapturingView: UIView {
         modifierRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                guard self.refreshModifierStateFromHardware() else {
-                    self.modifierRefreshTask = nil
-                    return
+                if self.refreshModifierStateFromHardware() {
+                    self.hardwareRefreshFailureCount = 0
+                } else {
+                    self.hardwareRefreshFailureCount += 1
+                    if self.hardwareRefreshFailureCount >= 3 {
+                        // Hardware unavailable, clear modifiers to prevent stuck state
+                        MirageLogger.client("Hardware keyboard unavailable, clearing modifiers")
+                        self.resetAllModifiers()
+                        self.modifierRefreshTask = nil
+                        return
+                    }
                 }
 
                 if self.heldModifierKeys.isEmpty {
@@ -463,7 +472,13 @@ public class InputCapturingView: UIView {
     @objc private func keyboardDidDisconnect(_ notification: Notification) {
         HardwareKeyboardCoordinator.shared.handleKeyboardDisconnect()
         stopModifierRefresh()
-        resetAllModifiers()
+
+        // Always notify the host to clear modifiers on keyboard disconnect,
+        // even if client-side modifiers are already empty (host may have drifted state)
+        heldModifierKeys.removeAll()
+        capsLockEnabled = false
+        lastSentModifiers = []
+        onInputEvent?(.flagsChanged([]))
     }
 #endif
 

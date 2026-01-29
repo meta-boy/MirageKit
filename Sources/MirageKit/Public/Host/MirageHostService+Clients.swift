@@ -13,6 +13,9 @@ import Foundation
 @MainActor
 extension MirageHostService {
     public func disconnectClient(_ client: MirageConnectedClient) async {
+        // Clear any stuck modifier state from this client's session
+        inputController.clearAllModifiers()
+
         // Stop all window streams for this client and minimize their windows
         for stream in activeStreams where stream.client.id == client.id {
             await stopStream(stream, minimizeWindow: true)

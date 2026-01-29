@@ -87,6 +87,9 @@ extension MirageHostService {
         await cursorMonitor?.stop()
         cursorMonitor = nil
 
+        // Clear any stuck modifiers before stopping
+        inputController.clearAllModifiers()
+
         // Stop all streams
         for stream in activeStreams {
             await stopStream(stream)

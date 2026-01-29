@@ -71,10 +71,11 @@ extension MirageHostInputController {
 
             case .keyDown(let e):
                 self.flushPointerLerp()
-                self.injectKeyEvent(isKeyDown: true, e, app: nil)
+                // Use HID tap for system-level UIs (screensaver, screenshot overlay)
+                self.postHIDKeyEvent(isKeyDown: true, e)
             case .keyUp(let e):
                 self.flushPointerLerp()
-                self.injectKeyEvent(isKeyDown: false, e, app: nil)
+                self.postHIDKeyEvent(isKeyDown: false, e)
             case .flagsChanged(let modifiers):
                 self.injectFlagsChanged(modifiers, app: nil)
 
@@ -118,6 +119,19 @@ extension MirageHostInputController {
         }
 
         postEvent(cgEvent)
+    }
+
+    /// Post a HID keyboard event for system-level UI compatibility.
+    /// Uses `.cghidEventTap` to work with screensaver, screenshot overlay, and other system UIs.
+    func postHIDKeyEvent(isKeyDown: Bool, _ event: MirageKeyEvent) {
+        guard let cgEvent = CGEvent(
+            keyboardEventSource: nil,
+            virtualKey: CGKeyCode(event.keyCode),
+            keyDown: isKeyDown
+        ) else { return }
+
+        cgEvent.flags = event.modifiers.cgEventFlags
+        cgEvent.post(tap: .cghidEventTap)
     }
 
     /// Inject scroll event for desktop streaming.
