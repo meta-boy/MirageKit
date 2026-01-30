@@ -95,6 +95,7 @@ final class MirageRefreshRateMonitor: NSObject {
     }
 
     private func resolveScreenMaxFPS() -> Int {
+        #if os(iOS)
         if let screen = view?.window?.windowScene?.screen {
             return screen.maximumFramesPerSecond
         }
@@ -102,6 +103,11 @@ final class MirageRefreshRateMonitor: NSObject {
             return screen.maximumFramesPerSecond
         }
         return 60
+        #else
+        // visionOS doesn't have UIScreen; use 90 fps (Vision Pro native rate)
+        // TODO: Support 120fps on M5 Vision Pro when Apple provides API to detect display capabilities
+        return 90
+        #endif
     }
 
     private func setOverride(_ newValue: Int) {
