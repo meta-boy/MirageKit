@@ -223,16 +223,24 @@ public struct MirageStreamContentView: View {
             }
         }
 
+        let viewSize = metrics.viewSize
+        let scaleFactor = metrics.scaleFactor
+        let rawPixelSize = CGSize(
+            width: viewSize.width * scaleFactor,
+            height: viewSize.height * scaleFactor
+        )
+        let resolvedRawPixelSize = (rawPixelSize.width > 0 && rawPixelSize.height > 0) ? rawPixelSize : metrics.pixelSize
+
         #if os(iOS) || os(visionOS)
-        MirageClientService.lastKnownDrawableSize = metrics.pixelSize
+        let previousDisplaySize = MirageClientService.lastKnownDrawableSize
+        if resolvedRawPixelSize != metrics.pixelSize || previousDisplaySize == .zero {
+            MirageClientService.lastKnownDrawableSize = resolvedRawPixelSize
+        }
         let fallbackScreenSize = CGSize(width: 1920, height: 1080)
         #else
         let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
         let fallbackScreenSize = screenBounds.size
         #endif
-
-        let viewSize = metrics.viewSize
-        let scaleFactor = metrics.scaleFactor
 
         let effectiveScreenSize = (viewSize == .zero) ? fallbackScreenSize : viewSize
 
@@ -246,7 +254,22 @@ public struct MirageStreamContentView: View {
         }
 
         guard isDesktopStream else { return }
-        let pixelSize = metrics.pixelSize
+
+        #if os(iOS) || os(visionOS)
+        let preferredDisplaySize: CGSize
+        if previousDisplaySize.width > 0,
+           previousDisplaySize.height > 0,
+           resolvedRawPixelSize == metrics.pixelSize,
+           previousDisplaySize.width >= metrics.pixelSize.width,
+           previousDisplaySize.height >= metrics.pixelSize.height {
+            preferredDisplaySize = previousDisplaySize
+        } else {
+            preferredDisplaySize = resolvedRawPixelSize
+        }
+        #else
+        let preferredDisplaySize = resolvedRawPixelSize
+        #endif
+
         displayResolutionTask?.cancel()
         displayResolutionTask = Task { @MainActor in
             do {
@@ -255,11 +278,16 @@ public struct MirageStreamContentView: View {
                 return
             }
 
-            guard lastSentDisplayResolution != pixelSize else { return }
-            lastSentDisplayResolution = pixelSize
+            if lastSentDisplayResolution == .zero {
+                lastSentDisplayResolution = preferredDisplaySize
+                return
+            }
+
+            guard lastSentDisplayResolution != preferredDisplaySize else { return }
+            lastSentDisplayResolution = preferredDisplaySize
             try? await clientService.sendDisplayResolutionChange(
                 streamID: session.streamID,
-                newResolution: pixelSize
+                newResolution: preferredDisplaySize
             )
         }
     }

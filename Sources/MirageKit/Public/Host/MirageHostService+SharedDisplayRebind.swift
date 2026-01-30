@@ -85,7 +85,6 @@ extension MirageHostService {
         desktopDisplayBounds = displayBounds
 
         do {
-            await disableDisplayMirroring(displayID: newContext.displayID)
             await setupDisplayMirroring(targetDisplayID: newContext.displayID)
 
             let captureDisplay: SCDisplayWrapper
@@ -100,8 +99,12 @@ extension MirageHostService {
                 resolution: newContext.resolution
             )
 
-            let mainDisplayBounds = CGDisplayBounds(CGMainDisplayID())
-            inputStreamCacheActor.updateWindowFrame(desktopStreamID, newFrame: mainDisplayBounds)
+            let primaryBounds = refreshDesktopPrimaryPhysicalBounds()
+            let inputBounds = resolvedDesktopInputBounds(
+                physicalBounds: primaryBounds,
+                virtualResolution: newContext.resolution
+            )
+            inputStreamCacheActor.updateWindowFrame(desktopStreamID, newFrame: inputBounds)
             await sendStreamScaleUpdate(streamID: desktopStreamID)
             MirageLogger.host("Desktop stream rebound to shared display generation \(newContext.generation) (\(desktopCaptureSource.displayName))")
         } catch {

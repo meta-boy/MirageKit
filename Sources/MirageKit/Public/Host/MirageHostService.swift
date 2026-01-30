@@ -128,6 +128,11 @@ public final class MirageHostService {
 
     /// Physical displays that were mirrored during desktop streaming (for restoration)
     var mirroredPhysicalDisplayIDs: Set<CGDirectDisplayID> = []
+    /// Snapshot of display mirroring state before desktop streaming.
+    var desktopMirroringSnapshot: [CGDirectDisplayID: CGDirectDisplayID] = [:]
+    /// Primary physical display information captured before mirroring.
+    var desktopPrimaryPhysicalDisplayID: CGDirectDisplayID?
+    var desktopPrimaryPhysicalBounds: CGRect?
 
     // Cursor monitoring - internal for extension access
     var cursorMonitor: CursorMonitor?
@@ -209,6 +214,54 @@ public final class MirageHostService {
         onResizeWindowForStream = { [weak windowController] window, size in
             windowController?.resizeAndCenterWindowForStream(window, targetSize: size)
         }
+    }
+
+    /// Resolve input bounds for desktop streaming based on physical display size.
+    /// When mirroring a virtual display with a different aspect ratio, the mirrored
+    /// content is aspect-fit within the physical display and input should target
+    /// that content rect (not the full physical bounds).
+    func resolvedDesktopInputBounds(
+        physicalBounds: CGRect,
+        virtualResolution: CGSize?
+    ) -> CGRect {
+        guard desktopUsesVirtualDisplay,
+              let virtualResolution,
+              virtualResolution.width > 0,
+              virtualResolution.height > 0 else {
+            return physicalBounds
+        }
+
+        let contentAspect = virtualResolution.width / virtualResolution.height
+        let boundsAspect = physicalBounds.width / physicalBounds.height
+        var fittedSize = physicalBounds.size
+
+        if boundsAspect > contentAspect {
+            fittedSize.height = physicalBounds.height
+            fittedSize.width = fittedSize.height * contentAspect
+        } else {
+            fittedSize.width = physicalBounds.width
+            fittedSize.height = fittedSize.width / contentAspect
+        }
+
+        let horizontalInset = max(0, physicalBounds.width - fittedSize.width)
+        let verticalInset = max(0, physicalBounds.height - fittedSize.height)
+        let origin = CGPoint(
+            x: physicalBounds.origin.x + horizontalInset * 0.5,
+            y: physicalBounds.origin.y + verticalInset
+        )
+        return CGRect(origin: origin, size: fittedSize)
+    }
+
+    /// Refresh cached physical display bounds after mirroring changes.
+    /// Returns the updated physical bounds.
+    func refreshDesktopPrimaryPhysicalBounds() -> CGRect {
+        let displayID = desktopPrimaryPhysicalDisplayID
+            ?? resolvePrimaryPhysicalDisplayID()
+            ?? CGMainDisplayID()
+        desktopPrimaryPhysicalDisplayID = displayID
+        let bounds = CGDisplayBounds(displayID)
+        desktopPrimaryPhysicalBounds = bounds
+        return bounds
     }
 
     /// Start hosting and advertising

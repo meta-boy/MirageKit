@@ -233,6 +233,11 @@ extension MirageHostService {
                     refreshRate: streamRefreshRate
                 )
 
+                // Re-apply mirroring after mode changes (display updates can drop mirror state).
+                if let displayID = await SharedVirtualDisplayManager.shared.getDisplayID() {
+                    await setupDisplayMirroring(targetDisplayID: displayID)
+                }
+
                 // 2. Update the capture/encoder dimensions to match new resolution
                 //    Since displayID doesn't change, we just need to update the stream config
                 try await desktopContext.updateResolution(
@@ -240,11 +245,14 @@ extension MirageHostService {
                     height: Int(newResolution.height)
                 )
 
-                // 3. Update input cache with main display bounds (main display mirrors virtual)
-                // Input is injected at main display coordinates, not virtual display coordinates
-                let mainDisplayBounds = CGDisplayBounds(CGMainDisplayID())
-                inputStreamCacheActor.updateWindowFrame(streamID, newFrame: mainDisplayBounds)
-                MirageLogger.host("Desktop stream resized to \(Int(newResolution.width))x\(Int(newResolution.height)), input bounds: \(mainDisplayBounds)")
+                // 3. Update input cache for mirrored content bounds on the physical display.
+                let primaryBounds = refreshDesktopPrimaryPhysicalBounds()
+                let inputBounds = resolvedDesktopInputBounds(
+                    physicalBounds: primaryBounds,
+                    virtualResolution: newResolution
+                )
+                inputStreamCacheActor.updateWindowFrame(streamID, newFrame: inputBounds)
+                MirageLogger.host("Desktop stream resized to \(Int(newResolution.width))x\(Int(newResolution.height)), input bounds: \(inputBounds)")
 
                 // 4. Send desktopStreamStarted to notify client that resize is complete
                 //    This triggers onStreamMinimumSizeUpdate which clears the resize blur
