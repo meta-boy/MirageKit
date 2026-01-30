@@ -31,6 +31,8 @@ public struct MirageStreamContentView: View {
     /// Whether the client is currently waiting for host to complete resize.
     @State private var isResizing: Bool = false
     @State private var resizeFallbackTask: Task<Void, Never>?
+    @State private var displayResolutionTask: Task<Void, Never>?
+    @State private var lastSentDisplayResolution: CGSize = .zero
 
     @State private var scrollInputSampler = ScrollInputSampler()
     @State private var pointerInputSampler = PointerInputSampler()
@@ -131,6 +133,8 @@ public struct MirageStreamContentView: View {
             pointerInputSampler.reset()
             resizeFallbackTask?.cancel()
             resizeFallbackTask = nil
+            displayResolutionTask?.cancel()
+            displayResolutionTask = nil
         }
         #if os(macOS)
         .background(
@@ -238,6 +242,24 @@ public struct MirageStreamContentView: View {
                 metrics.pixelSize,
                 screenBounds: effectiveScreenSize,
                 scaleFactor: scaleFactor
+            )
+        }
+
+        guard isDesktopStream else { return }
+        let pixelSize = metrics.pixelSize
+        displayResolutionTask?.cancel()
+        displayResolutionTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(200))
+            } catch {
+                return
+            }
+
+            guard lastSentDisplayResolution != pixelSize else { return }
+            lastSentDisplayResolution = pixelSize
+            try? await clientService.sendDisplayResolutionChange(
+                streamID: session.streamID,
+                newResolution: pixelSize
             )
         }
     }

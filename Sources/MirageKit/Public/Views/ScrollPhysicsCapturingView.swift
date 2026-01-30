@@ -30,9 +30,6 @@ final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureR
     /// Callback for scroll events: (deltaX, deltaY, phase, momentumPhase)
     var onScroll: ((CGFloat, CGFloat, MirageScrollPhase, MirageScrollPhase) -> Void)?
 
-    /// Callback for pinch events: (magnification, phase)
-    var onPinch: ((CGFloat, MirageScrollPhase) -> Void)?
-
     /// Callback for rotation events: (rotationDegrees, phase)
     var onRotation: ((CGFloat, MirageScrollPhase) -> Void)?
 
@@ -49,11 +46,9 @@ final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureR
     private var isRecentering = false
 
     /// Gesture recognizers for trackpad pinch/rotation
-    private var pinchGesture: UIPinchGestureRecognizer!
     private var rotationGesture: UIRotationGestureRecognizer!
 
     /// State tracking for incremental gesture deltas
-    private var lastPinchScale: CGFloat = 1.0
     private var lastRotationAngle: CGFloat = 0.0
 
     override init(frame: CGRect) {
@@ -124,12 +119,6 @@ final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureR
         // Set scroll content size explicitly (UIScrollView needs this)
         scrollContent.frame = CGRect(x: 0, y: 0, width: scrollableSize, height: scrollableSize)
         scrollView.contentSize = CGSize(width: scrollableSize, height: scrollableSize)
-
-        // Pinch gesture for trackpad zoom (indirectPointer only)
-        pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-        pinchGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
-        pinchGesture.delegate = self
-        addGestureRecognizer(pinchGesture)
 
         // Rotation gesture for trackpad (indirectPointer only)
         rotationGesture = UIRotationGestureRecognizer(target: self, action: #selector(handleRotation(_:)))
@@ -226,28 +215,6 @@ final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureR
     }
 
     // MARK: - Trackpad Gesture Handlers
-
-    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        let phase = MirageScrollPhase(gestureState: gesture.state)
-
-        switch gesture.state {
-        case .began:
-            lastPinchScale = 1.0
-            onPinch?(0, phase)
-
-        case .changed:
-            let magnification = gesture.scale - lastPinchScale
-            lastPinchScale = gesture.scale
-            onPinch?(magnification, phase)
-
-        case .ended, .cancelled:
-            onPinch?(0, phase)
-            lastPinchScale = 1.0
-
-        default:
-            break
-        }
-    }
 
     @objc private func handleRotation(_ gesture: UIRotationGestureRecognizer) {
         let phase = MirageScrollPhase(gestureState: gesture.state)

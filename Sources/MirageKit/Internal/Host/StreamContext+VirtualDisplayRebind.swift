@@ -74,7 +74,7 @@ extension StreamContext {
     }
 
     func rebindToSharedDisplay(
-        newContext: SharedVirtualDisplayManager.ManagedDisplayContext,
+        newContext: SharedVirtualDisplayManager.DisplaySnapshot,
         reason: String
     ) async throws {
         guard isRunning, useVirtualDisplay else { return }
@@ -172,4 +172,3 @@ extension StreamContext {
 }
 
 #endif
-

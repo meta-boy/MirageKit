@@ -19,7 +19,7 @@ extension SharedVirtualDisplayManager {
         guard let display = sharedDisplay else { return }
         guard display.generation != previousGeneration else { return }
         MirageLogger.host("Shared display generation advanced: \(previousGeneration) -> \(display.generation)")
-        generationChangeHandler?(display, previousGeneration)
+        generationChangeHandler?(snapshot(from: display), previousGeneration)
     }
 
     /// Fixed 3K resolution for virtual display
@@ -35,6 +35,42 @@ extension SharedVirtualDisplayManager {
         let heightDiff = abs(currentResolution.height - targetResolution.height)
         // Allow small tolerance (2 pixels) for rounding differences
         return widthDiff > 2 || heightDiff > 2
+    }
+
+    func updateDisplayInPlace(
+        newResolution: CGSize,
+        refreshRate: Int,
+        colorSpace: MirageColorSpace
+    ) async -> Bool {
+        guard let display = sharedDisplay else { return false }
+        guard display.colorSpace == colorSpace else { return false }
+
+        let success = CGVirtualDisplayBridge.updateDisplayResolution(
+            display: display.displayRef.value,
+            width: Int(newResolution.width),
+            height: Int(newResolution.height),
+            refreshRate: Double(refreshRate),
+            hiDPI: true
+        )
+
+        if success {
+            sharedDisplay = ManagedDisplayContext(
+                displayID: display.displayID,
+                spaceID: display.spaceID,
+                resolution: newResolution,
+                refreshRate: Double(refreshRate),
+                colorSpace: display.colorSpace,
+                generation: display.generation,
+                createdAt: display.createdAt,
+                displayRef: display.displayRef
+            )
+
+            await MainActor.run {
+                VirtualDisplayKeepaliveController.shared.update(displayID: display.displayID)
+            }
+        }
+
+        return success
     }
 
     /// Create the shared virtual display
@@ -121,17 +157,18 @@ extension SharedVirtualDisplayManager {
         // Clear the reference - ARC will deallocate the CGVirtualDisplay
         // which removes it from the system display list
         sharedDisplay = nil
+        CGVirtualDisplayBridge.configuredDisplayOrigins.removeValue(forKey: displayID)
 
-        // Small delay to let the system process the display removal
-        try? await Task.sleep(for: .milliseconds(50))
-
-        // Verify the display was actually removed
-        let stillExists = CGVirtualDisplayBridge.isDisplayOnline(displayID)
-        if stillExists {
-            MirageLogger.error(.host, "WARNING: Virtual display \(displayID) still exists after destruction!")
-        } else {
-            MirageLogger.host("Virtual display \(displayID) successfully destroyed")
+        let deadline = Date().addingTimeInterval(1.5)
+        while Date() < deadline {
+            if !CGVirtualDisplayBridge.isDisplayOnline(displayID) {
+                MirageLogger.host("Virtual display \(displayID) successfully destroyed")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(50))
         }
+
+        MirageLogger.error(.host, "WARNING: Virtual display \(displayID) still exists after destruction!")
     }
 
 }

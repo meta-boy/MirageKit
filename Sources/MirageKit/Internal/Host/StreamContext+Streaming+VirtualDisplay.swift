@@ -203,7 +203,7 @@ extension StreamContext {
             refreshRate: SharedVirtualDisplayManager.streamRefreshRate(for: currentFrameRate)
         )
 
-        guard let newContext = await SharedVirtualDisplayManager.shared.getDisplayContext() else {
+        guard let newContext = await SharedVirtualDisplayManager.shared.getDisplaySnapshot() else {
             throw MirageError.protocolError("No shared virtual display available after resolution update")
         }
         self.virtualDisplayContext = newContext

@@ -43,12 +43,6 @@ extension InputCapturingView {
         hoverGesture = UIHoverGestureRecognizer(target: self, action: #selector(handleHover(_:)))
         addGestureRecognizer(hoverGesture)
 
-        // Pinch gesture for direct touch zoom
-        directPinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handleDirectPinch(_:)))
-        directPinchGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        directPinchGesture.delegate = self
-        addGestureRecognizer(directPinchGesture)
-
         // Rotation gesture for direct touch
         directRotationGesture = UIRotationGestureRecognizer(target: self, action: #selector(handleDirectRotation(_:)))
         directRotationGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -87,14 +81,18 @@ extension InputCapturingView {
     /// Get combined modifiers from a gesture (at event time) and keyboard state
     /// Polls hardware keyboard for accurate modifier state to avoid stuck modifiers
     func modifiers(from gesture: UIGestureRecognizer) -> MirageModifierFlags {
-        // Poll hardware keyboard for accurate modifier state
-        refreshModifierStateFromHardware()
-
-        // Fall back to gesture flags if hardware unavailable
-        resyncModifierState(from: gesture.modifierFlags)
+        let hardwareAvailable = refreshModifiersForInput()
+        if hardwareAvailable {
+            let snapshot = keyboardModifiers
+            sendModifierSnapshotIfNeeded(snapshot)
+            return snapshot
+        }
 
         let gestureModifiers = MirageModifierFlags(uiKeyModifierFlags: gesture.modifierFlags)
-        return gestureModifiers.union(keyboardModifiers)
+        resyncModifierState(from: gesture.modifierFlags)
+        let snapshot = gestureModifiers.union(keyboardModifiers)
+        sendModifierSnapshotIfNeeded(snapshot)
+        return snapshot
     }
 
     // MARK: - Gesture Handlers
@@ -241,6 +239,7 @@ extension InputCapturingView {
 
     @objc func handleDirectPinch(_ gesture: UIPinchGestureRecognizer) {
         let phase = MirageScrollPhase(gestureState: gesture.state)
+        refreshModifiersForInput()
 
         switch gesture.state {
         case .began:
@@ -266,6 +265,7 @@ extension InputCapturingView {
 
     @objc func handleDirectRotation(_ gesture: UIRotationGestureRecognizer) {
         let phase = MirageScrollPhase(gestureState: gesture.state)
+        refreshModifiersForInput()
 
         switch gesture.state {
         case .began:

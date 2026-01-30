@@ -143,6 +143,21 @@ public class InputCapturingView: UIView {
         onInputEvent?(.flagsChanged(modifiers))
     }
 
+    @discardableResult
+    func refreshModifiersForInput() -> Bool {
+        let hardwareAvailable = refreshModifierStateFromHardware()
+        if hardwareAvailable {
+            sendModifierSnapshotIfNeeded(keyboardModifiers)
+        }
+        return hardwareAvailable
+    }
+
+    func sendModifierSnapshotIfNeeded(_ modifiers: MirageModifierFlags) {
+        guard modifiers != lastSentModifiers else { return }
+        lastSentModifiers = modifiers
+        onInputEvent?(.flagsChanged(modifiers))
+    }
+
     func updateCapsLockState(from modifierFlags: UIKeyModifierFlags) {
         let isEnabled = modifierFlags.contains(.alphaShift)
         guard isEnabled != capsLockEnabled else { return }
@@ -170,11 +185,16 @@ public class InputCapturingView: UIView {
         heldModifierKeys = newHeldKeys
         capsLockEnabled = newCapsLockEnabled
         sendModifierStateIfNeeded(force: true)
+        if heldModifierKeys.isEmpty {
+            stopModifierRefresh()
+        } else {
+            startModifierRefreshIfNeeded()
+        }
     }
 
     /// Clear all held modifiers with a snapshot update
     func resetAllModifiers() {
-        guard !heldModifierKeys.isEmpty || capsLockEnabled else { return }
+        guard !heldModifierKeys.isEmpty || capsLockEnabled || !lastSentModifiers.isEmpty else { return }
         stopModifierRefresh()
         heldModifierKeys.removeAll()
         capsLockEnabled = false
@@ -369,28 +389,25 @@ public class InputCapturingView: UIView {
         // Scroll events don't have a gesture recognizer with modifierFlags, so use keyboard state only
         scrollPhysicsView!.onScroll = { [weak self] deltaX, deltaY, phase, momentumPhase in
             guard let self else { return }
+            self.refreshModifiersForInput()
+            let modifiers = self.keyboardModifiers
+            self.sendModifierSnapshotIfNeeded(modifiers)
             let scrollEvent = MirageScrollEvent(
                 deltaX: deltaX,
                 deltaY: deltaY,
                 location: self.lastCursorPosition,
                 phase: phase,
                 momentumPhase: momentumPhase,
-                modifiers: self.keyboardModifiers,
+                modifiers: modifiers,
                 isPrecise: true  // Trackpad scrolling is precise
             )
             self.onInputEvent?(.scrollWheel(scrollEvent))
         }
 
-        // Configure trackpad pinch callback
-        scrollPhysicsView!.onPinch = { [weak self] magnification, phase in
-            guard let self else { return }
-            let event = MirageMagnifyEvent(magnification: magnification, phase: phase)
-            self.onInputEvent?(.magnify(event))
-        }
-
         // Configure trackpad rotation callback
         scrollPhysicsView!.onRotation = { [weak self] rotation, phase in
             guard let self else { return }
+            self.refreshModifiersForInput()
             let event = MirageRotateEvent(rotation: rotation, phase: phase)
             self.onInputEvent?(.rotate(event))
         }

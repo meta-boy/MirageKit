@@ -71,14 +71,20 @@ extension InputCapturingView {
     }
 
     public override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let hardwareAvailable = refreshModifiersForInput()
+        let allowFallback = !hardwareAvailable
+
         for press in presses {
             guard let key = press.key else { continue }
             let isCapsLockKey = key.keyCode == .keyboardCapsLock
             let fallbackFlags = key.modifierFlags
 
             // Escape without modifiers clears any stuck modifier state as a recovery mechanism
-            if key.keyCode == .keyboardEscape && heldModifierKeys.isEmpty {
-                resetAllModifiers()
+            if key.keyCode == .keyboardEscape {
+                let flags = modifierSnapshot(from: event, fallbackFlags: fallbackFlags, allowFallback: true) ?? []
+                if flags.isEmpty {
+                    resetAllModifiers()
+                }
             }
 
             if isCapsLockKey {
@@ -94,10 +100,18 @@ extension InputCapturingView {
 
             if isModifier {
                 heldModifierKeys.insert(key.keyCode)
-                resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
+                if allowFallback {
+                    resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
+                } else {
+                    sendModifierStateIfNeeded(force: true)
+                }
             } else {
-                resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
-                startKeyRepeat(for: press)
+                if allowFallback {
+                    resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
+                }
+                if !keyboardModifiers.contains(.command) {
+                    startKeyRepeat(for: press)
+                }
                 if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) {
                     onInputEvent?(.keyDown(keyEvent))
                 }
@@ -108,6 +122,9 @@ extension InputCapturingView {
     }
 
     public override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let hardwareAvailable = refreshModifiersForInput()
+        let allowFallback = !hardwareAvailable
+
         for press in presses {
             guard let key = press.key else { continue }
             let isCapsLockKey = key.keyCode == .keyboardCapsLock
@@ -121,15 +138,21 @@ extension InputCapturingView {
 
             if isModifier {
                 heldModifierKeys.remove(key.keyCode)
-                resyncModifiers(
-                    using: event,
-                    fallbackFlags: fallbackFlags,
-                    allowFallback: false,
-                    removing: key.keyCode
-                )
+                if allowFallback {
+                    resyncModifiers(
+                        using: event,
+                        fallbackFlags: fallbackFlags,
+                        allowFallback: false,
+                        removing: key.keyCode
+                    )
+                } else {
+                    sendModifierStateIfNeeded(force: true)
+                }
             } else {
                 stopKeyRepeat(for: key.keyCode)
-                resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
+                if allowFallback {
+                    resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
+                }
                 if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) {
                     onInputEvent?(.keyUp(keyEvent))
                 }
@@ -139,6 +162,9 @@ extension InputCapturingView {
     }
 
     public override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let hardwareAvailable = refreshModifiersForInput()
+        let allowFallback = !hardwareAvailable
+
         for press in presses {
             guard let key = press.key else { continue }
             let isCapsLockKey = key.keyCode == .keyboardCapsLock
@@ -152,15 +178,21 @@ extension InputCapturingView {
 
             if isModifier {
                 heldModifierKeys.remove(key.keyCode)
-                resyncModifiers(
-                    using: event,
-                    fallbackFlags: fallbackFlags,
-                    allowFallback: false,
-                    removing: key.keyCode
-                )
+                if allowFallback {
+                    resyncModifiers(
+                        using: event,
+                        fallbackFlags: fallbackFlags,
+                        allowFallback: false,
+                        removing: key.keyCode
+                    )
+                } else {
+                    sendModifierStateIfNeeded(force: true)
+                }
             } else {
                 stopKeyRepeat(for: key.keyCode)
-                resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
+                if allowFallback {
+                    resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
+                }
                 if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) {
                     onInputEvent?(.keyUp(keyEvent))
                 }
@@ -212,6 +244,11 @@ extension InputCapturingView {
 
     /// Fire a key repeat event
     func fireKeyRepeat(for keyCode: UIKeyboardHIDUsage) {
+        refreshModifiersForInput()
+        if keyboardModifiers.contains(.command) {
+            stopKeyRepeat(for: keyCode)
+            return
+        }
         guard let press = heldKeyPresses[keyCode],
               let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers, isRepeat: true) else { return }
         onInputEvent?(.keyDown(keyEvent))
@@ -271,6 +308,7 @@ extension InputCapturingView {
         // So we must manually send the character key events here
         guard let input = command.input else { return }
 
+        refreshModifiersForInput()
         let macKeyCode = Self.characterToMacKeyCode(input)
 
         // Build modifiers from the command's modifier flags merged with our tracked keyboard state.
@@ -298,9 +336,7 @@ extension InputCapturingView {
 
         // Refresh hardware state to sync modifiers after shortcut handling.
         // iOS doesn't call pressesEnded for modifiers during UIKeyCommand interception.
-#if canImport(GameController)
-        refreshModifierStateFromHardware()
-#endif
+        refreshModifiersForInput()
         updateModifierRefreshTimer()
     }
 

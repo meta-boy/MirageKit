@@ -16,7 +16,7 @@ import ScreenCaptureKit
 @MainActor
 extension MirageHostService {
     func handleSharedDisplayGenerationChange(
-        newContext: SharedVirtualDisplayManager.ManagedDisplayContext,
+        newContext: SharedVirtualDisplayManager.DisplaySnapshot,
         previousGeneration: UInt64
     ) async {
         guard previousGeneration != newContext.generation else { return }
@@ -76,7 +76,7 @@ extension MirageHostService {
     }
 
     private func handleDesktopStreamSharedDisplayGenerationChange(
-        newContext: SharedVirtualDisplayManager.ManagedDisplayContext,
+        newContext: SharedVirtualDisplayManager.DisplaySnapshot,
         displayBounds: CGRect
     ) async {
         guard desktopUsesVirtualDisplay else { return }

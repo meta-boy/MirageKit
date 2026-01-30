@@ -37,6 +37,17 @@ actor SharedVirtualDisplayManager {
         let displayRef: UncheckedSendableBox<AnyObject>
     }
 
+    /// Public snapshot of a managed virtual display (no display reference).
+    struct DisplaySnapshot: Sendable {
+        let displayID: CGDirectDisplayID
+        let spaceID: CGSSpaceID
+        let resolution: CGSize
+        let refreshRate: Double
+        let colorSpace: MirageColorSpace
+        let generation: UInt64
+        let createdAt: Date
+    }
+
     /// Box for non-Sendable display reference
     final class UncheckedSendableBox<T>: @unchecked Sendable {
         let value: T
@@ -107,7 +118,7 @@ actor SharedVirtualDisplayManager {
     var displayGeneration: UInt64 = 0
 
     /// Handler invoked when the shared display generation changes while streams are active.
-    var generationChangeHandler: (@Sendable (ManagedDisplayContext, UInt64) -> Void)?
+    var generationChangeHandler: (@Sendable (DisplaySnapshot, UInt64) -> Void)?
 
     static let preferredStreamRefreshRate: Int = 120
 

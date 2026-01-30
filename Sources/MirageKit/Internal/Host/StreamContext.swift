@@ -39,7 +39,7 @@ actor StreamContext {
 
     // Virtual display components (provides window isolation)
     // Uses SharedVirtualDisplayManager for single shared display across all streams
-    var virtualDisplayContext: SharedVirtualDisplayManager.ManagedDisplayContext?
+    var virtualDisplayContext: SharedVirtualDisplayManager.DisplaySnapshot?
     var useVirtualDisplay: Bool = true
     var sharedDisplayGeneration: UInt64 = 0
 

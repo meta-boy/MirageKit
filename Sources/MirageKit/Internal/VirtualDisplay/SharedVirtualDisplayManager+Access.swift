@@ -14,6 +14,18 @@ import CoreGraphics
 extension SharedVirtualDisplayManager {
     // MARK: - Display Access
 
+    func snapshot(from display: ManagedDisplayContext) -> DisplaySnapshot {
+        DisplaySnapshot(
+            displayID: display.displayID,
+            spaceID: display.spaceID,
+            resolution: display.resolution,
+            refreshRate: display.refreshRate,
+            colorSpace: display.colorSpace,
+            generation: display.generation,
+            createdAt: display.createdAt
+        )
+    }
+
     /// Get the shared display ID
     func getDisplayID() -> CGDirectDisplayID? {
         return sharedDisplay?.displayID
@@ -24,9 +36,10 @@ extension SharedVirtualDisplayManager {
         return sharedDisplay?.spaceID
     }
 
-    /// Get the shared display context
-    func getDisplayContext() -> ManagedDisplayContext? {
-        return sharedDisplay
+    /// Get the shared display snapshot
+    func getDisplaySnapshot() -> DisplaySnapshot? {
+        guard let display = sharedDisplay else { return nil }
+        return snapshot(from: display)
     }
 
     /// Get the shared display generation.
@@ -35,7 +48,7 @@ extension SharedVirtualDisplayManager {
     }
 
     /// Register a handler for shared-display generation changes.
-    func setGenerationChangeHandler(_ handler: (@Sendable (ManagedDisplayContext, UInt64) -> Void)?) {
+    func setGenerationChangeHandler(_ handler: (@Sendable (DisplaySnapshot, UInt64) -> Void)?) {
         generationChangeHandler = handler
     }
 
