@@ -29,8 +29,20 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
     /// Used to trigger stream recovery after app switching.
     public var onBecomeActive: (() -> Void)?
 
+    /// Callback when hardware keyboard presence changes.
+    public var onHardwareKeyboardPresenceChanged: ((Bool) -> Void)?
+
+    /// Callback when software keyboard visibility changes.
+    public var onSoftwareKeyboardVisibilityChanged: ((Bool) -> Void)?
+
     /// Whether input should snap to the dock edge.
     public var dockSnapEnabled: Bool
+
+    /// Whether direct touch uses a draggable virtual cursor.
+    public var usesVirtualTrackpad: Bool
+
+    /// Whether the software keyboard should be visible.
+    public var softwareKeyboardVisible: Bool
 
     public init(
         streamID: StreamID,
@@ -39,7 +51,11 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
         onRefreshRateOverrideChange: ((Int) -> Void)? = nil,
         cursorStore: MirageClientCursorStore? = nil,
         onBecomeActive: (() -> Void)? = nil,
-        dockSnapEnabled: Bool = false
+        onHardwareKeyboardPresenceChanged: ((Bool) -> Void)? = nil,
+        onSoftwareKeyboardVisibilityChanged: ((Bool) -> Void)? = nil,
+        dockSnapEnabled: Bool = false,
+        usesVirtualTrackpad: Bool = false,
+        softwareKeyboardVisible: Bool = false
     ) {
         self.streamID = streamID
         self.onInputEvent = onInputEvent
@@ -47,7 +63,11 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
         self.onRefreshRateOverrideChange = onRefreshRateOverrideChange
         self.cursorStore = cursorStore
         self.onBecomeActive = onBecomeActive
+        self.onHardwareKeyboardPresenceChanged = onHardwareKeyboardPresenceChanged
+        self.onSoftwareKeyboardVisibilityChanged = onSoftwareKeyboardVisibilityChanged
         self.dockSnapEnabled = dockSnapEnabled
+        self.usesVirtualTrackpad = usesVirtualTrackpad
+        self.softwareKeyboardVisible = softwareKeyboardVisible
     }
 
     public func makeCoordinator() -> MirageStreamViewCoordinator {
@@ -64,7 +84,11 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
         view.onDrawableMetricsChanged = context.coordinator.handleDrawableMetricsChanged
         view.onRefreshRateOverrideChange = onRefreshRateOverrideChange
         view.onBecomeActive = context.coordinator.handleBecomeActive
+        view.onHardwareKeyboardPresenceChanged = onHardwareKeyboardPresenceChanged
+        view.onSoftwareKeyboardVisibilityChanged = onSoftwareKeyboardVisibilityChanged
         view.dockSnapEnabled = dockSnapEnabled
+        view.usesVirtualTrackpad = usesVirtualTrackpad
+        view.softwareKeyboardVisible = softwareKeyboardVisible
         view.cursorStore = cursorStore
         // Set stream ID for direct frame cache access (bypasses all actor machinery)
         view.streamID = streamID
@@ -82,9 +106,13 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
         uiView.streamID = streamID
 
         uiView.dockSnapEnabled = dockSnapEnabled
+        uiView.usesVirtualTrackpad = usesVirtualTrackpad
+        uiView.softwareKeyboardVisible = softwareKeyboardVisible
         uiView.cursorStore = cursorStore
         uiView.onDrawableMetricsChanged = context.coordinator.handleDrawableMetricsChanged
         uiView.onRefreshRateOverrideChange = onRefreshRateOverrideChange
+        uiView.onHardwareKeyboardPresenceChanged = onHardwareKeyboardPresenceChanged
+        uiView.onSoftwareKeyboardVisibilityChanged = onSoftwareKeyboardVisibilityChanged
     }
 }
 #endif

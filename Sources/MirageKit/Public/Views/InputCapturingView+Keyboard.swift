@@ -71,6 +71,7 @@ extension InputCapturingView {
     }
 
     public override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        updateHardwareKeyboardPresence(true)
         let hardwareAvailable = refreshModifiersForInput()
         let allowFallback = !hardwareAvailable
 
@@ -391,6 +392,9 @@ extension InputCapturingView {
         case "-": return 0x1B
         case "=": return 0x18
         case "`": return 0x32
+        case " ": return 0x31
+        case "\t": return 0x30
+        case "\n": return 0x24
         default: return 0x00  // Default to 'a' for unknown characters
         }
     }

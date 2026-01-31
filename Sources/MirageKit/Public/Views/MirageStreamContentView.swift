@@ -20,7 +20,11 @@ public struct MirageStreamContentView: View {
     public let clientService: MirageClientService
     public let isDesktopStream: Bool
     public let onExitDesktopStream: (() -> Void)?
+    public let onHardwareKeyboardPresenceChanged: ((Bool) -> Void)?
+    public let onSoftwareKeyboardVisibilityChanged: ((Bool) -> Void)?
     public let dockSnapEnabled: Bool
+    public let usesVirtualTrackpad: Bool
+    public let softwareKeyboardVisible: Bool
 
     /// Resize holdoff task used during foreground transitions (iOS).
     @State private var resizeHoldoffTask: Task<Void, Never>?
@@ -44,21 +48,33 @@ public struct MirageStreamContentView: View {
     ///   - clientService: The client service used to send input and resize events.
     ///   - isDesktopStream: Whether the stream represents a desktop session.
     ///   - onExitDesktopStream: Optional handler for the desktop exit shortcut.
+    ///   - onHardwareKeyboardPresenceChanged: Optional handler for hardware keyboard availability.
+    ///   - onSoftwareKeyboardVisibilityChanged: Optional handler for software keyboard visibility.
     ///   - dockSnapEnabled: Whether input should snap to the dock edge on iPadOS.
+    ///   - usesVirtualTrackpad: Whether direct touch uses a draggable virtual cursor.
+    ///   - softwareKeyboardVisible: Whether the software keyboard should be visible.
     public init(
         session: MirageStreamSessionState,
         sessionStore: MirageClientSessionStore,
         clientService: MirageClientService,
         isDesktopStream: Bool = false,
         onExitDesktopStream: (() -> Void)? = nil,
-        dockSnapEnabled: Bool = false
+        onHardwareKeyboardPresenceChanged: ((Bool) -> Void)? = nil,
+        onSoftwareKeyboardVisibilityChanged: ((Bool) -> Void)? = nil,
+        dockSnapEnabled: Bool = false,
+        usesVirtualTrackpad: Bool = false,
+        softwareKeyboardVisible: Bool = false
     ) {
         self.session = session
         self.sessionStore = sessionStore
         self.clientService = clientService
         self.isDesktopStream = isDesktopStream
         self.onExitDesktopStream = onExitDesktopStream
+        self.onHardwareKeyboardPresenceChanged = onHardwareKeyboardPresenceChanged
+        self.onSoftwareKeyboardVisibilityChanged = onSoftwareKeyboardVisibilityChanged
         self.dockSnapEnabled = dockSnapEnabled
+        self.usesVirtualTrackpad = usesVirtualTrackpad
+        self.softwareKeyboardVisible = softwareKeyboardVisible
     }
 
     public var body: some View {
@@ -82,7 +98,11 @@ public struct MirageStreamContentView: View {
                 onBecomeActive: {
                     handleForegroundRecovery()
                 },
-                dockSnapEnabled: dockSnapEnabled
+                onHardwareKeyboardPresenceChanged: onHardwareKeyboardPresenceChanged,
+                onSoftwareKeyboardVisibilityChanged: onSoftwareKeyboardVisibilityChanged,
+                dockSnapEnabled: dockSnapEnabled,
+                usesVirtualTrackpad: usesVirtualTrackpad,
+                softwareKeyboardVisible: softwareKeyboardVisible
             )
             .ignoresSafeArea()
             .blur(radius: isResizing ? 20 : 0)

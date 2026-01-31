@@ -64,6 +64,7 @@ MirageKit/
 - Input event types: `Input/`.
 - Shared types and configuration: `Types/`.
 - Stream rendering views: `Views/` (Metal-backed stream view, input capture, and representables).
+- Software keyboard input helpers: `Views/InputCapturingView+SoftwareKeyboard.swift`.
 - Utilities: `Utilities/`.
 
 ## Internal Implementation (`Sources/MirageKit/Internal/`)

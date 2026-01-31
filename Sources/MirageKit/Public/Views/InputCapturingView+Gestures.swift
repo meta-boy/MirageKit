@@ -43,6 +43,36 @@ extension InputCapturingView {
         hoverGesture = UIHoverGestureRecognizer(target: self, action: #selector(handleHover(_:)))
         addGestureRecognizer(hoverGesture)
 
+        // Virtual cursor gestures (direct touch trackpad mode)
+        virtualCursorPanGesture = UIPanGestureRecognizer(target: self, action: #selector(handleVirtualCursorPan(_:)))
+        virtualCursorPanGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        virtualCursorPanGesture.minimumNumberOfTouches = 1
+        virtualCursorPanGesture.maximumNumberOfTouches = 1
+        virtualCursorPanGesture.delegate = self
+        addGestureRecognizer(virtualCursorPanGesture)
+
+        virtualCursorLongPressGesture = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(handleVirtualCursorLongPress(_:))
+        )
+        virtualCursorLongPressGesture.minimumPressDuration = 0.25
+        virtualCursorLongPressGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        virtualCursorLongPressGesture.delegate = self
+        addGestureRecognizer(virtualCursorLongPressGesture)
+
+        virtualCursorTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleVirtualCursorTap(_:)))
+        virtualCursorTapGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        virtualCursorTapGesture.delegate = self
+        virtualCursorTapGesture.require(toFail: virtualCursorLongPressGesture)
+        addGestureRecognizer(virtualCursorTapGesture)
+
+        virtualCursorRightTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleVirtualCursorRightTap(_:)))
+        virtualCursorRightTapGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        virtualCursorRightTapGesture.numberOfTouchesRequired = 2
+        virtualCursorRightTapGesture.delegate = self
+        virtualCursorRightTapGesture.require(toFail: virtualCursorLongPressGesture)
+        addGestureRecognizer(virtualCursorRightTapGesture)
+
         // Rotation gesture for direct touch
         directRotationGesture = UIRotationGestureRecognizer(target: self, action: #selector(handleDirectRotation(_:)))
         directRotationGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -66,16 +96,20 @@ extension InputCapturingView {
             x: point.x / bounds.width,
             y: point.y / bounds.height
         )
+        return applyDockSnap(to: normalized)
+    }
 
-        if dockSnapEnabled {
-            // Snap cursor to bottom edge when in dock trigger zone (bottom 1%)
-            // This allows users to easily open the iPad dock without precise edge targeting
-            if normalized.y >= 0.99 {
-                normalized.y = 1.0
-            }
+    func applyDockSnap(to normalized: CGPoint) -> CGPoint {
+        guard dockSnapEnabled else { return normalized }
+
+        var snapped = normalized
+        // Snap cursor to bottom edge when in dock trigger zone (bottom 1%)
+        // This allows users to easily open the iPad dock without precise edge targeting
+        if snapped.y >= 0.99 {
+            snapped.y = 1.0
         }
 
-        return normalized
+        return snapped
     }
 
     /// Get combined modifiers from a gesture (at event time) and keyboard state
@@ -101,6 +135,11 @@ extension InputCapturingView {
         let rawLocation = gesture.location(in: self)
         let location = normalizedLocation(rawLocation)
         let eventModifiers = modifiers(from: gesture)
+
+        if usesVirtualTrackpad {
+            setVirtualCursorVisible(false)
+            updateVirtualCursorPosition(location, updateVisibility: false)
+        }
 
         switch gesture.state {
         case .began:
@@ -197,23 +236,50 @@ extension InputCapturingView {
 
     @objc func handleScroll(_ gesture: UIPanGestureRecognizer) {
         let translation = gesture.translation(in: self)
-        // For touch scrolling, use the gesture location (center of two fingers)
-        let location = normalizedLocation(gesture.location(in: self))
+        let location: CGPoint
+        if usesVirtualTrackpad {
+            location = virtualCursorPosition
+        } else {
+            // For touch scrolling, use the gesture location (center of two fingers)
+            location = normalizedLocation(gesture.location(in: self))
+        }
+
+        if gesture.state == .began {
+            stopTouchScrollDeceleration()
+        }
 
         // Reset translation to get incremental deltas
         gesture.setTranslation(.zero, in: self)
 
+        let velocity = gesture.velocity(in: self)
+        let shouldDecelerate = shouldDecelerateTouchScroll(for: velocity, state: gesture.state)
+
         let eventModifiers = modifiers(from: gesture)
+        let phase: MirageScrollPhase = {
+            if shouldDecelerate && (gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed) {
+                return .none
+            }
+            return MirageScrollPhase(gestureState: gesture.state)
+        }()
+
         let scrollEvent = MirageScrollEvent(
             deltaX: translation.x,
             deltaY: translation.y,
             location: location,
-            phase: MirageScrollPhase(gestureState: gesture.state),
+            phase: phase,
             modifiers: eventModifiers,
             isPrecise: true  // Trackpad/touch scrolling is precise
         )
 
-        onInputEvent?(.scrollWheel(scrollEvent))
+        if translation != .zero || phase != .none {
+            onInputEvent?(.scrollWheel(scrollEvent))
+        }
+
+        if shouldDecelerate && (gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed) {
+            startTouchScrollDeceleration(with: velocity, location: location)
+        } else if gesture.state == .cancelled || gesture.state == .failed {
+            stopTouchScrollDeceleration()
+        }
     }
 
     @objc func handleHover(_ gesture: UIHoverGestureRecognizer) {
@@ -221,6 +287,11 @@ extension InputCapturingView {
 
         switch gesture.state {
         case .began, .changed:
+            if usesVirtualTrackpad {
+                setVirtualCursorVisible(false)
+                updateVirtualCursorPosition(location, updateVisibility: false)
+            }
+
             // Track cursor position for scroll events
             lastCursorPosition = location
 
@@ -233,6 +304,136 @@ extension InputCapturingView {
         default:
             break
         }
+    }
+
+    // MARK: - Virtual Cursor Handlers
+
+    @objc func handleVirtualCursorPan(_ gesture: UIPanGestureRecognizer) {
+        guard usesVirtualTrackpad else { return }
+        setVirtualCursorVisible(true)
+        if gesture.state == .began {
+            stopVirtualCursorDeceleration()
+        }
+        let translation = gesture.translation(in: self)
+        gesture.setTranslation(.zero, in: self)
+
+        switch gesture.state {
+        case .began, .changed:
+            moveVirtualCursor(by: translation)
+            let eventModifiers = modifiers(from: gesture)
+            let mouseEvent = MirageMouseEvent(button: .left, location: virtualCursorPosition, modifiers: eventModifiers)
+            if virtualDragActive {
+                onInputEvent?(.mouseDragged(mouseEvent))
+            } else {
+                onInputEvent?(.mouseMoved(mouseEvent))
+            }
+        case .ended:
+            if !virtualDragActive {
+                startVirtualCursorDeceleration(with: gesture.velocity(in: self))
+            }
+        default:
+            break
+        }
+    }
+
+    @objc func handleVirtualCursorLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard usesVirtualTrackpad else { return }
+        setVirtualCursorVisible(true)
+        if gesture.state == .began {
+            stopVirtualCursorDeceleration()
+        }
+        let location = normalizedLocation(gesture.location(in: self))
+        updateVirtualCursorPosition(location, updateVisibility: false)
+        let eventModifiers = modifiers(from: gesture)
+
+        switch gesture.state {
+        case .began:
+            virtualDragActive = true
+            let mouseEvent = MirageMouseEvent(
+                button: .left,
+                location: virtualCursorPosition,
+                clickCount: 1,
+                modifiers: eventModifiers
+            )
+            onInputEvent?(.mouseDown(mouseEvent))
+        case .ended, .cancelled:
+            let mouseEvent = MirageMouseEvent(
+                button: .left,
+                location: virtualCursorPosition,
+                clickCount: 1,
+                modifiers: eventModifiers
+            )
+            onInputEvent?(.mouseUp(mouseEvent))
+            virtualDragActive = false
+        default:
+            break
+        }
+    }
+
+    @objc func handleVirtualCursorTap(_ gesture: UITapGestureRecognizer) {
+        guard usesVirtualTrackpad else { return }
+        stopVirtualCursorDeceleration()
+        setVirtualCursorVisible(true)
+
+        let now = CACurrentMediaTime()
+        let timeSinceLastTap = now - lastTapTime
+        let distance = hypot(
+            virtualCursorPosition.x - lastTapLocation.x,
+            virtualCursorPosition.y - lastTapLocation.y
+        )
+
+        if timeSinceLastTap < Self.multiClickTimeThreshold && distance < Self.multiClickDistanceThreshold {
+            currentClickCount += 1
+        } else {
+            currentClickCount = 1
+        }
+
+        lastTapTime = now
+        lastTapLocation = virtualCursorPosition
+
+        let eventModifiers = modifiers(from: gesture)
+        let mouseEvent = MirageMouseEvent(
+            button: .left,
+            location: virtualCursorPosition,
+            clickCount: currentClickCount,
+            modifiers: eventModifiers
+        )
+
+        onInputEvent?(.mouseDown(mouseEvent))
+        onInputEvent?(.mouseUp(mouseEvent))
+    }
+
+    @objc func handleVirtualCursorRightTap(_ gesture: UITapGestureRecognizer) {
+        guard usesVirtualTrackpad else { return }
+        stopVirtualCursorDeceleration()
+        setVirtualCursorVisible(true)
+
+        let now = CACurrentMediaTime()
+        let timeSinceLastTap = now - lastRightTapTime
+        let distance = hypot(
+            virtualCursorPosition.x - lastRightTapLocation.x,
+            virtualCursorPosition.y - lastRightTapLocation.y
+        )
+
+        if timeSinceLastTap < Self.multiClickTimeThreshold && distance < Self.multiClickDistanceThreshold {
+            currentRightClickCount += 1
+        } else {
+            currentRightClickCount = 1
+        }
+
+        lastRightTapTime = now
+        lastRightTapLocation = virtualCursorPosition
+
+        let eventModifiers = modifiers(from: gesture)
+        let mouseEvent = MirageMouseEvent(
+            button: .right,
+            location: virtualCursorPosition,
+            clickCount: currentRightClickCount,
+            modifiers: eventModifiers
+        )
+
+        onInputEvent?(.rightMouseDown(mouseEvent))
+        onInputEvent?(.rightMouseUp(mouseEvent))
     }
 
     // MARK: - Direct Touch Gesture Handlers
@@ -289,6 +490,143 @@ extension InputCapturingView {
             break
         }
     }
+
+    func moveVirtualCursor(by translation: CGPoint) {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        guard translation != .zero else { return }
+
+        var updated = virtualCursorPosition
+        updated.x += translation.x / bounds.width
+        updated.y += translation.y / bounds.height
+        updateVirtualCursorPosition(updated, updateVisibility: true)
+    }
+
+    func updateVirtualCursorPosition(_ position: CGPoint, updateVisibility: Bool) {
+        var clamped = CGPoint(
+            x: min(max(position.x, 0.0), 1.0),
+            y: min(max(position.y, 0.0), 1.0)
+        )
+        clamped = applyDockSnap(to: clamped)
+
+        virtualCursorPosition = clamped
+        lastCursorPosition = clamped
+        if updateVisibility {
+            setVirtualCursorVisible(true)
+        }
+        updateVirtualCursorViewPosition()
+    }
+
+    func startVirtualCursorDeceleration(with velocity: CGPoint) {
+        stopVirtualCursorDeceleration()
+        let speed = hypot(velocity.x, velocity.y)
+        guard speed > 5 else { return }
+        virtualCursorVelocity = velocity
+
+        let displayLink = CADisplayLink(target: self, selector: #selector(handleVirtualCursorDeceleration(_:)))
+        displayLink.add(to: .main, forMode: .common)
+        virtualCursorDecelerationLink = displayLink
+    }
+
+    func stopVirtualCursorDeceleration() {
+        virtualCursorDecelerationLink?.invalidate()
+        virtualCursorDecelerationLink = nil
+        virtualCursorVelocity = .zero
+    }
+
+    func shouldDecelerateTouchScroll(for velocity: CGPoint, state: UIGestureRecognizer.State) -> Bool {
+        guard state == .ended || state == .cancelled || state == .failed else { return false }
+        let speed = hypot(velocity.x, velocity.y)
+        return speed > 30
+    }
+
+    func startTouchScrollDeceleration(with velocity: CGPoint, location: CGPoint) {
+        guard shouldDecelerateTouchScroll(for: velocity, state: .ended) else { return }
+        stopTouchScrollDeceleration()
+        touchScrollDecelerationVelocity = velocity
+        touchScrollDecelerationLocation = location
+
+        let displayLink = CADisplayLink(target: self, selector: #selector(handleTouchScrollDeceleration(_:)))
+        displayLink.add(to: .main, forMode: .common)
+        touchScrollDecelerationLink = displayLink
+    }
+
+    func stopTouchScrollDeceleration() {
+        touchScrollDecelerationLink?.invalidate()
+        touchScrollDecelerationLink = nil
+        touchScrollDecelerationVelocity = .zero
+    }
+
+    @objc func handleTouchScrollDeceleration(_ displayLink: CADisplayLink) {
+        let dt = displayLink.targetTimestamp - displayLink.timestamp
+        let decelerationRate = UIScrollView.DecelerationRate.normal.rawValue
+
+        let translation = CGPoint(
+            x: touchScrollDecelerationVelocity.x * dt,
+            y: touchScrollDecelerationVelocity.y * dt
+        )
+
+        if translation != .zero {
+            let scrollEvent = MirageScrollEvent(
+                deltaX: translation.x,
+                deltaY: translation.y,
+                location: touchScrollDecelerationLocation,
+                phase: .none,
+                momentumPhase: .changed,
+                modifiers: keyboardModifiers,
+                isPrecise: true
+            )
+            onInputEvent?(.scrollWheel(scrollEvent))
+        }
+
+        let decay = CGFloat(pow(Double(decelerationRate), dt * 1000))
+        touchScrollDecelerationVelocity.x *= decay
+        touchScrollDecelerationVelocity.y *= decay
+
+        if hypot(touchScrollDecelerationVelocity.x, touchScrollDecelerationVelocity.y) < 8 {
+            stopTouchScrollDeceleration()
+            let endEvent = MirageScrollEvent(
+                deltaX: 0,
+                deltaY: 0,
+                location: touchScrollDecelerationLocation,
+                phase: .none,
+                momentumPhase: .ended,
+                modifiers: keyboardModifiers,
+                isPrecise: true
+            )
+            onInputEvent?(.scrollWheel(endEvent))
+        }
+    }
+
+    @objc func handleVirtualCursorDeceleration(_ displayLink: CADisplayLink) {
+        guard !virtualDragActive else {
+            stopVirtualCursorDeceleration()
+            return
+        }
+        let dt = displayLink.targetTimestamp - displayLink.timestamp
+        let decelerationRate: CGFloat = 0.90
+
+        let translation = CGPoint(
+            x: virtualCursorVelocity.x * dt,
+            y: virtualCursorVelocity.y * dt
+        )
+        if translation != .zero {
+            moveVirtualCursor(by: translation)
+            let mouseEvent = MirageMouseEvent(
+                button: .left,
+                location: virtualCursorPosition,
+                modifiers: keyboardModifiers
+            )
+            onInputEvent?(.mouseMoved(mouseEvent))
+        }
+
+        let decay = CGFloat(pow(Double(decelerationRate), dt * 60))
+        virtualCursorVelocity.x *= decay
+        virtualCursorVelocity.y *= decay
+
+        if hypot(virtualCursorVelocity.x, virtualCursorVelocity.y) < 5 {
+            stopVirtualCursorDeceleration()
+        }
+    }
 }
 
 // MARK: - UIGestureRecognizerDelegate
@@ -303,6 +641,11 @@ extension InputCapturingView: UIGestureRecognizerDelegate {
         // Allow pinch and rotation to work simultaneously (map-style interaction)
         if (gestureRecognizer is UIPinchGestureRecognizer && otherGestureRecognizer is UIRotationGestureRecognizer) ||
            (gestureRecognizer is UIRotationGestureRecognizer && otherGestureRecognizer is UIPinchGestureRecognizer) {
+            return true
+        }
+
+        if (gestureRecognizer == virtualCursorPanGesture && otherGestureRecognizer == virtualCursorLongPressGesture) ||
+            (gestureRecognizer == virtualCursorLongPressGesture && otherGestureRecognizer == virtualCursorPanGesture) {
             return true
         }
 

@@ -75,8 +75,26 @@ public class InputCapturingView: UIView {
     /// Used to trigger stream recovery after app switching.
     public var onBecomeActive: (() -> Void)?
 
+    /// Callback when hardware keyboard presence changes.
+    public var onHardwareKeyboardPresenceChanged: ((Bool) -> Void)? {
+        didSet {
+            onHardwareKeyboardPresenceChanged?(hardwareKeyboardPresent)
+        }
+    }
+
+    /// Callback when software keyboard visibility changes.
+    public var onSoftwareKeyboardVisibilityChanged: ((Bool) -> Void)?
+
     /// Whether input should snap to the dock edge.
     public var dockSnapEnabled: Bool = false
+
+    /// Whether direct touch should use a draggable virtual cursor.
+    public var usesVirtualTrackpad: Bool = false {
+        didSet {
+            guard usesVirtualTrackpad != oldValue else { return }
+            updateVirtualTrackpadMode()
+        }
+    }
 
     // Cursor state from host
     var currentCursorType: MirageCursorType = .arrow
@@ -87,12 +105,44 @@ public class InputCapturingView: UIView {
     let cursorRefreshInterval: CFTimeInterval = 1.0 / 30.0
     // nonisolated(unsafe) allows access from deinit for cleanup
     private nonisolated(unsafe) var registeredCursorStreamID: StreamID?
+    private(set) var hardwareKeyboardPresent: Bool = false
+
+    // Virtual cursor state (direct touch trackpad mode)
+    #if os(iOS)
+    private let virtualCursorView = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+    #else
+    private let virtualCursorView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    #endif
+    var virtualCursorPosition: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    private let virtualCursorSize: CGFloat = 14
+    var virtualCursorVelocity: CGPoint = .zero
+    var virtualCursorDecelerationLink: CADisplayLink?
+    var virtualDragActive: Bool = false
+    var touchScrollDecelerationVelocity: CGPoint = .zero
+    var touchScrollDecelerationLink: CADisplayLink?
+    var touchScrollDecelerationLocation: CGPoint = .zero
+
+    // Software keyboard state
+    public var softwareKeyboardVisible: Bool = false {
+        didSet {
+            guard softwareKeyboardVisible != oldValue else { return }
+            updateSoftwareKeyboardVisibility()
+        }
+    }
+    var softwareKeyboardField: SoftwareKeyboardTextField?
+    var softwareKeyboardAccessoryView: SoftwareKeyboardAccessoryView?
+    var isSoftwareKeyboardShown: Bool = false
+    var softwareHeldModifiers: MirageModifierFlags = []
 
     // Gesture recognizers
     var longPressGesture: UILongPressGestureRecognizer!
     var scrollGesture: UIPanGestureRecognizer!
     var hoverGesture: UIHoverGestureRecognizer!
     var rightClickGesture: UITapGestureRecognizer!
+    var virtualCursorPanGesture: UIPanGestureRecognizer!
+    var virtualCursorTapGesture: UITapGestureRecognizer!
+    var virtualCursorRightTapGesture: UITapGestureRecognizer!
+    var virtualCursorLongPressGesture: UILongPressGestureRecognizer!
 
     // Track drag state
     var isDragging = false
@@ -133,6 +183,7 @@ public class InputCapturingView: UIView {
         if capsLockEnabled {
             modifiers.insert(.capsLock)
         }
+        modifiers.formUnion(softwareHeldModifiers)
         return modifiers
     }
 
@@ -140,6 +191,7 @@ public class InputCapturingView: UIView {
         let modifiers = keyboardModifiers
         guard force || modifiers != lastSentModifiers else { return }
         lastSentModifiers = modifiers
+        updateSoftwareModifierButtons()
         onInputEvent?(.flagsChanged(modifiers))
     }
 
@@ -155,6 +207,7 @@ public class InputCapturingView: UIView {
     func sendModifierSnapshotIfNeeded(_ modifiers: MirageModifierFlags) {
         guard modifiers != lastSentModifiers else { return }
         lastSentModifiers = modifiers
+        updateSoftwareModifierButtons()
         onInputEvent?(.flagsChanged(modifiers))
     }
 
@@ -194,10 +247,12 @@ public class InputCapturingView: UIView {
 
     /// Clear all held modifiers with a snapshot update
     func resetAllModifiers() {
-        guard !heldModifierKeys.isEmpty || capsLockEnabled || !lastSentModifiers.isEmpty else { return }
+        guard !heldModifierKeys.isEmpty || !softwareHeldModifiers.isEmpty || capsLockEnabled || !lastSentModifiers.isEmpty else { return }
         stopModifierRefresh()
         heldModifierKeys.removeAll()
+        softwareHeldModifiers = []
         capsLockEnabled = false
+        updateSoftwareModifierButtons()
         sendModifierStateIfNeeded(force: true)
     }
 
@@ -245,6 +300,15 @@ public class InputCapturingView: UIView {
     func stopModifierRefresh() {
         modifierRefreshTask?.cancel()
         modifierRefreshTask = nil
+    }
+
+    func updateHardwareKeyboardPresence(_ isPresent: Bool) {
+        guard hardwareKeyboardPresent != isPresent else { return }
+        hardwareKeyboardPresent = isPresent
+        onHardwareKeyboardPresenceChanged?(isPresent)
+        if isPresent {
+            clearSoftwareKeyboardState()
+        }
     }
 
     @discardableResult
@@ -427,7 +491,68 @@ public class InputCapturingView: UIView {
 
         setupGestureRecognizers()
         setupPointerInteraction()
+        setupVirtualCursorView()
+        setupSoftwareKeyboardField()
+        updateVirtualTrackpadMode()
         setupSceneLifecycleObservers()
+    }
+
+    private func setupVirtualCursorView() {
+        virtualCursorView.bounds = CGRect(origin: .zero, size: CGSize(width: virtualCursorSize, height: virtualCursorSize))
+        virtualCursorView.contentView.backgroundColor = UIColor.white.withAlphaComponent(0.2)
+        virtualCursorView.clipsToBounds = true
+        virtualCursorView.layer.cornerRadius = virtualCursorSize / 2
+        virtualCursorView.layer.borderColor = UIColor.black.withAlphaComponent(0.35).cgColor
+        virtualCursorView.layer.borderWidth = 1
+        virtualCursorView.layer.shadowColor = UIColor.black.cgColor
+        virtualCursorView.layer.shadowOpacity = 0.2
+        virtualCursorView.layer.shadowRadius = 2
+        virtualCursorView.layer.shadowOffset = CGSize(width: 0, height: 1)
+        virtualCursorView.isUserInteractionEnabled = false
+        virtualCursorView.isHidden = true
+        addSubview(virtualCursorView)
+    }
+
+    func updateVirtualTrackpadMode() {
+        let directTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        let indirectTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
+
+        if usesVirtualTrackpad {
+            longPressGesture.allowedTouchTypes = indirectTouchTypes
+            virtualCursorPanGesture.isEnabled = true
+            virtualCursorTapGesture.isEnabled = true
+            virtualCursorRightTapGesture.isEnabled = true
+            virtualCursorLongPressGesture.isEnabled = true
+            lastCursorPosition = virtualCursorPosition
+            setVirtualCursorVisible(true)
+        } else {
+            longPressGesture.allowedTouchTypes = directTouchTypes + indirectTouchTypes
+            virtualCursorPanGesture.isEnabled = false
+            virtualCursorTapGesture.isEnabled = false
+            virtualCursorRightTapGesture.isEnabled = false
+            virtualCursorLongPressGesture.isEnabled = false
+            virtualDragActive = false
+            stopVirtualCursorDeceleration()
+            setVirtualCursorVisible(false)
+        }
+    }
+
+    func setVirtualCursorVisible(_ isVisible: Bool) {
+        guard usesVirtualTrackpad else {
+            virtualCursorView.isHidden = true
+            return
+        }
+        virtualCursorView.isHidden = !isVisible
+        updateVirtualCursorViewPosition()
+    }
+
+    func updateVirtualCursorViewPosition() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        guard !virtualCursorView.isHidden else { return }
+        virtualCursorView.center = CGPoint(
+            x: virtualCursorPosition.x * bounds.width,
+            y: virtualCursorPosition.y * bounds.height
+        )
     }
 
     private func setupSceneLifecycleObservers() {
@@ -462,6 +587,7 @@ public class InputCapturingView: UIView {
         )
 
         installHardwareKeyboardHandler()
+        updateHardwareKeyboardPresence(GCKeyboard.coalesced != nil)
 #endif
     }
 
@@ -469,6 +595,8 @@ public class InputCapturingView: UIView {
         // Clear all modifier and key repeat state when app loses focus
         stopAllKeyRepeats()
         resetAllModifiers()
+        clearSoftwareKeyboardState()
+        stopTouchScrollDeceleration()
 
         // Suspend rendering to avoid Metal GPU permission errors when backgrounded
         // iOS doesn't allow GPU work from background state
@@ -483,6 +611,7 @@ public class InputCapturingView: UIView {
         sendModifierStateIfNeeded(force: true)
 #if canImport(GameController)
         installHardwareKeyboardHandler()
+        updateHardwareKeyboardPresence(GCKeyboard.coalesced != nil)
 #endif
 
         // Notify SwiftUI layer to trigger stream recovery
@@ -493,11 +622,13 @@ public class InputCapturingView: UIView {
     @objc private func keyboardDidConnect(_ notification: Notification) {
         installHardwareKeyboardHandler()
         refreshModifierStateFromHardware()
+        updateHardwareKeyboardPresence(true)
     }
 
     @objc private func keyboardDidDisconnect(_ notification: Notification) {
         HardwareKeyboardCoordinator.shared.handleKeyboardDisconnect()
         stopModifierRefresh()
+        updateHardwareKeyboardPresence(false)
 
         // Always notify the host to clear modifiers on keyboard disconnect,
         // even if client-side modifiers are already empty (host may have drifted state)
@@ -517,6 +648,11 @@ public class InputCapturingView: UIView {
         }
     }
 
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        updateVirtualCursorViewPosition()
+    }
+
     public override func resignFirstResponder() -> Bool {
         // Clear all modifier and key repeat state when losing focus
         stopAllKeyRepeats()
@@ -526,6 +662,8 @@ public class InputCapturingView: UIView {
 
     deinit {
         stopModifierRefresh()
+        stopVirtualCursorDeceleration()
+        stopTouchScrollDeceleration()
 #if canImport(GameController)
         uninstallHardwareKeyboardHandler()
 #endif
