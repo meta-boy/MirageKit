@@ -5,27 +5,27 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Testing
 @testable import MirageKit
+import Testing
 
 @Suite("MirageKit Tests")
 struct MirageKitTests {
     @Test("Protocol header serialization")
-    func testFrameHeaderSerialization() {
+    func frameHeaderSerialization() {
         let header = FrameHeader(
             flags: [.keyframe, .endOfFrame],
             streamID: 1,
             sequenceNumber: 100,
-            timestamp: 123456789,
+            timestamp: 123_456_789,
             frameNumber: 50,
             fragmentIndex: 0,
             fragmentCount: 1,
             payloadLength: 1024,
-            checksum: 0xDEADBEEF
+            checksum: 0xDEAD_BEEF
         )
 
         let data = header.serialize()
-        #expect(data.count == MirageHeaderSize)
+        #expect(data.count == mirageHeaderSize)
 
         let deserialized = FrameHeader.deserialize(from: data)
         #expect(deserialized != nil)
@@ -36,7 +36,7 @@ struct MirageKitTests {
     }
 
     @Test("CRC32 calculation")
-    func testCRC32() {
+    func cRC32() {
         let data = Data("Hello, World!".utf8)
         let crc = CRC32.calculate(data)
         #expect(crc != 0)
@@ -52,7 +52,7 @@ struct MirageKitTests {
     }
 
     @Test("Control message serialization")
-    func testControlMessageSerialization() throws {
+    func controlMessageSerialization() throws {
         let hello = HelloMessage(
             deviceID: UUID(),
             deviceName: "Test Device",
@@ -64,7 +64,7 @@ struct MirageKitTests {
         let message = try ControlMessage(type: .hello, content: hello)
         let data = message.serialize()
 
-        let (deserialized, consumed) = ControlMessage.deserialize(from: data)!
+        let (deserialized, consumed) = try #require(ControlMessage.deserialize(from: data))
         #expect(consumed == data.count)
         #expect(deserialized.type == .hello)
 
@@ -73,7 +73,7 @@ struct MirageKitTests {
     }
 
     @Test("MirageWindow equality")
-    func testWindowEquality() {
+    func windowEquality() {
         let window1 = MirageWindow(
             id: 1,
             title: "Test Window",
@@ -97,7 +97,7 @@ struct MirageKitTests {
     }
 
     @Test("Host capabilities TXT record")
-    func testCapabilitiesTXTRecord() {
+    func capabilitiesTXTRecord() {
         let capabilities = MirageHostCapabilities(
             maxStreams: 4,
             supportsHEVC: true,
@@ -119,7 +119,7 @@ struct MirageKitTests {
     }
 
     @Test("Quality presets")
-    func testQualityPresets() {
+    func qualityPresets() {
         let ultra60 = MirageQualityPreset.ultra.encoderConfiguration(for: 60)
         let ultra120 = MirageQualityPreset.ultra.encoderConfiguration(for: 120)
         #expect(ultra120.frameQuality == 1.0)
@@ -139,7 +139,7 @@ struct MirageKitTests {
     }
 
     @Test("Stream statistics formatting")
-    func testStatisticsFormatting() {
+    func statisticsFormatting() {
         let stats = MirageStreamStatistics(
             currentFrameRate: 120,
             processedFrames: 1000,

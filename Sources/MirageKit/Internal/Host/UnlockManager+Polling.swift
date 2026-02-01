@@ -9,9 +9,9 @@
 //  Unlock manager extensions.
 //
 
-import Foundation
 import AppKit
 import CoreGraphics
+import Foundation
 
 extension UnlockManager {
     // MARK: - Unlock State Polling
@@ -21,7 +21,8 @@ extension UnlockManager {
     func pollForUnlockCompletion(
         timeout: TimeInterval = 25.0,
         pollInterval: TimeInterval = 0.35
-    ) async -> HostSessionState {
+    )
+    async -> HostSessionState {
         let startTime = Date()
         var lastState = await sessionMonitor.refreshState(notify: false)
         var pollCount = 0
@@ -51,7 +52,6 @@ extension UnlockManager {
         MirageLogger.host("Unlock polling timed out after \(timeout)s (\(pollCount) polls), final state: \(lastState)")
         return lastState
     }
-
 }
 
 #endif

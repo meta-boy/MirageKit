@@ -9,9 +9,9 @@
 //  Unlock manager extensions.
 //
 
-import Foundation
 import AppKit
 import CoreGraphics
+import Foundation
 
 extension UnlockManager {
     // MARK: - Rate Limiting

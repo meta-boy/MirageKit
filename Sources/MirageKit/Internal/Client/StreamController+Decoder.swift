@@ -24,13 +24,17 @@ extension StreamController {
         stopFreezeMonitor()
         await startFrameProcessingPipeline()
     }
+
     func logMetricsIfNeeded(decodedFPS: Double, receivedFPS: Double, droppedFrames: UInt64) {
         let now = CFAbsoluteTimeGetCurrent()
         guard MirageLogger.isEnabled(.client) else { return }
         guard lastMetricsLogTime == 0 || now - lastMetricsLogTime > 2.0 else { return }
         let decodedText = decodedFPS.formatted(.number.precision(.fractionLength(1)))
         let receivedText = receivedFPS.formatted(.number.precision(.fractionLength(1)))
-        MirageLogger.client("Client FPS: decoded=\(decodedText), received=\(receivedText), dropped=\(droppedFrames), stream=\(streamID)")
+        MirageLogger
+            .client(
+                "Client FPS: decoded=\(decodedText), received=\(receivedText), dropped=\(droppedFrames), stream=\(streamID)"
+            )
         lastMetricsLogTime = now
     }
 
@@ -38,5 +42,4 @@ extension StreamController {
     func getReassembler() -> FrameReassembler {
         reassembler
     }
-
 }

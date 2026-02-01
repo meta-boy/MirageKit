@@ -77,21 +77,22 @@ public final class MirageDiscovery {
         switch state {
         case .ready:
             isSearching = true
-        case .failed, .cancelled:
+        case .cancelled,
+             .failed:
             isSearching = false
         default:
             break
         }
     }
 
-    private func handleBrowseResults(_ results: Set<NWBrowser.Result>, changes: Set<NWBrowser.Result.Change>) {
+    private func handleBrowseResults(_: Set<NWBrowser.Result>, changes: Set<NWBrowser.Result.Change>) {
         for change in changes {
             switch change {
-            case .added(let result):
+            case let .added(result):
                 addHost(from: result)
-            case .removed(let result):
+            case let .removed(result):
                 removeHost(for: result.endpoint)
-            case .changed(let old, let new, _):
+            case let .changed(old, new, _):
                 removeHost(for: old.endpoint)
                 addHost(from: new)
             case .identical:
@@ -108,18 +109,14 @@ public final class MirageDiscovery {
         var capabilities = MirageHostCapabilities()
 
         // Get service name and TXT record
-        if case .service(let name, _, _, _) = result.endpoint {
-            hostName = name
-        }
+        if case let .service(name, _, _, _) = result.endpoint { hostName = name }
 
         // Parse TXT record for capabilities
         let metadata = result.metadata
-        if case .bonjour(let txtRecord) = metadata {
+        if case let .bonjour(txtRecord) = metadata {
             var txtDict: [String: String] = [:]
             for key in txtRecord.dictionary.keys {
-                if let value = txtRecord.dictionary[key] {
-                    txtDict[key] = value
-                }
+                if let value = txtRecord.dictionary[key] { txtDict[key] = value }
             }
             capabilities = MirageHostCapabilities.from(txtRecord: txtDict)
         }
@@ -130,7 +127,7 @@ public final class MirageDiscovery {
         let host = MirageHost(
             id: hostID,
             name: hostName,
-            deviceType: .mac,  // Hosts are always Macs
+            deviceType: .mac, // Hosts are always Macs
             endpoint: result.endpoint,
             capabilities: capabilities
         )

@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -145,7 +145,6 @@ extension MirageHostInputController {
             y: from.y + (to.y - from.y) * alpha
         )
     }
-
 }
 
 #endif

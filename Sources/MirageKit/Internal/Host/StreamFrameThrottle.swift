@@ -92,9 +92,7 @@ final class StreamFrameThrottle: @unchecked Sendable {
                     logMessage = "Throttle stall reset after \(stallSeconds)s gap"
                 }
                 lock.unlock()
-                if let logMessage {
-                    MirageLogger.metrics(logMessage)
-                }
+                if let logMessage { MirageLogger.metrics(logMessage) }
                 return false
             }
         }
@@ -105,25 +103,19 @@ final class StreamFrameThrottle: @unchecked Sendable {
                 logMessage = makeStatsLogIfNeeded(at: frame.presentationTime)
             }
             lock.unlock()
-            if let logMessage {
-                MirageLogger.metrics(logMessage)
-            }
+            if let logMessage { MirageLogger.metrics(logMessage) }
             return true
         }
         lastAcceptedTime = frame.presentationTime
         var nextTime = CMTimeAdd(nextAcceptTime, minInterval)
-        if CMTimeCompare(nextTime, frame.presentationTime) <= 0 {
-            nextTime = CMTimeAdd(frame.presentationTime, minInterval)
-        }
+        if CMTimeCompare(nextTime, frame.presentationTime) <= 0 { nextTime = CMTimeAdd(frame.presentationTime, minInterval) }
         nextAcceptTime = nextTime
         if shouldLog {
             acceptedCount += 1
             logMessage = makeStatsLogIfNeeded(at: frame.presentationTime)
         }
         lock.unlock()
-        if let logMessage {
-            MirageLogger.metrics(logMessage)
-        }
+        if let logMessage { MirageLogger.metrics(logMessage) }
         return false
     }
 
@@ -150,9 +142,7 @@ final class StreamFrameThrottle: @unchecked Sendable {
             droppedCount = 0
             return nil
         }
-        if CMTimeCompare(elapsed, statsInterval) < 0 {
-            return nil
-        }
+        if CMTimeCompare(elapsed, statsInterval) < 0 { return nil }
         let elapsedSeconds = CMTimeGetSeconds(elapsed)
         guard elapsedSeconds > 0 else {
             lastStatsTime = presentationTime
@@ -162,14 +152,14 @@ final class StreamFrameThrottle: @unchecked Sendable {
         }
         let total = acceptedCount + droppedCount
         let dropPercent = total > 0 ? Int((Double(droppedCount) / Double(total)) * 100.0) : 0
-        let acceptFps = Int(Double(acceptedCount) / elapsedSeconds)
-        let dropFps = Int(Double(droppedCount) / elapsedSeconds)
+        let acceptFPS = Int(Double(acceptedCount) / elapsedSeconds)
+        let dropFPS = Int(Double(droppedCount) / elapsedSeconds)
         let intervalSeconds = minInterval.isValid ? CMTimeGetSeconds(minInterval) : 0
         let jitterSeconds = jitterAllowance.isValid ? CMTimeGetSeconds(jitterAllowance) : 0
         lastStatsTime = presentationTime
         acceptedCount = 0
         droppedCount = 0
-        return "Throttle stats: target=\(targetFrameRate) capture=\(captureFrameRate) interval=\(intervalSeconds)s jitter=\(jitterSeconds)s accept=\(acceptFps)fps drop=\(dropFps)fps dropRate=\(dropPercent)%"
+        return "Throttle stats: target=\(targetFrameRate) capture=\(captureFrameRate) interval=\(intervalSeconds)s jitter=\(jitterSeconds)s accept=\(acceptFPS)fps drop=\(dropFPS)fps dropRate=\(dropPercent)%"
     }
 }
 

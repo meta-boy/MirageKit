@@ -19,13 +19,13 @@ extension MirageClientService {
                 guard let self else { return }
 
                 if let data, !data.isEmpty {
-                    self.receiveBuffer.append(data)
-                    self.processReceivedData()
+                    receiveBuffer.append(data)
+                    processReceivedData()
                 }
 
                 if let error {
                     MirageLogger.error(.client, "Receive error: \(error)")
-                    await self.handleDisconnect(
+                    await handleDisconnect(
                         reason: error.localizedDescription,
                         state: .error(error.localizedDescription),
                         notifyDelegate: true
@@ -35,7 +35,7 @@ extension MirageClientService {
 
                 if isComplete {
                     MirageLogger.client("Connection closed by server")
-                    await self.handleDisconnect(
+                    await handleDisconnect(
                         reason: "Host disconnected",
                         state: .disconnected,
                         notifyDelegate: true
@@ -44,7 +44,7 @@ extension MirageClientService {
                 }
 
                 // Continue receiving.
-                self.startReceiving()
+                startReceiving()
             }
         }
     }
@@ -56,7 +56,7 @@ extension MirageClientService {
             let firstByte = receiveBuffer[receiveBuffer.startIndex]
 
             // Check if it might be video data (starts with MIRG magic: 0x4D 0x49 0x52 0x47).
-            if firstByte == 0x4D && receiveBuffer.count >= 4 {
+            if firstByte == 0x4D, receiveBuffer.count >= 4 {
                 let magic = receiveBuffer.prefix(4)
                 if magic.elementsEqual([0x4D, 0x49, 0x52, 0x47]) {
                     MirageLogger.client("Warning: Received video data on TCP control channel, discarding")

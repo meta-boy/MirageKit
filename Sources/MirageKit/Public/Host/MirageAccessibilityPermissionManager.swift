@@ -6,8 +6,8 @@
 //
 
 #if os(macOS)
-import Foundation
 @preconcurrency import ApplicationServices
+import Foundation
 import Observation
 
 /// Manages accessibility permission state and checking for input injection.
@@ -45,7 +45,7 @@ public final class MirageAccessibilityPermissionManager {
             return true
         }
 
-        if prompt && !hasPromptedThisSession {
+        if prompt, !hasPromptedThisSession {
             hasPromptedThisSession = true
             let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true]
             _ = AXIsProcessTrustedWithOptions(options)
@@ -70,9 +70,15 @@ public final class MirageAccessibilityPermissionManager {
         }
 
         if suppressedFailureCount > 0 {
-            MirageLogger.error(.accessibility, "Input injection failed for \(eventType) (permission denied). \(suppressedFailureCount) similar failures suppressed.")
+            MirageLogger.error(
+                .accessibility,
+                "Input injection failed for \(eventType) (permission denied). \(suppressedFailureCount) similar failures suppressed."
+            )
         } else {
-            MirageLogger.error(.accessibility, "Input injection failed for \(eventType) - accessibility permission not granted")
+            MirageLogger.error(
+                .accessibility,
+                "Input injection failed for \(eventType) - accessibility permission not granted"
+            )
         }
 
         lastFailureLogTime = now

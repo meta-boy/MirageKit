@@ -35,23 +35,17 @@ extension MirageClientService {
 
     func getMainDisplayResolution() -> CGSize {
         #if os(macOS)
-        guard let mainScreen = NSScreen.main else {
-            return CGSize(width: 2560, height: 1600)
-        }
+        guard let mainScreen = NSScreen.main else { return CGSize(width: 2560, height: 1600) }
         let scale = mainScreen.backingScaleFactor
         return CGSize(
             width: mainScreen.frame.width * scale,
             height: mainScreen.frame.height * scale
         )
         #elseif os(iOS)
-        if Self.lastKnownDrawableSize.width > 0, Self.lastKnownDrawableSize.height > 0 {
-            return Self.lastKnownDrawableSize
-        }
+        if Self.lastKnownDrawableSize.width > 0, Self.lastKnownDrawableSize.height > 0 { return Self.lastKnownDrawableSize }
         let screen = UIScreen.main
         let nativeBounds = screen.nativeBounds
-        if nativeBounds.width > 0, nativeBounds.height > 0 {
-            return nativeBounds.size
-        }
+        if nativeBounds.width > 0, nativeBounds.height > 0 { return nativeBounds.size }
         let scale = screen.nativeScale
         return CGSize(
             width: screen.bounds.width * scale,
@@ -59,9 +53,7 @@ extension MirageClientService {
         )
         #elseif os(visionOS)
         // Use cached drawable size if available, otherwise default resolution
-        if Self.lastKnownDrawableSize.width > 0, Self.lastKnownDrawableSize.height > 0 {
-            return Self.lastKnownDrawableSize
-        }
+        if Self.lastKnownDrawableSize.width > 0, Self.lastKnownDrawableSize.height > 0 { return Self.lastKnownDrawableSize }
         return CGSize(width: 2560, height: 1600)
         #else
         return CGSize(width: 2560, height: 1600)
@@ -73,9 +65,7 @@ extension MirageClientService {
         #if os(iOS)
         let knownMax = MirageClientService.lastKnownScreenMaxFPS
         let screenMax = knownMax > 0 ? knownMax : 60
-        if let override = maxRefreshRateOverride {
-            return min(override, screenMax)
-        }
+        if let override = maxRefreshRateOverride { return min(override, screenMax) }
         return screenMax
         #else
         let screenMax: Int
@@ -87,9 +77,7 @@ extension MirageClientService {
         screenMax = 60
         #endif
 
-        if let override = maxRefreshRateOverride {
-            return override
-        }
+        if let override = maxRefreshRateOverride { return override }
         return screenMax
         #endif
     }
@@ -102,9 +90,7 @@ extension MirageClientService {
 
     /// Send display resolution change to host (when window moves to different display).
     public func sendDisplayResolutionChange(streamID: StreamID, newResolution: CGSize) async throws {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         let scaledResolution = scaledDisplayResolution(newResolution)
         let request = DisplayResolutionChangeMessage(
@@ -114,23 +100,27 @@ extension MirageClientService {
         )
         let message = try ControlMessage(type: .displayResolutionChange, content: request)
 
-        MirageLogger.client("Sending display resolution change for stream \(streamID): \(Int(scaledResolution.width))x\(Int(scaledResolution.height))")
+        MirageLogger
+            .client(
+                "Sending display resolution change for stream \(streamID): \(Int(scaledResolution.width))x\(Int(scaledResolution.height))"
+            )
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: message.serialize(), completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
+                if let error { continuation.resume(throwing: error) } else {
                     continuation.resume()
                 }
             })
         }
     }
 
-    public func sendStreamScaleChange(streamID: StreamID, scale: CGFloat, adaptiveScaleEnabled: Bool? = nil) async throws {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+    public func sendStreamScaleChange(
+        streamID: StreamID,
+        scale: CGFloat,
+        adaptiveScaleEnabled: Bool? = nil
+    )
+    async throws {
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         let clampedScale = max(0.1, min(1.0, scale))
         let request = StreamScaleChangeMessage(
@@ -145,9 +135,7 @@ extension MirageClientService {
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: message.serialize(), completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
+                if let error { continuation.resume(throwing: error) } else {
                     continuation.resume()
                 }
             })
@@ -158,10 +146,9 @@ extension MirageClientService {
         streamID: StreamID,
         maxRefreshRate: Int,
         forceDisplayRefresh: Bool = false
-    ) async throws {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+    )
+    async throws {
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         let clamped = clampRefreshRate(maxRefreshRate)
         let request = StreamRefreshRateChangeMessage(
@@ -175,9 +162,7 @@ extension MirageClientService {
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: message.serialize(), completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
+                if let error { continuation.resume(throwing: error) } else {
                     continuation.resume()
                 }
             })

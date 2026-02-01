@@ -15,15 +15,18 @@ import AppKit
 
 @MainActor
 extension MirageHostService {
-    func handleAppListRequest(_ message: ControlMessage, from client: MirageConnectedClient, connection: NWConnection) async {
+    func handleAppListRequest(
+        _ message: ControlMessage,
+        from client: MirageConnectedClient,
+        connection: NWConnection
+    )
+    async {
         do {
             let request = try message.decode(AppListRequestMessage.self)
             MirageLogger.host("Client \(client.name) requested app list (icons: \(request.includeIcons))")
 
             let includeIcons = request.includeIcons && sessionState == .active
-            if request.includeIcons && !includeIcons {
-                MirageLogger.host("Session is \(sessionState); responding with app list without icons")
-            }
+            if request.includeIcons, !includeIcons { MirageLogger.host("Session is \(sessionState); responding with app list without icons") }
 
             let apps = await appStreamManager.getInstalledApps(includeIcons: includeIcons)
 
@@ -36,7 +39,13 @@ extension MirageHostService {
             MirageLogger.error(.host, "Failed to handle app list request: \(error)")
         }
     }
-    func handleSelectApp(_ message: ControlMessage, from client: MirageConnectedClient, connection: NWConnection) async {
+
+    func handleSelectApp(
+        _ message: ControlMessage,
+        from client: MirageConnectedClient,
+        connection: NWConnection
+    )
+    async {
         do {
             let request = try message.decode(SelectAppMessage.self)
             MirageLogger.host("Client \(client.name) selected app: \(request.bundleIdentifier)")
@@ -44,7 +53,10 @@ extension MirageHostService {
             // Determine target frame rate based on client capability
             let clientMaxRefreshRate = request.maxRefreshRate
             let targetFrameRate = resolvedTargetFrameRate(clientMaxRefreshRate)
-            MirageLogger.host("Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)")
+            MirageLogger
+                .host(
+                    "Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)"
+                )
 
             let presetConfig = request.preferredQuality.encoderConfiguration(for: targetFrameRate)
             let keyFrameInterval = request.keyFrameInterval ?? presetConfig.keyFrameInterval
@@ -67,7 +79,8 @@ extension MirageHostService {
 
             // Find the app in installed apps to get its path and name
             let apps = await appStreamManager.getInstalledApps(includeIcons: false)
-            guard let app = apps.first(where: { $0.bundleIdentifier.lowercased() == request.bundleIdentifier.lowercased() }) else {
+            guard let app = apps
+                .first(where: { $0.bundleIdentifier.lowercased() == request.bundleIdentifier.lowercased() }) else {
                 MirageLogger.host("App \(request.bundleIdentifier) not found")
                 return
             }
@@ -185,7 +198,13 @@ extension MirageHostService {
             MirageLogger.error(.host, "Failed to handle select app: \(error)")
         }
     }
-    func handleCloseWindowRequest(_ message: ControlMessage, from client: MirageConnectedClient, connection: NWConnection) async {
+
+    func handleCloseWindowRequest(
+        _ message: ControlMessage,
+        from client: MirageConnectedClient,
+        connection _: NWConnection
+    )
+    async {
         do {
             let request = try message.decode(CloseWindowRequestMessage.self)
             MirageLogger.host("Client \(client.name) requested to close window \(request.windowID)")
@@ -209,8 +228,9 @@ extension MirageHostService {
 
             // Perform close action
             var closeButtonRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(axWindow, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
-               let closeButton = closeButtonRef {
+            if AXUIElementCopyAttributeValue(axWindow, kAXCloseButtonAttribute as CFString, &closeButtonRef) ==
+                .success,
+                let closeButton = closeButtonRef {
                 AXUIElementPerformAction(closeButton as! AXUIElement, kAXPressAction as CFString)
                 MirageLogger.host("Closed window \(request.windowID)")
             }
@@ -218,6 +238,7 @@ extension MirageHostService {
             MirageLogger.error(.host, "Failed to handle close window request: \(error)")
         }
     }
+
     func handleStreamPaused(_ message: ControlMessage, from client: MirageConnectedClient) async {
         do {
             let request = try message.decode(StreamPausedMessage.self)
@@ -235,6 +256,7 @@ extension MirageHostService {
             MirageLogger.error(.host, "Failed to handle stream paused: \(error)")
         }
     }
+
     func handleStreamResumed(_ message: ControlMessage, from client: MirageConnectedClient) async {
         do {
             let request = try message.decode(StreamResumedMessage.self)
@@ -252,7 +274,13 @@ extension MirageHostService {
             MirageLogger.error(.host, "Failed to handle stream resumed: \(error)")
         }
     }
-    func handleCancelCooldown(_ message: ControlMessage, from client: MirageConnectedClient, connection: NWConnection) async {
+
+    func handleCancelCooldown(
+        _ message: ControlMessage,
+        from client: MirageConnectedClient,
+        connection: NWConnection
+    )
+    async {
         do {
             let request = try message.decode(CancelCooldownMessage.self)
             MirageLogger.host("Client \(client.name) cancelled cooldown for window \(request.windowID)")

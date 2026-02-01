@@ -10,24 +10,20 @@
 import Foundation
 
 @MainActor
-extension MirageClientService {
+public extension MirageClientService {
     /// Thread-safe check if input is blocked for a stream.
     /// Used by sendInputFireAndForget to prevent input when user can't see what they're clicking.
-    nonisolated func isInputBlocked(for streamID: StreamID) -> Bool {
+    internal nonisolated func isInputBlocked(for streamID: StreamID) -> Bool {
         inputBlockedStreamIDsLock.lock()
         defer { inputBlockedStreamIDsLock.unlock() }
-        return _inputBlockedStreamIDs.contains(streamID)
+        return inputBlockedStreamIDsStorage.contains(streamID)
     }
 
     /// Send an input event to the host with network confirmation.
-    public func sendInput(_ event: MirageInputEvent, forStream streamID: StreamID) async throws {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+    func sendInput(_ event: MirageInputEvent, forStream streamID: StreamID) async throws {
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
-        if isInputBlocked(for: streamID) {
-            return
-        }
+        if isInputBlocked(for: streamID) { return }
 
         let inputMessage = InputEventMessage(streamID: streamID, event: event)
         let message = try ControlMessage(type: .inputEvent, content: inputMessage)
@@ -35,9 +31,7 @@ extension MirageClientService {
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: data, completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
+                if let error { continuation.resume(throwing: error) } else {
                     continuation.resume()
                 }
             })
@@ -45,18 +39,14 @@ extension MirageClientService {
     }
 
     /// Send an input event to the host without waiting for network confirmation.
-    public func sendInputFireAndForget(_ event: MirageInputEvent, forStream streamID: StreamID) {
-        guard case .connected = connectionState, let connection else {
-            return
-        }
+    func sendInputFireAndForget(_ event: MirageInputEvent, forStream streamID: StreamID) {
+        guard case .connected = connectionState, let connection else { return }
 
-        if isInputBlocked(for: streamID) {
-            return
-        }
+        if isInputBlocked(for: streamID) { return }
 
         if let location = event.mouseLocation {
             lastCursorPositionsLock.lock()
-            _lastCursorPositions[streamID] = location
+            lastCursorPositionsStorage[streamID] = location
             lastCursorPositionsLock.unlock()
         }
 

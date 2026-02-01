@@ -11,7 +11,7 @@ import CoreGraphics
 import Foundation
 
 @MainActor
-extension MirageClientService {
+public extension MirageClientService {
     /// Start viewing a remote window.
     /// - Parameters:
     ///   - window: The remote window to stream.
@@ -26,7 +26,7 @@ extension MirageClientService {
     ///     Examples: 600 (10 seconds @ 60fps), 300 (5 seconds @ 60fps).
     ///   - keyframeQuality: Optional inter-frame quality (0.0-1.0). Lower = smaller frames.
     ///   - encoderOverrides: Optional per-stream encoder overrides.
-    public func startViewing(
+    func startViewing(
         window: MirageWindow,
         quality: MirageQualityPreset = .medium,
         expectedPixelSize: CGSize? = nil,
@@ -35,10 +35,9 @@ extension MirageClientService {
         keyFrameInterval: Int? = nil,
         keyframeQuality: Float? = nil,
         encoderOverrides: MirageEncoderOverrides? = nil
-    ) async throws -> ClientStreamSession {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+    )
+    async throws -> ClientStreamSession {
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         // Note: Decoder/reassembler are created per-stream AFTER receiving streamStarted with the stream ID.
         var request = StartStreamMessage(windowID: window.id, preferredQuality: quality, dataPort: nil)
@@ -50,20 +49,19 @@ extension MirageClientService {
 
         // Include display resolution for virtual display sizing.
         let effectiveDisplayResolution = scaledDisplayResolution(displayResolution ?? getMainDisplayResolution())
-        if effectiveDisplayResolution.width > 0 && effectiveDisplayResolution.height > 0 {
+        if effectiveDisplayResolution.width > 0, effectiveDisplayResolution.height > 0 {
             request.displayWidth = Int(effectiveDisplayResolution.width)
             request.displayHeight = Int(effectiveDisplayResolution.height)
-            MirageLogger.client("Including display resolution: \(Int(effectiveDisplayResolution.width))x\(Int(effectiveDisplayResolution.height))")
+            MirageLogger
+                .client(
+                    "Including display resolution: \(Int(effectiveDisplayResolution.width))x\(Int(effectiveDisplayResolution.height))"
+                )
         }
 
         // Include encoder config overrides if specified.
         var overrides = encoderOverrides ?? MirageEncoderOverrides()
-        if overrides.keyFrameInterval == nil {
-            overrides.keyFrameInterval = keyFrameInterval
-        }
-        if overrides.frameQuality == nil {
-            overrides.frameQuality = keyframeQuality
-        }
+        if overrides.keyFrameInterval == nil { overrides.keyFrameInterval = keyFrameInterval }
+        if overrides.frameQuality == nil { overrides.frameQuality = keyframeQuality }
         applyEncoderOverrides(overrides, to: &request)
 
         request.streamScale = clampedStreamScale()
@@ -78,16 +76,17 @@ extension MirageClientService {
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: messageData, completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
+                if let error { continuation.resume(throwing: error) } else {
                     continuation.resume()
                 }
             })
         }
 
         // Wait for streamStarted response from server to get the real stream ID.
-        let realStreamID = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<StreamID, Error>) in
+        let realStreamID = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<
+            StreamID,
+            Error
+        >) in
             self.streamStartedContinuation = continuation
         }
 
@@ -111,7 +110,7 @@ extension MirageClientService {
 
     /// Set up or reset controller for a specific stream.
     /// StreamController owns the decoder, reassembler, and resize state machine.
-    func setupControllerForStream(_ streamID: StreamID) async {
+    internal func setupControllerForStream(_ streamID: StreamID) async {
         if let existingController = controllersByStream[streamID] {
             await existingController.resetForNewSession()
             MirageLogger.client("Reset existing controller for stream \(streamID)")
@@ -133,7 +132,7 @@ extension MirageClientService {
             onResizeStateChanged: nil,
             onFrameDecoded: { [weak self] metrics in
                 guard let self else { return }
-                self.metricsStore.updateClientMetrics(
+                metricsStore.updateClientMetrics(
                     streamID: capturedStreamID,
                     decodedFPS: metrics.decodedFPS,
                     receivedFPS: metrics.receivedFPS,
@@ -174,7 +173,7 @@ extension MirageClientService {
     }
 
     /// Get the controller for a stream (for view access).
-    func controller(for streamID: StreamID) -> StreamController? {
+    internal func controller(for streamID: StreamID) -> StreamController? {
         controllersByStream[streamID]
     }
 
@@ -182,7 +181,7 @@ extension MirageClientService {
     /// - Parameters:
     ///   - session: The stream session to stop.
     ///   - minimizeWindow: Whether to minimize the source window on the host (default: false).
-    public func stopViewing(_ session: ClientStreamSession, minimizeWindow: Bool = false) async {
+    func stopViewing(_ session: ClientStreamSession, minimizeWindow: Bool = false) async {
         let streamID = session.id
 
         MirageFrameCache.shared.clear(for: streamID)
@@ -208,7 +207,7 @@ extension MirageClientService {
     }
 
     /// Get the minimum window size for a stream (in points).
-    public func getMinimumSize(forStream streamID: StreamID) -> (minWidth: Int, minHeight: Int)? {
+    func getMinimumSize(forStream streamID: StreamID) -> (minWidth: Int, minHeight: Int)? {
         streamMinSizes[streamID]
     }
 }

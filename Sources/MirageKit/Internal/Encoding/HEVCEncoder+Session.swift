@@ -7,8 +7,8 @@
 //  HEVC encoder extensions.
 //
 
-import Foundation
 import CoreMedia
+import Foundation
 import VideoToolbox
 
 #if os(macOS)
@@ -23,12 +23,12 @@ extension HEVCEncoder {
             kCVPixelBufferWidthKey: width,
             kCVPixelBufferHeightKey: height,
             kCVPixelBufferMetalCompatibilityKey: true,
-            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
         ] as CFDictionary
 
         let baseSpec: [CFString: Any] = [
             kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: true,
-            kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true
+            kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true,
         ]
 
         var status = VTCompressionSessionCreate(
@@ -50,7 +50,7 @@ extension HEVCEncoder {
                 kCVPixelBufferPixelFormatTypeKey: pixelFormatType,
                 kCVPixelBufferWidthKey: width,
                 kCVPixelBufferHeightKey: height,
-                kCVPixelBufferMetalCompatibilityKey: true
+                kCVPixelBufferMetalCompatibilityKey: true,
             ] as CFDictionary
 
             session = nil
@@ -66,14 +66,10 @@ extension HEVCEncoder {
                 refcon: nil,
                 compressionSessionOut: &session
             )
-            if status == noErr {
-                MirageLogger.encoder("P010 unsupported; using NV12")
-            }
+            if status == noErr { MirageLogger.encoder("P010 unsupported; using NV12") }
         }
 
-        guard status == noErr, let session else {
-            throw MirageError.encodingError(NSError(domain: NSOSStatusErrorDomain, code: Int(status)))
-        }
+        guard status == noErr, let session else { throw MirageError.encodingError(NSError(domain: NSOSStatusErrorDomain, code: Int(status))) }
 
         loadSupportedProperties(session)
         try configureSession(session)
@@ -84,33 +80,35 @@ extension HEVCEncoder {
         currentWidth = width
         currentHeight = height
 
-        let formatLabel: String
-        switch activePixelFormat {
+        let formatLabel = switch activePixelFormat {
         case .p010:
-            formatLabel = "P010"
+            "P010"
         case .bgr10a2:
-            formatLabel = "ARGB2101010"
+            "ARGB2101010"
         case .bgra8:
-            formatLabel = "BGRA"
+            "BGRA"
         case .nv12:
-            formatLabel = "NV12"
+            "NV12"
         }
         MirageLogger.encoder("Encoder input format: \(formatLabel)")
     }
+
     private func qualitySettings(for quality: Float) -> QualitySettings {
         let clamped = max(0.02, min(1.0, quality))
         let useQP = clamped < 0.98
-        guard useQP else {
-            return QualitySettings(quality: clamped, minQP: nil, maxQP: nil)
-        }
+        guard useQP else { return QualitySettings(quality: clamped, minQP: nil, maxQP: nil) }
         let rawMin = 10.0 + (1.0 - Double(clamped)) * 36.0
         let clampedMin = max(10, min(46, Int(rawMin.rounded())))
         let maxQP = min(51, clampedMin + 12)
         return QualitySettings(quality: clamped, minQP: clampedMin, maxQP: maxQP)
     }
+
     private func loadSupportedProperties(_ session: VTCompressionSession) {
         var propertyDictionary: CFDictionary?
-        let status = VTSessionCopySupportedPropertyDictionary(session, supportedPropertyDictionaryOut: &propertyDictionary)
+        let status = VTSessionCopySupportedPropertyDictionary(
+            session,
+            supportedPropertyDictionaryOut: &propertyDictionary
+        )
         didQuerySupportedProperties = (status == noErr)
         guard status == noErr, let dict = propertyDictionary as? [CFString: Any] else {
             supportedPropertyKeys = []
@@ -121,6 +119,7 @@ extension HEVCEncoder {
         supportedPropertyKeys = Set(dict.keys)
         loggedUnsupportedKeys = []
     }
+
     private func logHardwareStatus(_ session: VTCompressionSession) {
         var hw: CFTypeRef?
         let hwStatus = VTSessionCopyProperty(
@@ -129,9 +128,7 @@ extension HEVCEncoder {
             allocator: kCFAllocatorDefault,
             valueOut: &hw
         )
-        if hwStatus == noErr, let value = hw, let boolValue = value as? Bool {
-            MirageLogger.encoder("Using hardware encoder: \(boolValue)")
-        } else {
+        if hwStatus == noErr, let value = hw, let boolValue = value as? Bool { MirageLogger.encoder("Using hardware encoder: \(boolValue)") } else {
             MirageLogger.encoder("Using hardware encoder: (unknown, status \(hwStatus))")
         }
 
@@ -142,21 +139,21 @@ extension HEVCEncoder {
             allocator: kCFAllocatorDefault,
             valueOut: &gpu
         )
-        if gpuStatus == noErr, let value = gpu, let registry = value as? NSNumber {
-            MirageLogger.encoder("Encoder GPU registry ID: \(registry)")
-        } else if gpuStatus == noErr {
+        if gpuStatus == noErr, let value = gpu, let registry = value as? NSNumber { MirageLogger.encoder("Encoder GPU registry ID: \(registry)") } else if gpuStatus == noErr {
             MirageLogger.encoder("Encoder GPU registry ID: nil (built-in encoder or software)")
         }
     }
+
     static func fourCCString(_ value: OSType) -> String {
         let scalars: [UnicodeScalar] = [
             UnicodeScalar((value >> 24) & 0xFF) ?? UnicodeScalar(32),
             UnicodeScalar((value >> 16) & 0xFF) ?? UnicodeScalar(32),
             UnicodeScalar((value >> 8) & 0xFF) ?? UnicodeScalar(32),
-            UnicodeScalar(value & 0xFF) ?? UnicodeScalar(32)
+            UnicodeScalar(value & 0xFF) ?? UnicodeScalar(32),
         ]
         return String(scalars.map { Character($0) })
     }
+
     func setProperty(_ session: VTCompressionSession, key: CFString, value: CFTypeRef) {
         if didQuerySupportedProperties, !supportedPropertyKeys.contains(key) {
             if !loggedUnsupportedKeys.contains(key) {
@@ -171,37 +168,37 @@ extension HEVCEncoder {
             return
         }
     }
+
     func applyQualitySettings(_ session: VTCompressionSession, quality: Float, log: Bool) {
         let settings = qualitySettings(for: quality)
         setProperty(session, key: kVTCompressionPropertyKey_Quality, value: NSNumber(value: settings.quality))
 
-        if let minQP = settings.minQP {
-            setProperty(session, key: kVTCompressionPropertyKey_MinAllowedFrameQP, value: NSNumber(value: minQP))
-        }
-        if let maxQP = settings.maxQP {
-            setProperty(session, key: kVTCompressionPropertyKey_MaxAllowedFrameQP, value: NSNumber(value: maxQP))
-        }
+        if let minQP = settings.minQP { setProperty(session, key: kVTCompressionPropertyKey_MinAllowedFrameQP, value: NSNumber(value: minQP)) }
+        if let maxQP = settings.maxQP { setProperty(session, key: kVTCompressionPropertyKey_MaxAllowedFrameQP, value: NSNumber(value: maxQP)) }
 
         guard log else { return }
         let qualityText = settings.quality.formatted(.number.precision(.fractionLength(2)))
-        if let minQP = settings.minQP, let maxQP = settings.maxQP {
-            MirageLogger.encoder("Encoder quality: \(qualityText), QP \(minQP)-\(maxQP)")
-        } else {
+        if let minQP = settings.minQP, let maxQP = settings.maxQP { MirageLogger.encoder("Encoder quality: \(qualityText), QP \(minQP)-\(maxQP)") } else {
             MirageLogger.encoder("Encoder quality: \(qualityText)")
         }
     }
+
     private func applyBitrateSettings(_ session: VTCompressionSession) {
-        guard let targetBitrate = configuration.maxBitrate ?? configuration.minBitrate, targetBitrate > 0 else { return }
+        guard let targetBitrate = configuration.maxBitrate ?? configuration.minBitrate,
+              targetBitrate > 0 else {
+            return
+        }
         let windowSeconds: Double = configuration.targetFrameRate >= 120 ? 0.25 : 0.5
         let bytesPerSecond = max(1, targetBitrate / 8)
         setProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: NSNumber(value: targetBitrate))
         let rateLimits: [NSNumber] = [NSNumber(value: bytesPerSecond), NSNumber(value: windowSeconds)]
         setProperty(session, key: kVTCompressionPropertyKey_DataRateLimits, value: rateLimits as CFArray)
 
-        let Mbps = Double(targetBitrate) / 1_000_000.0
-        let bitrateText = Mbps.formatted(.number.precision(.fractionLength(1)))
+        let mbps = Double(targetBitrate) / 1_000_000.0
+        let bitrateText = mbps.formatted(.number.precision(.fractionLength(1)))
         MirageLogger.encoder("Encoder bitrate target: \(bitrateText) Mbps")
     }
+
     private func configureSession(_ session: VTCompressionSession) throws {
         // Real-time encoding
         setProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
@@ -210,18 +207,15 @@ extension HEVCEncoder {
         setProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
 
         // Allow limited encoder buffering for smoother throughput in higher-latency modes.
-        let frameDelayCount: Int
-        switch latencyMode {
+        let frameDelayCount = switch latencyMode {
         case .smoothest:
-            frameDelayCount = 2
+            2
         case .balanced:
-            frameDelayCount = 1
+            1
         case .lowestLatency:
-            frameDelayCount = 0
+            0
         }
-        if frameDelayCount > 0 {
-            setProperty(session, key: kVTCompressionPropertyKey_MaxFrameDelayCount, value: frameDelayCount as CFNumber)
-        }
+        if frameDelayCount > 0 { setProperty(session, key: kVTCompressionPropertyKey_MaxFrameDelayCount, value: frameDelayCount as CFNumber) }
 
         // Frame rate
         setProperty(
@@ -236,7 +230,10 @@ extension HEVCEncoder {
             key: kVTCompressionPropertyKey_MaxKeyFrameInterval,
             value: configuration.keyFrameInterval as CFNumber
         )
-        let intervalSeconds = max(1.0, Double(configuration.keyFrameInterval) / Double(max(1, configuration.targetFrameRate)))
+        let intervalSeconds = max(
+            1.0,
+            Double(configuration.keyFrameInterval) / Double(max(1, configuration.targetFrameRate))
+        )
         setProperty(
             session,
             key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration,

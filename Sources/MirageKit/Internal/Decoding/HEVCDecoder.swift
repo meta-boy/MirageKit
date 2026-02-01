@@ -5,11 +5,11 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Foundation
-import VideoToolbox
+import CoreGraphics
 import CoreMedia
 import CoreVideo
-import CoreGraphics
+import Foundation
+import VideoToolbox
 
 /// Hardware-accelerated HEVC decoder using VideoToolbox
 actor HEVCDecoder {
@@ -58,59 +58,49 @@ actor HEVCDecoder {
     /// Expected dimensions after resize (optional, for validation)
     var expectedDimensions: (width: Int, height: Int)?
 
+    // Set handler called when decode errors exceed threshold, indicating need for keyframe
 
+    // Set handler called when video dimensions change
+    // Used to reset the reassembler and discard pending old-dimension fragments
 
+    // Set handler called when input blocking state changes
+    // Input should be blocked when decoder is in a bad state (awaiting keyframe, decode errors)
 
+    // Get the current average decode time (ms) from recent samples.
 
-    /// Set handler called when decode errors exceed threshold, indicating need for keyframe
+    // Get the total decode error count (lifetime).
 
-    /// Set handler called when video dimensions change
-    /// Used to reset the reassembler and discard pending old-dimension fragments
+    // Called when client initiates a resize request.
+    // Puts decoder in "awaiting dimension change" mode where P-frames are discarded
+    // until a keyframe with new VPS/SPS/PPS arrives.
 
-    /// Set handler called when input blocking state changes
-    /// Input should be blocked when decoder is in a bad state (awaiting keyframe, decode errors)
+    // Clear any stuck state that prevents frame processing.
+    // Called when recovering from app backgrounding to ensure decoder accepts new frames.
 
-    /// Get the current average decode time (ms) from recent samples.
+    // Start decoding with a frame handler
 
-    /// Get the total decode error count (lifetime).
+    // Stop decoding
 
-    /// Called when client initiates a resize request.
-    /// Puts decoder in "awaiting dimension change" mode where P-frames are discarded
-    /// until a keyframe with new VPS/SPS/PPS arrives.
+    // Reset the decoder state for a new stream session (e.g., after resize or reconnection).
+    // Clears cached VPS/SPS/PPS so the next keyframe will be used to configure the decoder.
+    // Unlike stopDecoding(), this keeps the decoder running and ready to receive new frames.
 
-    /// Clear any stuck state that prevents frame processing.
-    /// Called when recovering from app backgrounding to ensure decoder accepts new frames.
+    // Decode an encoded frame
 
-    /// Start decoding with a frame handler
+    // Extract format description from parameter sets and return data with parameter sets stripped
 
-    /// Stop decoding
+    // Strip leading SEI NAL units from AVCC data
+    // SEI NAL types: 39 (PREFIX_SEI_NUT), 40 (SUFFIX_SEI_NUT)
+    // Note: SEI contains HDR metadata but VideoToolbox may not decode properly if SEI precedes IDR
 
-    /// Reset the decoder state for a new stream session (e.g., after resize or reconnection).
-    /// Clears cached VPS/SPS/PPS so the next keyframe will be used to configure the decoder.
-    /// Unlike stopDecoding(), this keeps the decoder running and ready to receive new frames.
+    // Find where AVCC data begins after the last Annex B NAL unit (PPS)
+    // AVCC uses 4-byte big-endian length prefixes instead of start codes
 
-    /// Decode an encoded frame
+    // Parse NAL units from Annex B data and return with end positions
 
-    /// Extract format description from parameter sets and return data with parameter sets stripped
+    // Parse NAL units from Annex B or length-prefixed data
 
-
-
-
-
-
-    /// Strip leading SEI NAL units from AVCC data
-    /// SEI NAL types: 39 (PREFIX_SEI_NUT), 40 (SUFFIX_SEI_NUT)
-    /// Note: SEI contains HDR metadata but VideoToolbox may not decode properly if SEI precedes IDR
-
-    /// Find where AVCC data begins after the last Annex B NAL unit (PPS)
-    /// AVCC uses 4-byte big-endian length prefixes instead of start codes
-
-    /// Parse NAL units from Annex B data and return with end positions
-
-    /// Parse NAL units from Annex B or length-prefixed data
-
-
-    /// Flush pending frames
+    // Flush pending frames
 }
 
 /// Info passed through the decode callback
@@ -173,32 +163,35 @@ final class DecodeErrorTracker: @unchecked Sendable {
     /// Minimum time between session recreations (seconds)
     let sessionRecreationCooldown: CFAbsoluteTime = 2.0
 
-    init(maxErrors: Int, onThresholdReached: @escaping @Sendable () -> Void, onRecovery: (@Sendable () -> Void)? = nil) {
-        self.maxConsecutiveErrors = maxErrors
+    init(
+        maxErrors: Int,
+        onThresholdReached: @escaping @Sendable () -> Void,
+        onRecovery: (@Sendable () -> Void)? = nil
+    ) {
+        maxConsecutiveErrors = maxErrors
         self.onThresholdReached = onThresholdReached
         self.onRecovery = onRecovery
     }
 
-    /// Record a decode error. Returns true if threshold was just exceeded.
+    // Record a decode error. Returns true if threshold was just exceeded.
 
-    /// Record a successful decode, resetting the error counter
+    // Record a successful decode, resetting the error counter
 
-    /// Request keyframe immediately due to dimension change
-    /// This is more urgent than error-based requests - dimensions changed so ALL old frames will fail
+    // Request keyframe immediately due to dimension change
+    // This is more urgent than error-based requests - dimensions changed so ALL old frames will fail
 
-    /// Check if session recreation should be attempted on keyframe receipt.
-    /// Returns true only if:
-    /// 1. We've had decode errors (thresholdFired or consecutiveErrors > 0)
-    /// 2. Session recreation hasn't been attempted yet OR cooldown has passed
+    // Check if session recreation should be attempted on keyframe receipt.
+    // Returns true only if:
+    // 1. We've had decode errors (thresholdFired or consecutiveErrors > 0)
+    // 2. Session recreation hasn't been attempted yet OR cooldown has passed
 
-    /// Mark that session has been recreated.
-    /// Called after decoder recreates session on keyframe.
+    // Mark that session has been recreated.
+    // Called after decoder recreates session on keyframe.
 
-    /// Clear error tracking state for dimension change.
-    /// Called when dimensions change to give the decoder a clean slate.
-    /// Unlike markSessionRecreated(), this doesn't impose a cooldown since
-    /// dimension changes inherently require a fresh session anyway.
-
+    // Clear error tracking state for dimension change.
+    // Called when dimensions change to give the decoder a clean slate.
+    // Unlike markSessionRecreated(), this doesn't impose a cooldown since
+    // dimension changes inherently require a fresh session anyway.
 }
 
 /// Thread-safe decode timing tracker for recent samples
@@ -206,8 +199,6 @@ final class DecodePerformanceTracker: @unchecked Sendable {
     let lock = NSLock()
     var samples: [Double] = []
     let maxSamples: Int = 30
-
-
 }
 
 /// Reassembles video frames from network packets.
@@ -241,6 +232,7 @@ final class FrameReassembler: @unchecked Sendable {
     var onFrameComplete: (@Sendable (StreamID, Data, Bool, UInt64, CGRect, @escaping @Sendable () -> Void) -> Void)?
 
     // MARK: - Diagnostic counters
+
     var totalPacketsReceived: UInt64 = 0
     var framesDelivered: UInt64 = 0
     var packetsDiscardedOld: UInt64 = 0
@@ -303,30 +295,22 @@ final class FrameReassembler: @unchecked Sendable {
         self.maxPayloadSize = max(1, maxPayloadSize)
     }
 
+    // Update the expected dimension token for this stream.
+    // Frames with mismatched tokens will be silently discarded.
+    // Called when stream starts or when client is notified of a resize.
+    // - Parameter token: The new expected dimension token from the host
 
-    /// Update the expected dimension token for this stream.
-    /// Frames with mismatched tokens will be silently discarded.
-    /// Called when stream starts or when client is notified of a resize.
-    /// - Parameter token: The new expected dimension token from the host
+    // Process a received packet
 
-    /// Process a received packet
+    // Discard pending P-frames older than the given frame number
+    // IMPORTANT: Never discard pending keyframes - they're critical for recovery
+    // and take longer to arrive due to their large size
 
+    // Request a keyframe if too many frames are incomplete or dropped
 
-    /// Discard pending P-frames older than the given frame number
-    /// IMPORTANT: Never discard pending keyframes - they're critical for recovery
-    /// and take longer to arrive due to their large size
+    // Get the number of dropped frames
 
+    // Reset state for a new stream
 
-
-    /// Request a keyframe if too many frames are incomplete or dropped
-
-    /// Get the number of dropped frames
-
-    /// Reset state for a new stream
-
-    /// Enter keyframe-only mode after decoder errors until a keyframe arrives.
-
-
-
-
+    // Enter keyframe-only mode after decoder errors until a keyframe arrives.
 }

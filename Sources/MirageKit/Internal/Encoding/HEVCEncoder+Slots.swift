@@ -7,8 +7,8 @@
 //  HEVC encoder extensions.
 //
 
-import Foundation
 import CoreMedia
+import Foundation
 import VideoToolbox
 
 #if os(macOS)
@@ -18,12 +18,11 @@ extension HEVCEncoder {
     nonisolated func reserveEncoderSlot() -> Bool {
         encoderInFlightLock.lock()
         defer { encoderInFlightLock.unlock() }
-        guard encoderInFlightCount < encoderInFlightLimit else {
-            return false
-        }
+        guard encoderInFlightCount < encoderInFlightLimit else { return false }
         encoderInFlightCount += 1
         return true
     }
+
     nonisolated func releaseEncoderSlot() {
         encoderInFlightLock.lock()
         encoderInFlightCount = max(0, encoderInFlightCount - 1)

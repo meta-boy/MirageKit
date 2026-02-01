@@ -79,7 +79,7 @@ public struct MirageStreamContentView: View {
 
     public var body: some View {
         Group {
-#if os(iOS) || os(visionOS)
+            #if os(iOS) || os(visionOS)
             MirageStreamViewRepresentable(
                 streamID: session.streamID,
                 onInputEvent: { event in
@@ -107,7 +107,7 @@ public struct MirageStreamContentView: View {
             .ignoresSafeArea()
             .blur(radius: isResizing ? 20 : 0)
             .animation(.easeInOut(duration: 0.15), value: isResizing)
-#else
+            #else
             MirageStreamViewRepresentable(
                 streamID: session.streamID,
                 onInputEvent: { event in
@@ -120,7 +120,7 @@ public struct MirageStreamContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .blur(radius: isResizing ? 20 : 0)
             .animation(.easeInOut(duration: 0.15), value: isResizing)
-#endif
+            #endif
         }
         .overlay {
             if !session.hasReceivedFirstFrame {
@@ -140,9 +140,7 @@ public struct MirageStreamContentView: View {
             }
         }
         .onChange(of: sessionStore.sessionMinSizes[session.id]) { _, _ in
-            if isResizing {
-                isResizing = false
-            }
+            if isResizing { isResizing = false }
         }
         .onAppear {
             sessionStore.setFocusedSession(session.id)
@@ -169,7 +167,7 @@ public struct MirageStreamContentView: View {
     }
 
     private func sendInputEvent(_ event: MirageInputEvent) {
-        if case .keyDown(let keyEvent) = event,
+        if case let .keyDown(keyEvent) = event,
            keyEvent.keyCode == 0x35,
            keyEvent.modifiers.contains(.control),
            keyEvent.modifiers.contains(.option),
@@ -179,15 +177,15 @@ public struct MirageStreamContentView: View {
             return
         }
 
-#if os(macOS)
+        #if os(macOS)
         guard sessionStore.focusedSessionID == session.id else { return }
-#else
+        #else
         if sessionStore.focusedSessionID != session.id {
             sessionStore.setFocusedSession(session.id)
             clientService.sendInputFireAndForget(.windowFocus, forStream: session.streamID)
         }
-#endif
-        if case .scrollWheel(let scrollEvent) = event {
+        #endif
+        if case let .scrollWheel(scrollEvent) = event {
             scrollInputSampler.handle(scrollEvent) { resampledEvent in
                 clientService.sendInputFireAndForget(.scrollWheel(resampledEvent), forStream: session.streamID)
             }
@@ -195,27 +193,32 @@ public struct MirageStreamContentView: View {
         }
 
         switch event {
-        case .mouseMoved(let mouseEvent):
+        case let .mouseMoved(mouseEvent):
             pointerInputSampler.handle(kind: .move, event: mouseEvent) { resampledEvent in
                 clientService.sendInputFireAndForget(.mouseMoved(resampledEvent), forStream: session.streamID)
             }
             return
-        case .mouseDragged(let mouseEvent):
+        case let .mouseDragged(mouseEvent):
             pointerInputSampler.handle(kind: .leftDrag, event: mouseEvent) { resampledEvent in
                 clientService.sendInputFireAndForget(.mouseDragged(resampledEvent), forStream: session.streamID)
             }
             return
-        case .rightMouseDragged(let mouseEvent):
+        case let .rightMouseDragged(mouseEvent):
             pointerInputSampler.handle(kind: .rightDrag, event: mouseEvent) { resampledEvent in
                 clientService.sendInputFireAndForget(.rightMouseDragged(resampledEvent), forStream: session.streamID)
             }
             return
-        case .otherMouseDragged(let mouseEvent):
+        case let .otherMouseDragged(mouseEvent):
             pointerInputSampler.handle(kind: .otherDrag, event: mouseEvent) { resampledEvent in
                 clientService.sendInputFireAndForget(.otherMouseDragged(resampledEvent), forStream: session.streamID)
             }
             return
-        case .mouseDown, .mouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
+        case .mouseDown,
+             .mouseUp,
+             .otherMouseDown,
+             .otherMouseUp,
+             .rightMouseDown,
+             .rightMouseUp:
             pointerInputSampler.reset()
         default:
             break
@@ -237,9 +240,7 @@ public struct MirageStreamContentView: View {
                 } catch {
                     return
                 }
-                if isResizing {
-                    isResizing = false
-                }
+                if isResizing { isResizing = false }
             }
         }
 
@@ -249,13 +250,12 @@ public struct MirageStreamContentView: View {
             width: viewSize.width * scaleFactor,
             height: viewSize.height * scaleFactor
         )
-        let resolvedRawPixelSize = (rawPixelSize.width > 0 && rawPixelSize.height > 0) ? rawPixelSize : metrics.pixelSize
+        let resolvedRawPixelSize = (rawPixelSize.width > 0 && rawPixelSize.height > 0) ? rawPixelSize : metrics
+            .pixelSize
 
         #if os(iOS) || os(visionOS)
         let previousDisplaySize = MirageClientService.lastKnownDrawableSize
-        if resolvedRawPixelSize != metrics.pixelSize || previousDisplaySize == .zero {
-            MirageClientService.lastKnownDrawableSize = resolvedRawPixelSize
-        }
+        if resolvedRawPixelSize != metrics.pixelSize || previousDisplaySize == .zero { MirageClientService.lastKnownDrawableSize = resolvedRawPixelSize }
         let fallbackScreenSize = CGSize(width: 1920, height: 1080)
         #else
         let screenBounds = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -276,15 +276,14 @@ public struct MirageStreamContentView: View {
         guard isDesktopStream else { return }
 
         #if os(iOS) || os(visionOS)
-        let preferredDisplaySize: CGSize
-        if previousDisplaySize.width > 0,
-           previousDisplaySize.height > 0,
-           resolvedRawPixelSize == metrics.pixelSize,
-           previousDisplaySize.width >= metrics.pixelSize.width,
-           previousDisplaySize.height >= metrics.pixelSize.height {
-            preferredDisplaySize = previousDisplaySize
+        let preferredDisplaySize: CGSize = if previousDisplaySize.width > 0,
+                                              previousDisplaySize.height > 0,
+                                              resolvedRawPixelSize == metrics.pixelSize,
+                                              previousDisplaySize.width >= metrics.pixelSize.width,
+                                              previousDisplaySize.height >= metrics.pixelSize.height {
+            previousDisplaySize
         } else {
-            preferredDisplaySize = resolvedRawPixelSize
+            resolvedRawPixelSize
         }
         #else
         let preferredDisplaySize = resolvedRawPixelSize
@@ -312,7 +311,7 @@ public struct MirageStreamContentView: View {
         }
     }
 
-#if os(iOS) || os(visionOS)
+    #if os(iOS) || os(visionOS)
     private func scheduleResizeHoldoff() {
         resizeHoldoffTask?.cancel()
         allowsResizeEvents = false
@@ -327,14 +326,12 @@ public struct MirageStreamContentView: View {
     }
 
     private func handleForegroundRecovery() {
-        if isResizing {
-            isResizing = false
-        }
+        if isResizing { isResizing = false }
 
         scheduleResizeHoldoff()
         clientService.requestStreamRecovery(for: session.streamID)
     }
-#endif
+    #endif
 }
 
 @MainActor
@@ -357,18 +354,14 @@ private final class ScrollInputSampler {
         lastLocation = event.location
         lastModifiers = event.modifiers
         lastIsPrecise = event.isPrecise
-        if event.momentumPhase != .none {
-            lastMomentumPhase = event.momentumPhase
-        }
+        if event.momentumPhase != .none { lastMomentumPhase = event.momentumPhase }
 
         if event.phase == .began || event.momentumPhase == .began {
             resetRate()
             send(phaseEvent(from: event))
         }
 
-        if event.deltaX != 0 || event.deltaY != 0 {
-            applyDelta(event, send: send)
-        }
+        if event.deltaX != 0 || event.deltaY != 0 { applyDelta(event, send: send) }
 
         if event.phase == .ended || event.phase == .cancelled ||
             event.momentumPhase == .ended || event.momentumPhase == .cancelled {
@@ -391,9 +384,7 @@ private final class ScrollInputSampler {
         scrollRateX = event.deltaX / CGFloat(dt)
         scrollRateY = event.deltaY / CGFloat(dt)
 
-        if scrollTimer == nil {
-            startTimer(send: send)
-        }
+        if scrollTimer == nil { startTimer(send: send) }
     }
 
     private func startTimer(send: @escaping (MirageScrollEvent) -> Void) {
@@ -486,9 +477,7 @@ private final class PointerInputSampler {
 
         send(event)
 
-        if timer == nil {
-            startTimer(send: send)
-        }
+        if timer == nil { startTimer(send: send) }
     }
 
     func reset() {

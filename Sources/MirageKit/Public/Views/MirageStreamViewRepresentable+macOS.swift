@@ -46,7 +46,7 @@ public struct MirageStreamViewRepresentable: NSViewRepresentable {
             metalView.topAnchor.constraint(equalTo: wrapper.contentView.topAnchor),
             metalView.leadingAnchor.constraint(equalTo: wrapper.contentView.leadingAnchor),
             metalView.trailingAnchor.constraint(equalTo: wrapper.contentView.trailingAnchor),
-            metalView.bottomAnchor.constraint(equalTo: wrapper.contentView.bottomAnchor)
+            metalView.bottomAnchor.constraint(equalTo: wrapper.contentView.bottomAnchor),
         ])
 
         // Store Metal view reference in coordinator
@@ -55,18 +55,19 @@ public struct MirageStreamViewRepresentable: NSViewRepresentable {
         metalView.streamID = streamID
 
         // Configure scroll callback for native trackpad physics
-        wrapper.onScroll = { [weak coordinator = context.coordinator] deltaX, deltaY, location, phase, momentumPhase, isPrecise in
-            let event = MirageScrollEvent(
-                deltaX: deltaX,
-                deltaY: deltaY,
-                location: location,
-                phase: phase,
-                momentumPhase: momentumPhase,
-                modifiers: [],  // Modifiers tracked separately via flagsChanged
-                isPrecise: isPrecise
-            )
-            coordinator?.handleInputEvent(.scrollWheel(event))
-        }
+        wrapper
+            .onScroll = { [weak coordinator = context.coordinator] deltaX, deltaY, location, phase, momentumPhase, isPrecise in
+                let event = MirageScrollEvent(
+                    deltaX: deltaX,
+                    deltaY: deltaY,
+                    location: location,
+                    phase: phase,
+                    momentumPhase: momentumPhase,
+                    modifiers: [], // Modifiers tracked separately via flagsChanged
+                    isPrecise: isPrecise
+                )
+                coordinator?.handleInputEvent(.scrollWheel(event))
+            }
 
         // Configure mouse/keyboard event callback
         wrapper.onMouseEvent = { [weak coordinator = context.coordinator] event in
@@ -76,13 +77,11 @@ public struct MirageStreamViewRepresentable: NSViewRepresentable {
         return wrapper
     }
 
-    public func updateNSView(_ nsView: NSView, context: Context) {
+    public func updateNSView(_: NSView, context: Context) {
         context.coordinator.onDrawableMetricsChanged = onDrawableMetricsChanged
         context.coordinator.onInputEvent = onInputEvent
 
-        if let metalView = context.coordinator.metalView {
-            metalView.streamID = streamID
-        }
+        if let metalView = context.coordinator.metalView { metalView.streamID = streamID }
     }
 }
 #endif

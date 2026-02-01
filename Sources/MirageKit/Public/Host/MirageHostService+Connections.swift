@@ -17,12 +17,8 @@ extension MirageHostService {
     func isFatalConnectionError(_ error: Error) -> Bool {
         let nsError = error as NSError
         let fatalPosixCodes = [54, 57, 32, 104]
-        if nsError.domain == NSPOSIXErrorDomain && fatalPosixCodes.contains(nsError.code) {
-            return true
-        }
-        if nsError.domain == "NWError" && (nsError.code == -65554 || nsError.code == -65555) {
-            return true
-        }
+        if nsError.domain == NSPOSIXErrorDomain, fatalPosixCodes.contains(nsError.code) { return true }
+        if nsError.domain == "NWError", nsError.code == -65554 || nsError.code == -65555 { return true }
         return false
     }
 
@@ -37,7 +33,8 @@ extension MirageHostService {
                 switch state {
                 case .ready:
                     box.resume(returning: true)
-                case .failed, .cancelled:
+                case .cancelled,
+                     .failed:
                     box.resume(returning: false)
                 default:
                     break
@@ -50,14 +47,13 @@ extension MirageHostService {
             return
         }
 
-        let endpointDescription: String
-        switch connection.endpoint {
-        case .hostPort(let host, let port):
-            endpointDescription = "\(host):\(port)"
-        case .service(let name, _, _, _):
-            endpointDescription = name
+        let endpointDescription: String = switch connection.endpoint {
+        case let .hostPort(host, port):
+            "\(host):\(port)"
+        case let .service(name, _, _, _):
+            name
         default:
-            endpointDescription = connection.endpoint.debugDescription
+            connection.endpoint.debugDescription
         }
 
         MirageLogger.host("Waiting for hello message from \(endpointDescription)...")
@@ -83,9 +79,7 @@ extension MirageHostService {
         }
 
         defer {
-            if clientsByConnection[connectionID] == nil {
-                releaseSingleClientSlot(for: connectionID)
-            }
+            if clientsByConnection[connectionID] == nil { releaseSingleClientSlot(for: connectionID) }
         }
 
         // Evaluate trust using provider first, then fall back to delegate
@@ -126,9 +120,7 @@ extension MirageHostService {
         await refreshSessionStateIfNeeded()
         await sendSessionState(to: clientContext)
 
-        if sessionState == .active {
-            await sendWindowList(to: clientContext)
-        } else {
+        if sessionState == .active { await sendWindowList(to: clientContext) } else {
             await startLoginDisplayStreamIfNeeded()
             MirageLogger.host("Session is \(sessionState), client will show unlock form")
         }
@@ -138,7 +130,12 @@ extension MirageHostService {
 
     /// Receive hello message from a connecting client.
     func receiveHelloMessage(from connection: NWConnection, endpoint: String) async -> MirageDeviceInfo {
-        let result: (Data?, NWConnection.ContentContext?, Bool, NWError?) = await withCheckedContinuation { continuation in
+        let result: (
+            Data?,
+            NWConnection.ContentContext?,
+            Bool,
+            NWError?
+        ) = await withCheckedContinuation { continuation in
             connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, context, isComplete, error in
                 continuation.resume(returning: (data, context, isComplete, error))
             }
@@ -209,8 +206,9 @@ extension MirageHostService {
                 MirageLogger.host("Trust provider requires approval for \(deviceInfo.name)")
                 // Fall through to delegate
 
-            case .unavailable(let reason):
-                MirageLogger.host("Trust provider unavailable (\(reason)), falling back to delegate for \(deviceInfo.name)")
+            case let .unavailable(reason):
+                MirageLogger
+                    .host("Trust provider unavailable (\(reason)), falling back to delegate for \(deviceInfo.name)")
                 // Fall through to delegate
             }
         }
@@ -232,16 +230,12 @@ extension MirageHostService {
     }
 
     private func currentDataPort() -> UInt16 {
-        if case .advertising(_, let port) = state {
-            return port
-        }
+        if case let .advertising(_, port) = state { return port }
         return 0
     }
 
     func reserveSingleClientSlot(for connectionID: ObjectIdentifier) -> Bool {
-        if let reservedID = singleClientConnectionID, reservedID != connectionID {
-            return false
-        }
+        if let reservedID = singleClientConnectionID, reservedID != connectionID { return false }
 
         if let existingConnectionID = clientsByConnection.keys.first, existingConnectionID != connectionID {
             singleClientConnectionID = existingConnectionID
@@ -253,9 +247,7 @@ extension MirageHostService {
     }
 
     func releaseSingleClientSlot(for connectionID: ObjectIdentifier) {
-        if singleClientConnectionID == connectionID {
-            singleClientConnectionID = nil
-        }
+        if singleClientConnectionID == connectionID { singleClientConnectionID = nil }
     }
 
     private func sendHelloResponse(
@@ -277,23 +269,17 @@ extension MirageHostService {
             let data = message.serialize()
 
             connection.send(content: data, completion: .contentProcessed { error in
-                if let error {
-                    MirageLogger.error(.host, "Failed to send hello response: \(error)")
-                } else if accepted {
+                if let error { MirageLogger.error(.host, "Failed to send hello response: \(error)") } else if accepted {
                     MirageLogger.host("Sent hello response with dataPort \(dataPort)")
                 } else {
                     MirageLogger.host("Sent rejection hello response")
                 }
 
-                if cancelAfterSend {
-                    connection.cancel()
-                }
+                if cancelAfterSend { connection.cancel() }
             })
         } catch {
             MirageLogger.error(.host, "Failed to create hello response: \(error)")
-            if cancelAfterSend {
-                connection.cancel()
-            }
+            if cancelAfterSend { connection.cancel() }
         }
     }
 }

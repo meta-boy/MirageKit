@@ -9,10 +9,10 @@
 //  Unlock manager extensions.
 //
 
-import Foundation
 import AppKit
 import CoreGraphics
 import Darwin
+import Foundation
 
 extension UnlockManager {
     // MARK: - Credential Verification
@@ -30,7 +30,8 @@ extension UnlockManager {
         username: String,
         password: String,
         timeout: Duration = .seconds(8)
-    ) async -> CredentialVerificationResult {
+    )
+    async -> CredentialVerificationResult {
         // Use /usr/bin/dscl to verify password
         // This is more reliable than Authorization APIs for local accounts
         let process = Process()
@@ -58,13 +59,9 @@ extension UnlockManager {
             return .timedOut
         }
 
-        if result.status == 0 {
-            return .valid
-        }
+        if result.status == 0 { return .valid }
 
-        if let errorOutput, !errorOutput.isEmpty {
-            MirageLogger.error(.host, "dscl auth failed: \(errorOutput)")
-        } else {
+        if let errorOutput, !errorOutput.isEmpty { MirageLogger.error(.host, "dscl auth failed: \(errorOutput)") } else {
             MirageLogger.error(.host, "dscl auth failed with status \(result.status)")
         }
         return .invalid(message: errorOutput)
@@ -73,7 +70,8 @@ extension UnlockManager {
     private func waitForProcessExitOrTimeout(
         _ process: Process,
         timeout: Duration
-    ) async -> (status: Int32, timedOut: Bool) {
+    )
+    async -> (status: Int32, timedOut: Bool) {
         let timeoutTask = Task<Bool, Never> { [weak self] in
             try? await Task.sleep(for: timeout)
             guard !Task.isCancelled else { return false }

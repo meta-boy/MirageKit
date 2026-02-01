@@ -26,23 +26,21 @@ struct ClientContext {
         guard isLocalInterface else { return false }
 
         // Check if remote endpoint is on local network
-        guard case .hostPort(let host, _) = tcpConnection.endpoint else { return false }
+        guard case let .hostPort(host, _) = tcpConnection.endpoint else { return false }
         let hostString = "\(host)"
 
         // Check for private IPv4 ranges (RFC 1918) and link-local addresses
-        let isLocalNetwork = hostString.hasPrefix("192.168.") ||
-                            hostString.hasPrefix("10.") ||
-                            hostString.hasPrefix("172.16.") ||
-                            hostString.hasPrefix("172.17.") ||
-                            hostString.hasPrefix("172.18.") ||
-                            hostString.hasPrefix("172.19.") ||
-                            hostString.hasPrefix("172.2") ||
-                            hostString.hasPrefix("172.3") ||
-                            hostString.hasPrefix("169.254.") ||  // IPv4 link-local (AWDL/USB tether)
-                            hostString.contains(".local") ||   // mDNS/Bonjour
-                            hostString.hasPrefix("fe80:")      // IPv6 link-local
-
-        return isLocalNetwork
+        return hostString.hasPrefix("192.168.") ||
+            hostString.hasPrefix("10.") ||
+            hostString.hasPrefix("172.16.") ||
+            hostString.hasPrefix("172.17.") ||
+            hostString.hasPrefix("172.18.") ||
+            hostString.hasPrefix("172.19.") ||
+            hostString.hasPrefix("172.2") ||
+            hostString.hasPrefix("172.3") ||
+            hostString.hasPrefix("169.254.") || // IPv4 link-local (AWDL/USB tether)
+            hostString.contains(".local") || // mDNS/Bonjour
+            hostString.hasPrefix("fe80:") // IPv6 link-local
     }
 
     /// Send a control message over TCP
@@ -52,9 +50,7 @@ struct ClientContext {
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             tcpConnection.send(content: data, completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
+                if let error { continuation.resume(throwing: error) } else {
                     continuation.resume()
                 }
             })

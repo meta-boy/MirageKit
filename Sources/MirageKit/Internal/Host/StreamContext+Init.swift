@@ -7,8 +7,8 @@
 //  Sizing helpers for stream context.
 //
 
-import Foundation
 import CoreVideo
+import Foundation
 
 #if os(macOS)
 import ScreenCaptureKit
@@ -18,11 +18,10 @@ extension StreamContext {
         for baseSize: CGSize,
         requestedScale: CGFloat,
         logLabel: String?
-    ) -> CGFloat {
+    )
+    -> CGFloat {
         let clampedRequested = StreamContext.clampStreamScale(requestedScale)
-        guard baseSize.width > 0, baseSize.height > 0 else {
-            return clampedRequested
-        }
+        guard baseSize.width > 0, baseSize.height > 0 else { return clampedRequested }
 
         let maxScale = min(
             1.0,

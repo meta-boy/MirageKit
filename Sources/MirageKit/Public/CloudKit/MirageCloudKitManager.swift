@@ -7,8 +7,8 @@
 //  Manages CloudKit operations for device registration and user identity.
 //
 
-import Foundation
 import CloudKit
+import Foundation
 import Observation
 #if canImport(UIKit)
 import UIKit
@@ -33,7 +33,7 @@ import UIKit
 ///   when CloudKit is misconfigured or unavailable. Check ``isAvailable`` after initialization.
 @Observable
 @MainActor
-public final class MirageCloudKitManager: Sendable {
+public final class MirageCloudKitManager {
     // MARK: - Properties
 
     /// Configuration for CloudKit operations.
@@ -166,14 +166,16 @@ public final class MirageCloudKitManager: Sendable {
 
             isInitialized = true
             MirageLogger.appState("CloudKit: Initialization complete")
-
         } catch {
             lastError = error
             isAvailable = false
             isInitialized = true
             MirageLogger.error(.appState, "CloudKit initialization failed: \(error.localizedDescription)")
             if let ckError = error as? CKError {
-                MirageLogger.error(.appState, "CloudKit error code: \(ckError.code.rawValue), userInfo: \(ckError.userInfo)")
+                MirageLogger.error(
+                    .appState,
+                    "CloudKit error code: \(ckError.code.rawValue), userInfo: \(ckError.userInfo)"
+                )
             }
         }
     }
@@ -188,7 +190,7 @@ public final class MirageCloudKitManager: Sendable {
         // is misconfigured. We wrap it in a do-catch to handle potential
         // runtime issues, though note that some failures may still trap.
         // The main protection is deferring this call until after app launch.
-        return CKContainer(identifier: configuration.containerIdentifier)
+        CKContainer(identifier: configuration.containerIdentifier)
     }
 
     /// Reinitializes CloudKit after an account change.
@@ -263,9 +265,7 @@ public final class MirageCloudKitManager: Sendable {
     /// - Returns: Whether the user is a share participant.
     public func isShareParticipant(userID: String) async -> Bool {
         // Check cache first
-        if let expiration = shareParticipantCache[userID], expiration > Date() {
-            return true
-        }
+        if let expiration = shareParticipantCache[userID], expiration > Date() { return true }
 
         guard isAvailable, let container else { return false }
 
@@ -282,7 +282,8 @@ public final class MirageCloudKitManager: Sendable {
                         if let participantUserID = participant.userIdentity.userRecordID?.recordName,
                            participantUserID == userID {
                             // Cache the result
-                            shareParticipantCache[userID] = Date().addingTimeInterval(configuration.shareParticipantCacheTTL)
+                            shareParticipantCache[userID] = Date()
+                                .addingTimeInterval(configuration.shareParticipantCacheTTL)
                             return true
                         }
                     }
@@ -290,7 +291,6 @@ public final class MirageCloudKitManager: Sendable {
             }
 
             return false
-
         } catch {
             MirageLogger.error(.appState, "Failed to check share participants: \(error)")
             return false
@@ -303,9 +303,7 @@ public final class MirageCloudKitManager: Sendable {
         let (results, _) = try await database.records(matching: query, inZoneWith: zone.zoneID)
 
         for (_, result) in results {
-            if case .success(let record) = result, let share = record as? CKShare {
-                return share
-            }
+            if case let .success(record) = result, let share = record as? CKShare { return share }
         }
 
         return nil

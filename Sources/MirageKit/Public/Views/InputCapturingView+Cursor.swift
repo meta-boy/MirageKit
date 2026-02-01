@@ -38,9 +38,7 @@ extension InputCapturingView {
     func refreshCursorIfNeeded(force: Bool = false) {
         guard let cursorStore, let streamID else { return }
         let now = CACurrentMediaTime()
-        if !force, now - lastCursorRefreshTime < cursorRefreshInterval {
-            return
-        }
+        if !force, now - lastCursorRefreshTime < cursorRefreshInterval { return }
         lastCursorRefreshTime = now
         guard let snapshot = cursorStore.snapshot(for: streamID) else { return }
         guard snapshot.sequence != cursorSequence else { return }
@@ -52,7 +50,7 @@ extension InputCapturingView {
 // MARK: - UIPointerInteractionDelegate
 
 extension InputCapturingView: UIPointerInteractionDelegate {
-    public func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
+    public func pointerInteraction(_: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
         // Return appropriate pointer style based on host cursor state
         guard cursorIsVisible else {
             // Cursor is outside the host window, use default pointer

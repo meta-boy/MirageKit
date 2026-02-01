@@ -25,9 +25,7 @@ extension MirageClientService {
         #if os(macOS)
         return .mac
         #elseif os(iOS)
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            return .iPad
-        } else {
+        if UIDevice.current.userInterfaceIdiom == .pad { return .iPad } else {
             return .iPhone
         }
         #elseif os(visionOS)
@@ -60,9 +58,7 @@ extension MirageClientService {
             MirageLogger.client("Sending hello: \(deviceName) (\(currentDeviceType.displayName))")
 
             connection.send(content: data, completion: .contentProcessed { error in
-                if let error {
-                    MirageLogger.error(.client, "Failed to send hello: \(error)")
-                } else {
+                if let error { MirageLogger.error(.client, "Failed to send hello: \(error)") } else {
                     MirageLogger.client("Hello sent successfully")
                 }
             })
@@ -73,9 +69,7 @@ extension MirageClientService {
 
     /// Connect to a discovered host.
     public func connect(to host: MirageHost) async throws {
-        guard connectionState.canConnect else {
-            throw MirageError.protocolError("Already connected or connecting")
-        }
+        guard connectionState.canConnect else { throw MirageError.protocolError("Already connected or connecting") }
 
         MirageLogger.client("Connecting to \(host.name)...")
         connectionState = .connecting
@@ -104,11 +98,11 @@ extension MirageClientService {
                     switch state {
                     case .ready:
                         continuationBox.resume()
-                    case .failed(let error):
+                    case let .failed(error):
                         continuationBox.resume(throwing: error)
                     case .cancelled:
                         continuationBox.resume(throwing: MirageError.protocolError("Connection cancelled"))
-                    case .waiting(let error):
+                    case let .waiting(error):
                         MirageLogger.client("Connection waiting: \(error)")
                     default:
                         break
@@ -127,7 +121,7 @@ extension MirageClientService {
             connection.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
                 switch state {
-                case .failed(let error):
+                case let .failed(error):
                     Task { @MainActor in
                         await self.handleDisconnect(
                             reason: error.localizedDescription,
@@ -153,7 +147,6 @@ extension MirageClientService {
 
             // Start receiving messages from the server.
             startReceiving()
-
         } catch {
             MirageLogger.error(.client, "Connection failed: \(error)")
             connectionState = .disconnected
@@ -186,13 +179,9 @@ extension MirageClientService {
     }
 
     func handleDisconnect(reason: String, state: ConnectionState, notifyDelegate: Bool) async {
-        if case .disconnected = connectionState {
-            return
-        }
+        if case .disconnected = connectionState { return }
 
-        if case .error = connectionState, case .error = state {
-            return
-        }
+        if case .error = connectionState, case .error = state { return }
 
         let sessions = activeStreams
         let storedSessions = sessionStore.activeSessions
@@ -213,9 +202,7 @@ extension MirageClientService {
             await stopViewing(session)
         }
 
-        if let loginDisplayStreamID {
-            MirageFrameCache.shared.clear(for: loginDisplayStreamID)
-        }
+        if let loginDisplayStreamID { MirageFrameCache.shared.clear(for: loginDisplayStreamID) }
         metricsStore.clearAll()
         cursorStore.clearAll()
         sessionStore.clearLoginDisplayState()
@@ -234,7 +221,7 @@ extension MirageClientService {
         streamStartupFirstRegistrationSent.removeAll()
         streamStartupFirstPacketReceived.removeAll()
         startupPacketPendingLock.withLock {
-            _startupPacketPending.removeAll()
+            startupPacketPendingStorage.removeAll()
         }
         activeStreams.removeAll()
         for session in storedSessions {
@@ -254,8 +241,6 @@ extension MirageClientService {
         desktopStreamResolution = nil
         connectionState = state
 
-        if notifyDelegate {
-            delegate?.clientService(self, didDisconnectFromHost: reason)
-        }
+        if notifyDelegate { delegate?.clientService(self, didDisconnectFromHost: reason) }
     }
 }

@@ -7,9 +7,9 @@
 //  HEVC decoder extensions.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 import VideoToolbox
 
 private struct SendableOpaquePointer: @unchecked Sendable {
@@ -21,13 +21,12 @@ extension HEVCDecoder {
         decodedFrameHandler = onDecodedFrame
         isDecoding = true
     }
+
     func stopDecoding() {
         isDecoding = false
         decodedFrameHandler = nil
 
-        if let session = decompressionSession {
-            VTDecompressionSessionInvalidate(session)
-        }
+        if let session = decompressionSession { VTDecompressionSessionInvalidate(session) }
         decompressionSession = nil
         formatDescription = nil
 
@@ -39,11 +38,10 @@ extension HEVCDecoder {
 
         invalidateMemoryPool()
     }
+
     func resetForNewSession() {
         // Invalidate current session - will be recreated on next keyframe
-        if let session = decompressionSession {
-            VTDecompressionSessionInvalidate(session)
-        }
+        if let session = decompressionSession { VTDecompressionSessionInvalidate(session) }
         decompressionSession = nil
         formatDescription = nil
         outputPixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
@@ -65,19 +63,21 @@ extension HEVCDecoder {
 
         MirageLogger.decoder("Decoder reset for new session - awaiting fresh keyframe")
     }
+
     func decodeFrame(_ data: Data, presentationTime: CMTime, isKeyframe: Bool, contentRect: CGRect) async throws {
         guard isDecoding else { return }
 
         // CRITICAL: When awaiting dimension change, discard ALL P-frames.
         // P-frames at new dimensions will fail because decoder is configured for old dimensions.
         // Only keyframes contain VPS/SPS/PPS needed to reconfigure the decoder.
-        if awaitingDimensionChange && !isKeyframe {
+        if awaitingDimensionChange, !isKeyframe {
             // Check for timeout - if we've been waiting too long, request a new keyframe
             // This handles the case where the keyframe was lost over UDP
             let waitTime = CFAbsoluteTimeGetCurrent() - dimensionChangeStartTime
             if waitTime > dimensionChangeTimeout {
-                MirageLogger.decoder("Dimension change timeout (\(String(format: "%.1f", waitTime))s) - requesting keyframe")
-                dimensionChangeStartTime = CFAbsoluteTimeGetCurrent()  // Reset for next timeout cycle
+                MirageLogger
+                    .decoder("Dimension change timeout (\(String(format: "%.1f", waitTime))s) - requesting keyframe")
+                dimensionChangeStartTime = CFAbsoluteTimeGetCurrent() // Reset for next timeout cycle
                 errorTracker?.requestKeyframeForDimensionChange()
             }
             // Silently discard P-frame - no error logging, no decode attempt
@@ -103,18 +103,23 @@ extension HEVCDecoder {
             // No format description yet - silently drop all frames until we receive
             // a keyframe with valid VPS/SPS/PPS parameter sets
             if isKeyframe {
-                MirageLogger.error(.decoder, "Keyframe received but still no format description - parameter extraction failed")
+                MirageLogger.error(
+                    .decoder,
+                    "Keyframe received but still no format description - parameter extraction failed"
+                )
             }
             return
         }
 
         // Ensure session exists
-        if decompressionSession == nil {
-            try createSession(formatDescription: formatDesc)
-        }
+        if decompressionSession == nil { try createSession(formatDescription: formatDesc) }
 
         guard let session = decompressionSession else {
-            throw MirageError.decodingError(NSError(domain: "MirageKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "No decompression session"]))
+            throw MirageError.decodingError(NSError(
+                domain: "MirageKit",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "No decompression session"]
+            ))
         }
 
         // Create block buffer with owned memory (VideoToolbox decodes asynchronously)
@@ -134,14 +139,16 @@ extension HEVCDecoder {
             blockBufferOut: &blockBuffer
         )
 
-        guard status == noErr, let buffer = blockBuffer else {
-            throw MirageError.decodingError(NSError(domain: NSOSStatusErrorDomain, code: Int(status)))
-        }
+        guard status == noErr, let buffer = blockBuffer else { throw MirageError.decodingError(NSError(domain: NSOSStatusErrorDomain, code: Int(status))) }
 
         // Copy frame data into the block buffer's owned memory
         try frameData.withUnsafeBytes { ptr in
             guard let baseAddress = ptr.baseAddress else {
-                throw MirageError.decodingError(NSError(domain: "MirageKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "No frame data"]))
+                throw MirageError.decodingError(NSError(
+                    domain: "MirageKit",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "No frame data"]
+                ))
             }
             status = CMBlockBufferReplaceDataBytes(
                 with: baseAddress,
@@ -149,9 +156,7 @@ extension HEVCDecoder {
                 offsetIntoDestination: 0,
                 dataLength: frameData.count
             )
-            if status != noErr {
-                throw MirageError.decodingError(NSError(domain: NSOSStatusErrorDomain, code: Int(status)))
-            }
+            if status != noErr { throw MirageError.decodingError(NSError(domain: NSOSStatusErrorDomain, code: Int(status))) }
         }
 
         // Create sample buffer
@@ -177,9 +182,7 @@ extension HEVCDecoder {
             sampleBufferOut: &sampleBuffer
         )
 
-        guard sampleStatus == noErr, let sampleBuffer else {
-            throw MirageError.decodingError(NSError(domain: NSOSStatusErrorDomain, code: Int(sampleStatus)))
-        }
+        guard sampleStatus == noErr, let sampleBuffer else { throw MirageError.decodingError(NSError(domain: NSOSStatusErrorDomain, code: Int(sampleStatus))) }
 
         // Decode
         var flags: VTDecodeInfoFlags = []
@@ -200,19 +203,18 @@ extension HEVCDecoder {
             sampleBuffer: sampleBuffer,
             flags: [._EnableAsynchronousDecompression],
             infoFlagsOut: &flags
-        ) { status, infoFlags, imageBuffer, presentationTime, duration in
+        ) { status, _, imageBuffer, presentationTime, _ in
             if status != noErr {
                 // Common error codes:
                 // -12909 (kVTVideoDecoderBadDataErr): Corrupted/incompatible data
                 // -12911 (kVTVideoDecoderMalfunctionErr): Decoder malfunction
                 // -12903 (kVTInvalidSessionErr): Session invalid
-                let errorName: String
-                switch status {
-                case -12909: errorName = "BadData"
-                case -12911: errorName = "Malfunction"
-                case -12903: errorName = "InvalidSession"
-                case -12910: errorName = "ReferenceMissing"
-                default: errorName = "Unknown"
+                let errorName = switch status {
+                case -12909: "BadData"
+                case -12911: "Malfunction"
+                case -12903: "InvalidSession"
+                case -12910: "ReferenceMissing"
+                default: "Unknown"
                 }
                 MirageLogger.error(.decoder, "Decode callback error: \(status) (\(errorName))")
                 // Track consecutive errors to detect when we need a fresh keyframe
@@ -234,9 +236,7 @@ extension HEVCDecoder {
             info.errorTracker?.recordSuccess()
             let decodeDurationMs = (CFAbsoluteTimeGetCurrent() - info.decodeStartTime) * 1000
             info.performanceTracker?.record(durationMs: decodeDurationMs)
-            if info.handler != nil {
-                info.handler?(pixelBuffer, presentationTime, info.contentRect)
-            } else {
+            if info.handler != nil { info.handler?(pixelBuffer, presentationTime, info.contentRect) } else {
                 MirageLogger.error(.decoder, "Warning: no frame handler set")
             }
         }
@@ -246,6 +246,7 @@ extension HEVCDecoder {
             throw MirageError.decodingError(NSError(domain: NSOSStatusErrorDomain, code: Int(decodeStatus)))
         }
     }
+
     func flush() async {
         guard let session = decompressionSession else { return }
         VTDecompressionSessionWaitForAsynchronousFrames(session)

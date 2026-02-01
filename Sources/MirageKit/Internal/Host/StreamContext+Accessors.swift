@@ -7,13 +7,24 @@
 //  Stream context accessors and handler registration.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
+struct EncoderSettingsSnapshot: Sendable {
+    let keyFrameInterval: Int
+    let frameQuality: Float
+    let keyframeQuality: Float
+    let pixelFormat: MiragePixelFormat
+    let colorSpace: MirageColorSpace
+    let captureQueueDepth: Int?
+    let minBitrate: Int?
+    let maxBitrate: Int?
+}
+
 extension StreamContext {
     func getDroppedFrameCount() -> UInt64 {
-        return droppedFrameCount
+        droppedFrameCount
     }
 
     func setMetricsUpdateHandler(_ handler: (@Sendable (StreamMetricsMessage) -> Void)?) {
@@ -25,11 +36,11 @@ extension StreamContext {
     }
 
     func isUsingVirtualDisplay() -> Bool {
-        return useVirtualDisplay && virtualDisplayContext != nil
+        useVirtualDisplay && virtualDisplayContext != nil
     }
 
     func getVirtualDisplayID() -> CGDirectDisplayID? {
-        return virtualDisplayContext?.displayID
+        virtualDisplayContext?.displayID
     }
 
     func getSharedDisplayGeneration() -> UInt64 {
@@ -41,11 +52,11 @@ extension StreamContext {
     }
 
     nonisolated func getWindowID() -> WindowID {
-        return windowID
+        windowID
     }
 
     func getDimensionToken() -> UInt16 {
-        return dimensionToken
+        dimensionToken
     }
 
     func getEncodedDimensions() -> (width: Int, height: Int) {
@@ -86,25 +97,16 @@ extension StreamContext {
         lastAdaptiveScaleChangeTime = 0
     }
 
-    func getEncoderSettings() -> (
-        keyFrameInterval: Int,
-        frameQuality: Float,
-        keyframeQuality: Float,
-        pixelFormat: MiragePixelFormat,
-        colorSpace: MirageColorSpace,
-        captureQueueDepth: Int?,
-        minBitrate: Int?,
-        maxBitrate: Int?
-    ) {
-        (
-            encoderConfig.keyFrameInterval,
-            encoderConfig.frameQuality,
-            encoderConfig.keyframeQuality,
-            activePixelFormat,
-            encoderConfig.colorSpace,
-            encoderConfig.captureQueueDepth,
-            encoderConfig.minBitrate,
-            encoderConfig.maxBitrate
+    func getEncoderSettings() -> EncoderSettingsSnapshot {
+        EncoderSettingsSnapshot(
+            keyFrameInterval: encoderConfig.keyFrameInterval,
+            frameQuality: encoderConfig.frameQuality,
+            keyframeQuality: encoderConfig.keyframeQuality,
+            pixelFormat: activePixelFormat,
+            colorSpace: encoderConfig.colorSpace,
+            captureQueueDepth: encoderConfig.captureQueueDepth,
+            minBitrate: encoderConfig.minBitrate,
+            maxBitrate: encoderConfig.maxBitrate
         )
     }
 }

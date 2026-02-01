@@ -18,12 +18,13 @@ extension MirageHostService {
     func findClientContext(clientID: UUID) -> ClientContext? {
         clientsByConnection.values.first { $0.client.id == clientID }
     }
+
     func setupAppStreamManagerCallbacks() {
         Task { @MainActor [weak self] in
             guard let self else { return }
 
             // Handle new window detected from streamed app
-            await self.appStreamManager.setOnNewWindowDetected { [weak self] bundleID, scWindow in
+            await appStreamManager.setOnNewWindowDetected { [weak self] bundleID, scWindow in
                 // Extract sendable data from SCWindow
                 let windowID = WindowID(scWindow.windowID)
                 Task { @MainActor in
@@ -32,27 +33,28 @@ extension MirageHostService {
             }
 
             // Handle window closed from streamed app
-            await self.appStreamManager.setOnWindowClosed { [weak self] bundleID, windowID in
+            await appStreamManager.setOnWindowClosed { [weak self] bundleID, windowID in
                 Task { @MainActor in
                     await self?.handleWindowClosedFromStreamedApp(bundleID: bundleID, windowID: windowID)
                 }
             }
 
             // Handle app terminated
-            await self.appStreamManager.setOnAppTerminated { [weak self] bundleID in
+            await appStreamManager.setOnAppTerminated { [weak self] bundleID in
                 Task { @MainActor in
                     await self?.handleStreamedAppTerminated(bundleID: bundleID)
                 }
             }
 
             // Handle cooldown expired
-            await self.appStreamManager.setOnCooldownExpired { [weak self] bundleID, windowID in
+            await appStreamManager.setOnCooldownExpired { [weak self] bundleID, windowID in
                 Task { @MainActor in
                     await self?.handleCooldownExpired(bundleID: bundleID, windowID: windowID)
                 }
             }
         }
     }
+
     func handleNewWindowFromStreamedApp(bundleID: String, windowID: WindowID) async {
         guard let session = await appStreamManager.getSession(bundleIdentifier: bundleID),
               let clientContext = findClientContext(clientID: session.clientID) else {
@@ -60,9 +62,7 @@ extension MirageHostService {
         }
 
         // Check if this window is already streaming
-        if session.windowStreams[windowID] != nil {
-            return
-        }
+        if session.windowStreams[windowID] != nil { return }
 
         let existingStreamID = session.windowStreams.values.first?.streamID
         let existingContext = existingStreamID.flatMap { streamsByID[$0] }
@@ -72,11 +72,10 @@ extension MirageHostService {
         let targetFrameRate = await existingContext?.getTargetFrameRate()
         let qualityPreset = await existingContext?.getQualityPreset()
         let usesVirtualDisplay = await existingContext?.isUsingVirtualDisplay() ?? false
-        let sharedDisplayResolution: CGSize?
-        if usesVirtualDisplay {
-            sharedDisplayResolution = await SharedVirtualDisplayManager.shared.getDisplayBounds()?.size
+        let sharedDisplayResolution: CGSize? = if usesVirtualDisplay {
+            await SharedVirtualDisplayManager.shared.getDisplayBounds()?.size
         } else {
-            sharedDisplayResolution = nil
+            nil
         }
 
         // Check if there's a window in cooldown - if so, redirect to it
@@ -88,9 +87,7 @@ extension MirageHostService {
 
                 // Refresh windows to get the MirageWindow
                 try? await refreshWindows()
-                guard let mirageWindow = availableWindows.first(where: { $0.id == windowID }) else {
-                    return
-                }
+                guard let mirageWindow = availableWindows.first(where: { $0.id == windowID }) else { return }
 
                 // Start stream for the new window
                 do {
@@ -150,9 +147,7 @@ extension MirageHostService {
 
         // No cooldown - this is a genuinely new window, stream it
         try? await refreshWindows()
-        guard let mirageWindow = availableWindows.first(where: { $0.id == windowID }) else {
-            return
-        }
+        guard let mirageWindow = availableWindows.first(where: { $0.id == windowID }) else { return }
 
         do {
             let streamSession = try await startStream(
@@ -206,6 +201,7 @@ extension MirageHostService {
             MirageLogger.error(.host, "Failed to start stream for new window: \(error)")
         }
     }
+
     func handleWindowClosedFromStreamedApp(bundleID: String, windowID: WindowID) async {
         guard let session = await appStreamManager.getSession(bundleIdentifier: bundleID),
               let clientContext = findClientContext(clientID: session.clientID),
@@ -214,9 +210,7 @@ extension MirageHostService {
         }
 
         // Stop the stream for this window
-        if let streamSession = activeStreams.first(where: { $0.id == windowInfo.streamID }) {
-            await stopStream(streamSession, minimizeWindow: false)
-        }
+        if let streamSession = activeStreams.first(where: { $0.id == windowInfo.streamID }) { await stopStream(streamSession, minimizeWindow: false) }
 
         // Enter cooldown for this window
         await appStreamManager.removeWindowFromSession(
@@ -226,15 +220,16 @@ extension MirageHostService {
         )
 
         // Send cooldown started message
-        let response = WindowCooldownStartedMessage(
+        let response = await WindowCooldownStartedMessage(
             windowID: windowID,
-            durationSeconds: Int(await appStreamManager.windowCooldownDuration),
+            durationSeconds: Int(appStreamManager.windowCooldownDuration),
             message: "Window closed by host. Waiting for new window..."
         )
         try? await clientContext.send(.windowCooldownStarted, content: response)
 
         MirageLogger.host("Window \(windowID) entered cooldown for app \(bundleID)")
     }
+
     func handleStreamedAppTerminated(bundleID: String) async {
         guard let session = await appStreamManager.getSession(bundleIdentifier: bundleID),
               let clientContext = findClientContext(clientID: session.clientID) else {
@@ -271,6 +266,7 @@ extension MirageHostService {
 
         MirageLogger.host("App \(bundleID) terminated, ended session")
     }
+
     func handleCooldownExpired(bundleID: String, windowID: WindowID) async {
         guard let session = await appStreamManager.getSession(bundleIdentifier: bundleID),
               let clientContext = findClientContext(clientID: session.clientID) else {

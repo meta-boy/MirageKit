@@ -9,10 +9,10 @@
 //  Unlock manager extensions.
 //
 
-import Foundation
 import AppKit
-import CoreGraphics
 import Carbon.HIToolbox
+import CoreGraphics
+import Foundation
 
 extension UnlockManager {
     // MARK: - Unlock Methods
@@ -45,7 +45,6 @@ extension UnlockManager {
 
         return true
     }
-
 }
 
 #endif

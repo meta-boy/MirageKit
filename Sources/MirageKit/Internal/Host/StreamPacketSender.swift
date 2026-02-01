@@ -5,9 +5,9 @@
 //  Created by Ethan Lipnik on 1/15/26.
 //
 
-import Foundation
-import CoreMedia
 import CoreGraphics
+import CoreMedia
+import Foundation
 
 #if os(macOS)
 
@@ -37,24 +37,27 @@ actor StreamPacketSender {
     private let onEncodedFrame: @Sendable (Data, FrameHeader, @escaping @Sendable () -> Void) -> Void
     private let packetBufferPool: PacketBufferPool
     private var sendTask: Task<Void, Never>?
-    // Accessed from encoder callbacks; lifecycle is managed by start/stop.
-    nonisolated(unsafe) private var sendContinuation: AsyncStream<WorkItem>.Continuation?
+    /// Accessed from encoder callbacks; lifecycle is managed by start/stop.
+    private nonisolated(unsafe) var sendContinuation: AsyncStream<WorkItem>.Continuation?
     // Snapshot read from encoder callbacks to tag enqueued frames.
-    nonisolated(unsafe) private var generation: UInt32 = 0
-    nonisolated(unsafe) private var queuedBytes: Int = 0
-    nonisolated(unsafe) private var dropNonKeyframesUntilKeyframe: Bool = false
-    nonisolated(unsafe) private var latestKeyframeFrameNumber: UInt32 = 0
+    private nonisolated(unsafe) var generation: UInt32 = 0
+    private nonisolated(unsafe) var queuedBytes: Int = 0
+    private nonisolated(unsafe) var dropNonKeyframesUntilKeyframe: Bool = false
+    private nonisolated(unsafe) var latestKeyframeFrameNumber: UInt32 = 0
     private let queueLock = NSLock()
     private let basePacingBurstSize = 16
     private let pacingThresholdBytes = 512 * 1024
     private let basePacingDelay = Duration.milliseconds(1)
     private let largeFrameThresholdBytes = 800 * 1024
-    private let hugeFrameThresholdBytes = 1_500 * 1024
+    private let hugeFrameThresholdBytes = 1500 * 1024
 
-    init(maxPayloadSize: Int, onEncodedFrame: @escaping @Sendable (Data, FrameHeader, @escaping @Sendable () -> Void) -> Void) {
+    init(
+        maxPayloadSize: Int,
+        onEncodedFrame: @escaping @Sendable (Data, FrameHeader, @escaping @Sendable () -> Void) -> Void
+    ) {
         self.maxPayloadSize = maxPayloadSize
         self.onEncodedFrame = onEncodedFrame
-        self.packetBufferPool = PacketBufferPool(capacity: MirageHeaderSize + maxPayloadSize)
+        packetBufferPool = PacketBufferPool(capacity: mirageHeaderSize + maxPayloadSize)
     }
 
     func start() {
@@ -67,7 +70,7 @@ actor StreamPacketSender {
         sendTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             for await item in stream {
-                await self.handle(item)
+                await handle(item)
             }
         }
     }
@@ -119,7 +122,7 @@ actor StreamPacketSender {
         let (shouldDropNonKeyframes, newestKeyframe) = queueLock.withLock {
             (dropNonKeyframesUntilKeyframe, latestKeyframeFrameNumber)
         }
-        if shouldDropNonKeyframes && !item.isKeyframe {
+        if shouldDropNonKeyframes, !item.isKeyframe {
             queueLock.withLock {
                 queuedBytes = max(0, queuedBytes - item.wireBytes)
             }
@@ -134,11 +137,10 @@ actor StreamPacketSender {
         }
         guard item.generation == generation else {
             if item.isKeyframe {
-                MirageLogger.stream("Dropping stale keyframe \(item.frameNumber) (gen \(item.generation) != \(generation))")
+                MirageLogger
+                    .stream("Dropping stale keyframe \(item.frameNumber) (gen \(item.generation) != \(generation))")
                 queueLock.withLock {
-                    if latestKeyframeFrameNumber == item.frameNumber {
-                        dropNonKeyframesUntilKeyframe = false
-                    }
+                    if latestKeyframeFrameNumber == item.frameNumber { dropNonKeyframesUntilKeyframe = false }
                 }
             }
             queueLock.withLock {
@@ -147,16 +149,12 @@ actor StreamPacketSender {
             return
         }
 
-        if item.isKeyframe {
-            item.onSendStart?()
-        }
+        if item.isKeyframe { item.onSendStart?() }
         await fragmentAndSendPackets(item)
         if item.isKeyframe {
             item.onSendComplete?()
             queueLock.withLock {
-                if latestKeyframeFrameNumber == item.frameNumber {
-                    dropNonKeyframesUntilKeyframe = false
-                }
+                if latestKeyframeFrameNumber == item.frameNumber { dropNonKeyframesUntilKeyframe = false }
             }
         }
         queueLock.withLock {
@@ -188,14 +186,13 @@ actor StreamPacketSender {
 
         var currentSequence = item.sequenceNumberStart
 
-        for burstIndex in 0..<burstCount {
+        for burstIndex in 0 ..< burstCount {
             if item.generation != generation {
-                MirageLogger.stream("Aborting send for frame \(item.frameNumber) (gen \(item.generation) != \(generation))")
+                MirageLogger
+                    .stream("Aborting send for frame \(item.frameNumber) (gen \(item.generation) != \(generation))")
                 if item.isKeyframe {
                     queueLock.withLock {
-                        if latestKeyframeFrameNumber == item.frameNumber {
-                            dropNonKeyframesUntilKeyframe = false
-                        }
+                        if latestKeyframeFrameNumber == item.frameNumber { dropNonKeyframesUntilKeyframe = false }
                     }
                 }
                 return
@@ -204,14 +201,12 @@ actor StreamPacketSender {
             let burstStart = burstIndex * burstSize
             let burstEnd = min(burstStart + burstSize, totalFragments)
 
-            for fragmentIndex in burstStart..<burstEnd {
+            for fragmentIndex in burstStart ..< burstEnd {
                 var flags = item.additionalFlags
-                if fragmentIndex > 0, flags.contains(.discontinuity) {
-                    flags.remove(.discontinuity)
-                }
+                if fragmentIndex > 0, flags.contains(.discontinuity) { flags.remove(.discontinuity) }
                 if item.isKeyframe { flags.insert(.keyframe) }
                 if fragmentIndex == totalFragments - 1 { flags.insert(.endOfFrame) }
-                if item.isKeyframe && fragmentIndex == 0 { flags.insert(.parameterSet) }
+                if item.isKeyframe, fragmentIndex == 0 { flags.insert(.parameterSet) }
 
                 if fragmentIndex < dataFragmentCount {
                     let start = fragmentIndex * maxPayload
@@ -242,14 +237,23 @@ actor StreamPacketSender {
                         )
 
                         let packetBuffer = packetBufferPool.acquire()
-                        let packetLength = MirageHeaderSize + fragmentSize
+                        let packetLength = mirageHeaderSize + fragmentSize
                         packetBuffer.prepare(length: packetLength)
 
                         packetBuffer.withMutableBytes { packetBytes in
-                            guard packetBytes.count >= packetLength, let baseAddress = packetBytes.baseAddress else { return }
-                            let headerBuffer = UnsafeMutableRawBufferPointer(start: baseAddress, count: min(packetBytes.count, MirageHeaderSize))
+                            guard packetBytes.count >= packetLength,
+                                  let baseAddress = packetBytes.baseAddress else {
+                                return
+                            }
+                            let headerBuffer = UnsafeMutableRawBufferPointer(
+                                start: baseAddress,
+                                count: min(packetBytes.count, mirageHeaderSize)
+                            )
                             header.serialize(into: headerBuffer)
-                            baseAddress.advanced(by: MirageHeaderSize).copyMemory(from: fragmentPtr, byteCount: fragmentSize)
+                            baseAddress.advanced(by: mirageHeaderSize).copyMemory(
+                                from: fragmentPtr,
+                                byteCount: fragmentSize
+                            )
                         }
 
                         let packet = packetBuffer.finalize(length: packetLength)
@@ -303,14 +307,23 @@ actor StreamPacketSender {
                         )
 
                         let packetBuffer = packetBufferPool.acquire()
-                        let packetLength = MirageHeaderSize + parityData.count
+                        let packetLength = mirageHeaderSize + parityData.count
                         packetBuffer.prepare(length: packetLength)
 
                         packetBuffer.withMutableBytes { packetBytes in
-                            guard packetBytes.count >= packetLength, let baseAddress = packetBytes.baseAddress else { return }
-                            let headerBuffer = UnsafeMutableRawBufferPointer(start: baseAddress, count: min(packetBytes.count, MirageHeaderSize))
+                            guard packetBytes.count >= packetLength,
+                                  let baseAddress = packetBytes.baseAddress else {
+                                return
+                            }
+                            let headerBuffer = UnsafeMutableRawBufferPointer(
+                                start: baseAddress,
+                                count: min(packetBytes.count, mirageHeaderSize)
+                            )
                             header.serialize(into: headerBuffer)
-                            baseAddress.advanced(by: MirageHeaderSize).copyMemory(from: parityBase, byteCount: parityData.count)
+                            baseAddress.advanced(by: mirageHeaderSize).copyMemory(
+                                from: parityBase,
+                                byteCount: parityData.count
+                            )
                         }
 
                         let packet = packetBuffer.finalize(length: packetLength)
@@ -321,9 +334,7 @@ actor StreamPacketSender {
                 currentSequence += 1
             }
 
-            if shouldPace && burstIndex < burstCount - 1 {
-                try? await Task.sleep(for: pacingDelay)
-            }
+            if shouldPace, burstIndex < burstCount - 1 { try? await Task.sleep(for: pacingDelay) }
         }
 
         if item.isKeyframe {
@@ -331,7 +342,10 @@ actor StreamPacketSender {
             let roundedDuration = (fragmentDurationMs * 100).rounded() / 100
             let bytesKB = Double(item.encodedData.count) / 1024.0
             let roundedBytes = (bytesKB * 10).rounded() / 10
-            MirageLogger.timing("\(item.logPrefix) \(item.frameNumber) keyframe: \(roundedDuration)ms, \(totalFragments) packets, \(roundedBytes)KB")
+            MirageLogger
+                .timing(
+                    "\(item.logPrefix) \(item.frameNumber) keyframe: \(roundedDuration)ms, \(totalFragments) packets, \(roundedBytes)KB"
+                )
         }
     }
 
@@ -359,7 +373,8 @@ actor StreamPacketSender {
         blockEnd: Int,
         payloadLength: Int,
         maxPayload: Int
-    ) -> Data {
+    )
+    -> Data {
         guard payloadLength > 0 else { return Data() }
         var parity = Data(repeating: 0, count: payloadLength)
         parity.withUnsafeMutableBytes { parityBytes in
@@ -368,7 +383,7 @@ actor StreamPacketSender {
             encodedData.withUnsafeBytes { dataBytes in
                 let dataPtr = dataBytes.bindMemory(to: UInt8.self)
                 guard let dataBase = dataPtr.baseAddress else { return }
-                for fragmentIndex in blockStart..<blockEnd {
+                for fragmentIndex in blockStart ..< blockEnd {
                     let start = fragmentIndex * maxPayload
                     let remaining = max(0, frameByteCount - start)
                     let fragmentSize = min(maxPayload, remaining)
@@ -376,7 +391,7 @@ actor StreamPacketSender {
                     let sourcePtr = dataBase.advanced(by: start)
                     let bytesToXor = min(fragmentSize, payloadLength)
                     let src = sourcePtr
-                    for i in 0..<bytesToXor {
+                    for i in 0 ..< bytesToXor {
                         parityBase[i] ^= src[i]
                     }
                 }
@@ -385,22 +400,21 @@ actor StreamPacketSender {
         return parity
     }
 
-    private func pacingConfig(for encodedBytes: Int, totalFragments: Int, lossMode: Bool) -> (burstSize: Int, pacingDelay: Duration) {
+    private func pacingConfig(
+        for encodedBytes: Int,
+        totalFragments: Int,
+        lossMode: Bool
+    )
+    -> (burstSize: Int, pacingDelay: Duration) {
         if encodedBytes >= hugeFrameThresholdBytes {
-            if lossMode {
-                return (burstSize: min(16, totalFragments), pacingDelay: .microseconds(750))
-            }
+            if lossMode { return (burstSize: min(16, totalFragments), pacingDelay: .microseconds(750)) }
             return (burstSize: min(32, totalFragments), pacingDelay: .microseconds(250))
         }
         if encodedBytes >= largeFrameThresholdBytes {
-            if lossMode {
-                return (burstSize: min(12, totalFragments), pacingDelay: .milliseconds(1))
-            }
+            if lossMode { return (burstSize: min(12, totalFragments), pacingDelay: .milliseconds(1)) }
             return (burstSize: min(24, totalFragments), pacingDelay: .microseconds(500))
         }
-        if lossMode {
-            return (burstSize: min(8, totalFragments), pacingDelay: .microseconds(750))
-        }
+        if lossMode { return (burstSize: min(8, totalFragments), pacingDelay: .microseconds(750)) }
         return (burstSize: min(basePacingBurstSize, totalFragments), pacingDelay: basePacingDelay)
     }
 }

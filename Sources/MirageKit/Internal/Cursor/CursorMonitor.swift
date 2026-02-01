@@ -6,8 +6,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import AppKit
+import Foundation
 
 /// Monitors cursor state for active streams and notifies when the cursor type changes.
 /// Runs on the host Mac and polls NSCursor.currentSystem at a configurable rate.
@@ -33,7 +33,7 @@ actor CursorMonitor {
     /// Initialize with a polling rate
     /// - Parameter pollingRate: How many times per second to poll (default 30Hz)
     init(pollingRate: Double = 30.0) {
-        self.pollingInterval = 1.0 / pollingRate
+        pollingInterval = 1.0 / pollingRate
     }
 
     /// Start monitoring cursor state for active streams
@@ -110,7 +110,7 @@ actor CursorMonitor {
         }
 
         // Clean up stale entries for streams that are no longer active
-        let activeStreamIDs = Set(streams.map { $0.0 })
+        let activeStreamIDs = Set(streams.map(\.0))
         for streamID in lastCursorTypes.keys where !activeStreamIDs.contains(streamID) {
             lastCursorTypes.removeValue(forKey: streamID)
             lastVisibility.removeValue(forKey: streamID)

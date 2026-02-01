@@ -7,9 +7,9 @@
 //  Frame processing and adaptive quality control.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 
 #if os(macOS)
 extension StreamContext {
@@ -50,23 +50,17 @@ extension StreamContext {
         cadenceTask = nil
     }
 
-    func emitCadenceFrameIfNeeded(frameInterval: TimeInterval) {}
+    func emitCadenceFrameIfNeeded(frameInterval _: TimeInterval) {}
 
     private func resolvedSyntheticDuration(fallback: CMTime) -> CMTime {
-        if fallback.isValid, CMTimeCompare(fallback, .zero) == 1 {
-            return fallback
-        }
+        if fallback.isValid, CMTimeCompare(fallback, .zero) == 1 { return fallback }
         let timescale = CMTimeScale(max(1, currentFrameRate))
         return CMTime(value: 1, timescale: timescale)
     }
 
     private func resolvedSyntheticPresentationTime(duration: CMTime, fallback: CMTime) -> CMTime {
-        if lastEncodedPresentationTime.isValid {
-            return CMTimeAdd(lastEncodedPresentationTime, duration)
-        }
-        if fallback.isValid {
-            return CMTimeAdd(fallback, duration)
-        }
+        if lastEncodedPresentationTime.isValid { return CMTimeAdd(lastEncodedPresentationTime, duration) }
+        if fallback.isValid { return CMTimeAdd(fallback, duration) }
         return CMClockGetTime(CMClockGetHostTimeClock())
     }
 
@@ -92,9 +86,7 @@ extension StreamContext {
     }
 
     func resetPipelineStateForReconfiguration(reason: String) {
-        if inFlightCount > 0 || isKeyframeEncoding || lastEncodeActivityTime > 0 {
-            MirageLogger.stream("Resetting pipeline state for \(reason) (inFlight=\(inFlightCount))")
-        }
+        if inFlightCount > 0 || isKeyframeEncoding || lastEncodeActivityTime > 0 { MirageLogger.stream("Resetting pipeline state for \(reason) (inFlight=\(inFlightCount))") }
         inFlightCount = 0
         lastEncodeActivityTime = 0
         isKeyframeEncoding = false
@@ -127,14 +119,10 @@ extension StreamContext {
         }
 
         let didResetStall = resetStalledInFlightIfNeeded(label: "processPendingFrames")
-        if isKeyframeEncoding, !didResetStall {
-            return
-        }
+        if isKeyframeEncoding, !didResetStall { return }
 
         let captured = frameInbox.consumeEnqueuedCount()
-        if captured > 0 {
-            captureIntervalCount += captured
-        }
+        if captured > 0 { captureIntervalCount += captured }
         let dropped = frameInbox.consumeDroppedCount()
         if dropped > 0 {
             captureDroppedIntervalCount += dropped
@@ -191,13 +179,9 @@ extension StreamContext {
             var forceKeyframe = didResetEncoder
             if !forceKeyframe, let captureEngine {
                 let shouldRequest = await captureEngine.consumePendingKeyframeRequest()
-                if shouldRequest {
-                    forceKeyframeAfterCaptureRestart()
-                }
+                if shouldRequest { forceKeyframeAfterCaptureRestart() }
             }
-            if !forceKeyframe {
-                forceKeyframe = shouldEmitPendingKeyframe(queueBytes: queueBytes)
-            }
+            if !forceKeyframe { forceKeyframe = shouldEmitPendingKeyframe(queueBytes: queueBytes) }
 
             if backpressureActive {
                 if queueBytes <= queuePressureBytes {
@@ -208,7 +192,7 @@ extension StreamContext {
                     logStreamStatsIfNeeded()
                     continue
                 }
-            } else if queueBytes > maxQueuedBytes && !forceKeyframe {
+            } else if queueBytes > maxQueuedBytes, !forceKeyframe {
                 backpressureActive = true
                 droppedFrameCount += 1
                 let queuedKB = (Double(queueBytes) / 1024.0).rounded()
@@ -217,9 +201,7 @@ extension StreamContext {
                 continue
             }
 
-            if shouldQueueScheduledKeyframe(queueBytes: queueBytes) {
-                queueKeyframe(reason: "Scheduled keyframe", checkInFlight: true)
-            }
+            if shouldQueueScheduledKeyframe(queueBytes: queueBytes) { queueKeyframe(reason: "Scheduled keyframe", checkInFlight: true) }
 
             let isIdleFrame = frame.info.isIdleFrame
             if isIdleFrame {
@@ -234,9 +216,7 @@ extension StreamContext {
             setContentRect(frame.info.contentRect)
 
             do {
-                guard let encoder else {
-                    continue
-                }
+                guard let encoder else { continue }
                 encodeAttemptIntervalCount += 1
                 let encodeStartTime = CFAbsoluteTimeGetCurrent()
                 if startupBaseTime > 0, !startupFirstEncodeLogged {
@@ -259,18 +239,12 @@ extension StreamContext {
                 let accepted = try await encoder.encodeFrame(frame, forceKeyframe: forceKeyframe)
                 if accepted {
                     encodeAcceptedIntervalCount += 1
-                    if inFlightCount == 0 {
-                        lastEncodeActivityTime = encodeStartTime
-                    }
+                    if inFlightCount == 0 { lastEncodeActivityTime = encodeStartTime }
                     inFlightCount += 1
                     encodedFrameCount += 1
                     lastEncodedPresentationTime = frame.presentationTime
-                    if forceKeyframe {
-                        isKeyframeEncoding = true
-                    }
-                    if isIdleFrame {
-                        idleEncodedCount += 1
-                    }
+                    if forceKeyframe { isKeyframeEncoding = true }
+                    if isIdleFrame { idleEncodedCount += 1 }
                 } else if forceKeyframe {
                     encodeRejectedIntervalCount += 1
                     droppedFrameCount += 1
@@ -301,9 +275,7 @@ extension StreamContext {
             await encoder?.restoreBaseQualityIfNeeded()
         }
 
-        if frameInbox.hasPending() && inFlightCount < maxInFlightFrames {
-            scheduleProcessingIfNeeded()
-        }
+        if frameInbox.hasPending(), inFlightCount < maxInFlightFrames { scheduleProcessingIfNeeded() }
     }
 
     func logStreamStatsIfNeeded() {
@@ -311,7 +283,10 @@ extension StreamContext {
         let elapsed = now - lastStreamStatsLogTime
         guard lastStreamStatsLogTime == 0 || elapsed > 2.0 else { return }
         let inFlight = inFlightCount
-        MirageLogger.stream("Encode stats: encoded=\(encodedFrameCount), idleEncoded=\(idleEncodedCount), synthetic=\(syntheticFrameCount), idleSkipped=\(idleSkippedCount), inFlight=\(inFlight)")
+        MirageLogger
+            .stream(
+                "Encode stats: encoded=\(encodedFrameCount), idleEncoded=\(idleEncodedCount), synthetic=\(syntheticFrameCount), idleSkipped=\(idleSkippedCount), inFlight=\(inFlight)"
+            )
         if let metricsUpdateHandler, lastStreamStatsLogTime > 0 {
             let encodedFPS = Double(encodedFrameCount) / elapsed
             let idleEncodedFPS = Double(idleEncodedCount) / elapsed
@@ -362,9 +337,9 @@ extension StreamContext {
 
         MirageLogger.metrics(
             "Pipeline: capture=\(captureText)fps drop=\(captureDroppedIntervalCount) " +
-            "encode=\(encodeText)fps attempt=\(attemptText)fps reject=\(encodeRejectedIntervalCount) error=\(encodeErrorIntervalCount) " +
-            "synthetic=\(syntheticText)fps gap=\(captureGapText)ms inFlight=\(inFlightCount) buffer=\(pendingCount)/\(frameBufferDepth) " +
-            "queue=\(queueKB)KB encodeAvg=\(encodeAvgText)ms"
+                "encode=\(encodeText)fps attempt=\(attemptText)fps reject=\(encodeRejectedIntervalCount) error=\(encodeErrorIntervalCount) " +
+                "synthetic=\(syntheticText)fps gap=\(captureGapText)ms inFlight=\(inFlightCount) buffer=\(pendingCount)/\(frameBufferDepth) " +
+                "queue=\(queueKB)KB encodeAvg=\(encodeAvgText)ms"
         )
 
         await updateAdaptiveScaleIfNeeded(captureFPS: captureFPS)
@@ -473,24 +448,18 @@ extension StreamContext {
         }
 
         let now = CFAbsoluteTimeGetCurrent()
-        if lastInFlightAdjustmentTime > 0, now - lastInFlightAdjustmentTime < inFlightAdjustmentCooldown {
-            return
-        }
+        if lastInFlightAdjustmentTime > 0, now - lastInFlightAdjustmentTime < inFlightAdjustmentCooldown { return }
 
         let frameBudgetMs = 1000.0 / Double(max(1, currentFrameRate))
         var desired = maxInFlightFrames
 
         let increaseThreshold = latencyMode == .smoothest ? 1.02 : 1.10
         let decreaseThreshold = latencyMode == .smoothest ? 0.90 : 0.80
-        if averageEncodeMs > frameBudgetMs * increaseThreshold || pendingCount > 0 {
-            desired = min(maxInFlightFrames + 1, maxInFlightFramesCap)
-        } else if averageEncodeMs < frameBudgetMs * decreaseThreshold && pendingCount == 0 {
+        if averageEncodeMs > frameBudgetMs * increaseThreshold || pendingCount > 0 { desired = min(maxInFlightFrames + 1, maxInFlightFramesCap) } else if averageEncodeMs < frameBudgetMs * decreaseThreshold, pendingCount == 0 {
             desired = max(maxInFlightFrames - 1, minInFlightFrames)
         }
 
-        if desired < minInFlightFrames {
-            desired = minInFlightFrames
-        }
+        if desired < minInFlightFrames { desired = minInFlightFrames }
 
         guard desired != maxInFlightFrames else { return }
         maxInFlightFrames = desired
@@ -523,7 +492,7 @@ extension StreamContext {
         if isHighRefresh {
             let scaleRoom = adaptiveScaleEnabled && adaptiveScale > adaptiveScaleMin + 0.01
             let demandDrop = queuePressure || severePressure || heavyEncodePressure
-            if scaleRoom && !demandDrop {
+            if scaleRoom, !demandDrop {
                 qualityOverBudgetCount = 0
                 qualityUnderBudgetCount = 0
                 return
@@ -533,7 +502,7 @@ extension StreamContext {
         if queuePressure || encodePressure {
             qualityOverBudgetCount += 1
             qualityUnderBudgetCount = 0
-        } else if queueClear && underBudget {
+        } else if queueClear, underBudget {
             qualityUnderBudgetCount += 1
             qualityOverBudgetCount = 0
         } else {
@@ -551,7 +520,8 @@ extension StreamContext {
             let encodeText = averageEncodeMs.formatted(.number.precision(.fractionLength(1)))
             if queuePressure {
                 let queueKB = Int(Double(queueBytes) / 1024.0)
-                MirageLogger.stream("Encoder quality throttled to \(qualityText) (encode \(encodeText)ms, queue \(queueKB)KB)")
+                MirageLogger
+                    .stream("Encoder quality throttled to \(qualityText) (encode \(encodeText)ms, queue \(queueKB)KB)")
             } else {
                 MirageLogger.stream("Encoder quality throttled to \(qualityText) (encode \(encodeText)ms)")
             }

@@ -13,7 +13,6 @@ import Foundation
 /// Since Accessibility APIs don't provide direct notifications for menu content changes,
 /// this monitor polls the menu bar periodically and detects changes by comparing versions.
 actor MenuBarMonitor {
-
     // MARK: - Types
 
     /// Information about a monitored stream
@@ -64,7 +63,8 @@ actor MenuBarMonitor {
         pid: pid_t,
         bundleIdentifier: String,
         onChange: @escaping @Sendable (MirageMenuBar) -> Void
-    ) async {
+    )
+    async {
         // Extract initial menu bar
         let initialMenuBar = await extractor.extractMenuBar(for: pid, bundleIdentifier: bundleIdentifier)
 
@@ -77,14 +77,10 @@ actor MenuBarMonitor {
         )
 
         // Send initial menu bar if we got one
-        if let menuBar = initialMenuBar {
-            onChange(menuBar)
-        }
+        if let menuBar = initialMenuBar { onChange(menuBar) }
 
         // Start polling if not already running
-        if !isMonitoring {
-            startPolling()
-        }
+        if !isMonitoring { startPolling() }
 
         MirageLogger.log(.menuBar, "Started monitoring menu bar for stream \(streamID)")
     }
@@ -96,9 +92,7 @@ actor MenuBarMonitor {
         monitoredStreams.removeValue(forKey: streamID)
 
         // Stop polling if no more streams
-        if monitoredStreams.isEmpty {
-            stopPolling()
-        }
+        if monitoredStreams.isEmpty { stopPolling() }
 
         MirageLogger.log(.menuBar, "Stopped monitoring menu bar for stream \(streamID)")
     }
@@ -201,9 +195,7 @@ actor MenuBarMonitor {
 
         // Compare each menu
         for (oldMenu, newMenu) in zip(old.menus, new.menus) {
-            if menuHasChanged(old: oldMenu, new: newMenu) {
-                return true
-            }
+            if menuHasChanged(old: oldMenu, new: newMenu) { return true }
         }
 
         return false
@@ -215,9 +207,7 @@ actor MenuBarMonitor {
         if old.items.count != new.items.count { return true }
 
         for (oldItem, newItem) in zip(old.items, new.items) {
-            if menuItemHasChanged(old: oldItem, new: newItem) {
-                return true
-            }
+            if menuItemHasChanged(old: oldItem, new: newItem) { return true }
         }
 
         return false
@@ -236,9 +226,7 @@ actor MenuBarMonitor {
         if let oldSubmenu = old.submenu, let newSubmenu = new.submenu {
             if oldSubmenu.count != newSubmenu.count { return true }
             for (oldSub, newSub) in zip(oldSubmenu, newSubmenu) {
-                if menuItemHasChanged(old: oldSub, new: newSub) {
-                    return true
-                }
+                if menuItemHasChanged(old: oldSub, new: newSub) { return true }
             }
         } else if old.submenu != nil || new.submenu != nil {
             // One has submenu, other doesn't
@@ -272,7 +260,7 @@ actor MenuBarMonitor {
     ///   - actionPath: Path to the menu item
     /// - Returns: True if the action was performed successfully
     func performMenuAction(pid: pid_t, actionPath: [Int]) async -> Bool {
-        return await extractor.performMenuAction(pid: pid, actionPath: actionPath)
+        await extractor.performMenuAction(pid: pid, actionPath: actionPath)
     }
 
     // MARK: - Cleanup

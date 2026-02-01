@@ -20,9 +20,7 @@ final class ClientFrameMetricsTracker: @unchecked Sendable {
         lock.lock()
         _ = decodedSampler.record(now: now)
         let isFirstFrame = !sentFirstFrame
-        if isFirstFrame {
-            sentFirstFrame = true
-        }
+        if isFirstFrame { sentFirstFrame = true }
         lock.unlock()
         return isFirstFrame
     }
@@ -39,7 +37,8 @@ final class ClientFrameMetricsTracker: @unchecked Sendable {
         lock.unlock()
     }
 
-    func snapshot(now: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()) -> (decodedFPS: Double, receivedFPS: Double, queueDroppedFrames: UInt64) {
+    func snapshot(now: CFAbsoluteTime = CFAbsoluteTimeGetCurrent())
+    -> (decodedFPS: Double, receivedFPS: Double, queueDroppedFrames: UInt64) {
         lock.lock()
         let decodedFPS = decodedSampler.snapshot(now: now)
         let receivedFPS = receivedSampler.snapshot(now: now)

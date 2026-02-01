@@ -8,8 +8,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import CoreGraphics
+import Foundation
 
 extension SharedVirtualDisplayManager {
     // MARK: - Display Access
@@ -28,12 +28,12 @@ extension SharedVirtualDisplayManager {
 
     /// Get the shared display ID
     func getDisplayID() -> CGDirectDisplayID? {
-        return sharedDisplay?.displayID
+        sharedDisplay?.displayID
     }
 
     /// Get the shared display space ID
     func getSpaceID() -> CGSSpaceID? {
-        return sharedDisplay?.spaceID
+        sharedDisplay?.spaceID
     }
 
     /// Get the shared display snapshot
@@ -61,23 +61,20 @@ extension SharedVirtualDisplayManager {
 
     /// Check if there's an active shared display
     func hasActiveDisplay() -> Bool {
-        return sharedDisplay != nil
+        sharedDisplay != nil
     }
 
     /// Get count of active consumers
     func activeConsumerCount() -> Int {
-        return activeConsumers.count
+        activeConsumers.count
     }
 
     /// Get all active stream IDs (filters out non-stream consumers)
     func activeStreamIDs() -> [StreamID] {
-        return activeConsumers.keys.compactMap { consumer in
-            if case .stream(let streamID) = consumer {
-                return streamID
-            }
+        activeConsumers.keys.compactMap { consumer in
+            if case let .stream(streamID) = consumer { return streamID }
             return nil
         }
     }
-
 }
 #endif

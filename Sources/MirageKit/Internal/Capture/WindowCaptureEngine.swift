@@ -5,15 +5,15 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 import os
 
 #if os(macOS)
-import ScreenCaptureKit
 import AppKit
 import CoreGraphics
+import ScreenCaptureKit
 
 actor WindowCaptureEngine {
     var stream: SCStream?
@@ -48,7 +48,7 @@ actor WindowCaptureEngine {
     ) {
         self.configuration = configuration
         self.latencyMode = latencyMode
-        self.currentFrameRate = max(1, captureFrameRate ?? configuration.targetFrameRate)
+        currentFrameRate = max(1, captureFrameRate ?? configuration.targetFrameRate)
     }
 
     enum CaptureMode {

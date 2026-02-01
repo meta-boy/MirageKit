@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 // MARK: - Encoder Configuration
 
@@ -49,7 +49,7 @@ public struct MirageEncoderConfiguration: Sendable {
     public init(
         codec: MirageVideoCodec = .hevc,
         targetFrameRate: Int = 60,
-        keyFrameInterval: Int = 1_800,
+        keyFrameInterval: Int = 1800,
         colorSpace: MirageColorSpace = .displayP3,
         scaleFactor: CGFloat = 2.0,
         pixelFormat: MiragePixelFormat = .p010,
@@ -75,7 +75,7 @@ public struct MirageEncoderConfiguration: Sendable {
     /// Default configuration for high-bandwidth local network
     public static let highQuality = MirageEncoderConfiguration(
         targetFrameRate: 120,
-        keyFrameInterval: 3_600,
+        keyFrameInterval: 3600,
         pixelFormat: .p010,
         frameQuality: 1.0,
         keyframeQuality: 0.75
@@ -84,7 +84,7 @@ public struct MirageEncoderConfiguration: Sendable {
     /// Default configuration for lower bandwidth
     public static let balanced = MirageEncoderConfiguration(
         targetFrameRate: 120,
-        keyFrameInterval: 3_600,
+        keyFrameInterval: 3600,
         pixelFormat: .nv12,
         frameQuality: 0.75,
         keyframeQuality: 0.65
@@ -101,35 +101,18 @@ public struct MirageEncoderConfiguration: Sendable {
         captureQueueDepth: Int? = nil,
         minBitrate: Int? = nil,
         maxBitrate: Int? = nil
-    ) -> MirageEncoderConfiguration {
+    )
+    -> MirageEncoderConfiguration {
         var config = self
-        if let interval = keyFrameInterval {
-            config.keyFrameInterval = interval
-        }
-        if let quality = frameQuality {
-            config.frameQuality = quality
-        }
-        if let quality = keyframeQuality {
-            config.keyframeQuality = quality
-        }
-        if frameQuality != nil, keyframeQuality == nil {
-            config.keyframeQuality = min(config.keyframeQuality, config.frameQuality)
-        }
-        if let pixelFormat {
-            config.pixelFormat = pixelFormat
-        }
-        if let colorSpace {
-            config.colorSpace = colorSpace
-        }
-        if let captureQueueDepth {
-            config.captureQueueDepth = captureQueueDepth
-        }
-        if let minBitrate {
-            config.minBitrate = minBitrate
-        }
-        if let maxBitrate {
-            config.maxBitrate = maxBitrate
-        }
+        if let interval = keyFrameInterval { config.keyFrameInterval = interval }
+        if let quality = frameQuality { config.frameQuality = quality }
+        if let quality = keyframeQuality { config.keyframeQuality = quality }
+        if frameQuality != nil, keyframeQuality == nil { config.keyframeQuality = min(config.keyframeQuality, config.frameQuality) }
+        if let pixelFormat { config.pixelFormat = pixelFormat }
+        if let colorSpace { config.colorSpace = colorSpace }
+        if let captureQueueDepth { config.captureQueueDepth = captureQueueDepth }
+        if let minBitrate { config.minBitrate = minBitrate }
+        if let maxBitrate { config.maxBitrate = maxBitrate }
         return config
     }
 
@@ -181,24 +164,24 @@ public enum MirageVideoCodec: String, Sendable, CaseIterable, Codable {
 
     public var displayName: String {
         switch self {
-        case .hevc: return "HEVC (H.265)"
-        case .h264: return "H.264"
+        case .hevc: "HEVC (H.265)"
+        case .h264: "H.264"
         }
     }
 }
 
 /// Color space options
 public enum MirageColorSpace: String, Sendable, CaseIterable, Codable {
-    case sRGB = "sRGB"
+    case sRGB
     case displayP3 = "P3"
     // TODO: HDR support - requires proper virtual display EDR configuration
     // case hdr = "HDR"  // Rec. 2020 with PQ transfer function
 
     public var displayName: String {
         switch self {
-        case .sRGB: return "sRGB"
-        case .displayP3: return "Display P3"
-        // case .hdr: return "HDR (Rec. 2020)"
+        case .sRGB: "sRGB"
+        case .displayP3: "Display P3"
+            // case .hdr: return "HDR (Rec. 2020)"
         }
     }
 }
@@ -212,10 +195,10 @@ public enum MiragePixelFormat: String, Sendable, CaseIterable, Codable {
 
     public var displayName: String {
         switch self {
-        case .p010: return "10-bit (P010 4:2:0)"
-        case .bgr10a2: return "10-bit (ARGB2101010 4:4:4)"
-        case .bgra8: return "8-bit (BGRA 4:4:4)"
-        case .nv12: return "8-bit (NV12 4:2:0)"
+        case .p010: "10-bit (P010 4:2:0)"
+        case .bgr10a2: "10-bit (ARGB2101010 4:4:4)"
+        case .bgra8: "8-bit (BGRA 4:4:4)"
+        case .nv12: "8-bit (NV12 4:2:0)"
         }
     }
 }
@@ -253,7 +236,7 @@ public struct MirageNetworkConfiguration: Sendable {
         dataPort: UInt16 = 0,
         enableTLS: Bool = true,
         connectionTimeout: TimeInterval = 10,
-        maxPacketSize: Int = MirageDefaultMaxPacketSize,
+        maxPacketSize: Int = mirageDefaultMaxPacketSize,
         enablePeerToPeer: Bool = true
     ) {
         self.serviceType = serviceType
@@ -273,25 +256,23 @@ public struct MirageNetworkConfiguration: Sendable {
 /// Quality preset for quick configuration.
 /// Presets define encoder quality defaults that can be overridden by the client.
 public enum MirageQualityPreset: String, Sendable, CaseIterable, Codable {
-    case ultra       // Highest quality
-    case high        // High quality
-    case medium      // Balanced quality
-    case low         // Low quality
-    case custom      // User-defined overrides
+    case ultra // Highest quality
+    case high // High quality
+    case medium // Balanced quality
+    case low // Low quality
+    case custom // User-defined overrides
 
     public var displayName: String {
         switch self {
-        case .ultra: return "Ultra"
-        case .high: return "High"
-        case .medium: return "Medium"
-        case .low: return "Low"
-        case .custom: return "Custom"
+        case .ultra: "Ultra"
+        case .high: "High"
+        case .medium: "Medium"
+        case .low: "Low"
+        case .custom: "Custom"
         }
     }
 
-    public var encoderConfiguration: MirageEncoderConfiguration {
-        encoderConfiguration(for: 60)
-    }
+    public var encoderConfiguration: MirageEncoderConfiguration { encoderConfiguration(for: 60) }
 
     public func encoderConfiguration(for frameRate: Int) -> MirageEncoderConfiguration {
         let isHighRefresh = frameRate >= 120
@@ -350,7 +331,6 @@ public enum MirageQualityPreset: String, Sendable, CaseIterable, Codable {
             )
         }
     }
-
 }
 
 // MARK: - Latency Mode
@@ -363,9 +343,9 @@ public enum MirageStreamLatencyMode: String, Sendable, CaseIterable, Codable {
 
     public var displayName: String {
         switch self {
-        case .lowestLatency: return "Lowest Latency"
-        case .balanced: return "Balanced"
-        case .smoothest: return "Smoothest"
+        case .lowestLatency: "Lowest Latency"
+        case .balanced: "Balanced"
+        case .smoothest: "Smoothest"
         }
     }
 }

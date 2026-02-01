@@ -32,10 +32,11 @@ extension MirageHostService {
         streamScale: CGFloat?,
         adaptiveScaleEnabled: Bool?,
         latencyMode: MirageStreamLatencyMode = .smoothest,
-        dataPort: UInt16?,
+        dataPort _: UInt16?,
         captureSource: MirageDesktopCaptureSource?,
         targetFrameRate: Int? = nil
-    ) async throws {
+    )
+    async throws {
         // Check session state - must be active
         await refreshSessionStateIfNeeded()
         guard sessionState == .active else {
@@ -88,9 +89,7 @@ extension MirageHostService {
             maxBitrate: maxBitrate
         )
 
-        if let targetFrameRate {
-            config = config.withTargetFrameRate(targetFrameRate)
-        }
+        if let targetFrameRate { config = config.withTargetFrameRate(targetFrameRate) }
         // TODO: HDR support - requires proper virtual display EDR configuration
         // if hdr {
         //     config.colorSpace = .hdr
@@ -114,19 +113,16 @@ extension MirageHostService {
         )
         logDesktopStartStep("virtual display acquired (\(context.displayID))")
 
-        let captureDisplay: SCDisplayWrapper
-        switch selectedCaptureSource {
+        let captureDisplay: SCDisplayWrapper = switch selectedCaptureSource {
         case .mainDisplay:
-            captureDisplay = try await findMainSCDisplayWithRetry(maxAttempts: 5, delayMs: 40)
+            try await findMainSCDisplayWithRetry(maxAttempts: 5, delayMs: 40)
         case .virtualDisplay:
-            captureDisplay = try await findSCDisplayWithRetry(maxAttempts: 5, delayMs: 40)
+            try await findSCDisplayWithRetry(maxAttempts: 5, delayMs: 40)
         }
         logDesktopStartStep("SCDisplay resolved (\(captureDisplay.display.displayID))")
         let captureResolution = context.resolution
 
-        guard let bounds = await SharedVirtualDisplayManager.shared.getDisplayBounds() else {
-            throw MirageError.protocolError("Desktop stream display exists but couldn't get bounds")
-        }
+        guard let bounds = await SharedVirtualDisplayManager.shared.getDisplayBounds() else { throw MirageError.protocolError("Desktop stream display exists but couldn't get bounds") }
         desktopDisplayBounds = bounds
         desktopUsesVirtualDisplay = true
         sharedVirtualDisplayGeneration = await SharedVirtualDisplayManager.shared.getDisplayGeneration()
@@ -136,7 +132,10 @@ extension MirageHostService {
             let primaryDisplayID = resolvePrimaryPhysicalDisplayID() ?? CGMainDisplayID()
             desktopPrimaryPhysicalDisplayID = primaryDisplayID
             desktopPrimaryPhysicalBounds = CGDisplayBounds(primaryDisplayID)
-            MirageLogger.host("Desktop primary physical display: \(primaryDisplayID), bounds=\(desktopPrimaryPhysicalBounds ?? .zero)")
+            MirageLogger
+                .host(
+                    "Desktop primary physical display: \(primaryDisplayID), bounds=\(desktopPrimaryPhysicalBounds ?? .zero)"
+                )
         }
 
         // Set up display mirroring so physical displays mirror the virtual display.
@@ -151,9 +150,15 @@ extension MirageHostService {
         streamStartupFirstPacketSent.remove(streamID)
         if selectedCaptureSource == .virtualDisplay,
            captureDisplay.display.displayID != context.displayID {
-            MirageLogger.error(.host, "Desktop capture display mismatch: capture=\(captureDisplay.display.displayID), virtual=\(context.displayID)")
+            MirageLogger.error(
+                .host,
+                "Desktop capture display mismatch: capture=\(captureDisplay.display.displayID), virtual=\(context.displayID)"
+            )
         }
-        MirageLogger.host("Desktop capture source: \(selectedCaptureSource.displayName) (capture display \(captureDisplay.display.displayID), virtual \(context.displayID), color=\(config.colorSpace.displayName))")
+        MirageLogger
+            .host(
+                "Desktop capture source: \(selectedCaptureSource.displayName) (capture display \(captureDisplay.display.displayID), virtual \(context.displayID), color=\(config.colorSpace.displayName))"
+            )
 
         let effectiveScale = streamScale ?? 1.0
 
@@ -174,7 +179,7 @@ extension MirageHostService {
         await streamContext.setMetricsUpdateHandler { [weak self] metrics in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                guard let clientContext = self.findClientContext(clientID: metricsClientID) else { return }
+                guard let clientContext = findClientContext(clientID: metricsClientID) else { return }
                 do {
                     try await clientContext.send(.streamMetricsUpdate, content: metrics)
                 } catch {
@@ -249,7 +254,10 @@ extension MirageHostService {
         try? await clientContext.send(.desktopStreamStarted, content: message)
         logDesktopStartStep("desktopStreamStarted sent")
 
-        MirageLogger.host("Desktop stream started: streamID=\(streamID), resolution=\(encodedDimensions.width)x\(encodedDimensions.height)")
+        MirageLogger
+            .host(
+                "Desktop stream started: streamID=\(streamID), resolution=\(encodedDimensions.width)x\(encodedDimensions.height)"
+            )
     }
 
     /// Stop the desktop stream
@@ -267,13 +275,9 @@ extension MirageHostService {
             ? await SharedVirtualDisplayManager.shared.getDisplayID()
             : nil
 
-        if let context = desktopStreamContext {
-            await context.stop()
-        }
+        if let context = desktopStreamContext { await context.stop() }
 
-        if let sharedDisplayID {
-            await disableDisplayMirroring(displayID: sharedDisplayID)
-        }
+        if let sharedDisplayID { await disableDisplayMirroring(displayID: sharedDisplayID) }
 
         if let clientContext = desktopStreamClientContext {
             let message = DesktopStreamStoppedMessage(streamID: streamID, reason: reason)
@@ -296,9 +300,7 @@ extension MirageHostService {
         udpConnectionsByStream.removeValue(forKey: streamID)?.cancel()
         inputStreamCacheActor.remove(streamID)
 
-        if wasUsingVirtualDisplay {
-            await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.desktopStream)
-        }
+        if wasUsingVirtualDisplay { await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.desktopStream) }
 
         if borrowedByLoginDisplay {
             MirageLogger.host("Desktop stream was borrowed for login display; clearing borrowed login-display state")
@@ -318,18 +320,12 @@ extension MirageHostService {
             loginDisplayPowerAssertionEnabled = false
             loginDisplayInputState.clear()
 
-            if sharedConsumerActive {
-                await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.loginDisplay)
-            }
+            if sharedConsumerActive { await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.loginDisplay) }
 
-            if sessionState != .active, !clientsByConnection.isEmpty {
-                await startLoginDisplayStreamIfNeeded()
-            }
+            if sessionState != .active, !clientsByConnection.isEmpty { await startLoginDisplayStreamIfNeeded() }
         }
 
-        if activeStreams.isEmpty && loginDisplayContext == nil {
-            await PowerAssertionManager.shared.disable()
-        }
+        if activeStreams.isEmpty, loginDisplayContext == nil { await PowerAssertionManager.shared.disable() }
 
         MirageLogger.host("Desktop stream stopped")
     }
@@ -353,16 +349,19 @@ extension MirageHostService {
     /// Find SCDisplay with retry - faster than fixed sleep
     func findSCDisplayWithRetry(maxAttempts: Int, delayMs: UInt64) async throws -> SCDisplayWrapper {
         var attemptDelayMs = max(10, Int(delayMs))
-        for attempt in 1...maxAttempts {
+        for attempt in 1 ... maxAttempts {
             do {
                 let scDisplay = try await SharedVirtualDisplayManager.shared.findSCDisplay(maxAttempts: 1)
                 MirageLogger.host("Found SCDisplay on attempt \(attempt)")
                 return scDisplay
             } catch {
                 if attempt < maxAttempts {
-                    MirageLogger.host("SCDisplay not ready (attempt \(attempt)/\(maxAttempts)); retrying in \(attemptDelayMs)ms")
+                    MirageLogger
+                        .host(
+                            "SCDisplay not ready (attempt \(attempt)/\(maxAttempts)); retrying in \(attemptDelayMs)ms"
+                        )
                     try? await Task.sleep(for: .milliseconds(attemptDelayMs))
-                    attemptDelayMs = min(1_000, Int(Double(attemptDelayMs) * 1.6))
+                    attemptDelayMs = min(1000, Int(Double(attemptDelayMs) * 1.6))
                 } else {
                     MirageLogger.error(.host, "Failed to find SCDisplay after \(maxAttempts) attempts")
                     throw error
@@ -374,15 +373,13 @@ extension MirageHostService {
 
     /// Find main SCDisplay with retry - for desktop streaming capture
     func findMainSCDisplayWithRetry(maxAttempts: Int, delayMs: UInt64) async throws -> SCDisplayWrapper {
-        for attempt in 1...maxAttempts {
+        for attempt in 1 ... maxAttempts {
             do {
                 let scDisplay = try await SharedVirtualDisplayManager.shared.findMainSCDisplay()
                 MirageLogger.host("Found main SCDisplay on attempt \(attempt)")
                 return scDisplay
             } catch {
-                if attempt < maxAttempts {
-                    try await Task.sleep(for: .milliseconds(Int64(delayMs)))
-                } else {
+                if attempt < maxAttempts { try await Task.sleep(for: .milliseconds(Int64(delayMs))) } else {
                     MirageLogger.error(.host, "Failed to find main SCDisplay after \(maxAttempts) attempts")
                     throw error
                 }
@@ -393,9 +390,7 @@ extension MirageHostService {
 
     func resolvePrimaryPhysicalDisplayID() -> CGDirectDisplayID? {
         let mainDisplayID = CGMainDisplayID()
-        if !CGVirtualDisplayBridge.isVirtualDisplay(mainDisplayID) {
-            return mainDisplayID
-        }
+        if !CGVirtualDisplayBridge.isVirtualDisplay(mainDisplayID) { return mainDisplayID }
 
         var displayCount: UInt32 = 0
         CGGetOnlineDisplayList(0, nil, &displayCount)
@@ -412,7 +407,8 @@ extension MirageHostService {
         return candidates.filter { !CGVirtualDisplayBridge.isVirtualDisplay($0) }
     }
 
-    func captureDisplayMirroringSnapshot(for displayIDs: [CGDirectDisplayID]) -> [CGDirectDisplayID: CGDirectDisplayID] {
+    func captureDisplayMirroringSnapshot(for displayIDs: [CGDirectDisplayID])
+    -> [CGDirectDisplayID: CGDirectDisplayID] {
         var snapshot: [CGDirectDisplayID: CGDirectDisplayID] = [:]
         for displayID in displayIDs {
             snapshot[displayID] = CGDisplayMirrorsDisplay(displayID)
@@ -474,7 +470,10 @@ extension MirageHostService {
         }
 
         mirroredPhysicalDisplayIDs = successfullyMirrored
-        MirageLogger.host("Display mirroring enabled for \(successfullyMirrored.count) displays → virtual display \(targetDisplayID)")
+        MirageLogger
+            .host(
+                "Display mirroring enabled for \(successfullyMirrored.count) displays → virtual display \(targetDisplayID)"
+            )
     }
 
     /// Restore display mirroring to the pre-stream configuration.
@@ -485,7 +484,8 @@ extension MirageHostService {
             return
         }
 
-        MirageLogger.host("Restoring \(desktopMirroringSnapshot.count) displays from mirroring (virtual display \(displayID))")
+        MirageLogger
+            .host("Restoring \(desktopMirroringSnapshot.count) displays from mirroring (virtual display \(displayID))")
 
         var configRef: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else {
@@ -500,18 +500,14 @@ extension MirageHostService {
             guard CGDisplayMirrorsDisplay(displayID) != targetMirrorID else { continue }
 
             let result = CGConfigureDisplayMirrorOfDisplay(config, displayID, targetMirrorID)
-            if result == .success {
-                successfullyRestored += 1
-            } else {
+            if result == .success { successfullyRestored += 1 } else {
                 MirageLogger.error(.host, "Failed to restore mirroring for display \(displayID): \(result)")
             }
         }
 
         if successfullyRestored > 0 {
             let completeResult = CGCompleteDisplayConfiguration(config, .permanently)
-            if completeResult != .success {
-                MirageLogger.error(.host, "Failed to complete disable mirroring: \(completeResult)")
-            } else {
+            if completeResult != .success { MirageLogger.error(.host, "Failed to complete disable mirroring: \(completeResult)") } else {
                 MirageLogger.host("Display mirroring disabled for \(successfullyRestored) displays")
             }
         } else {

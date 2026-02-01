@@ -7,8 +7,8 @@
 //  Message type definitions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 // MARK: - Input Messages
 

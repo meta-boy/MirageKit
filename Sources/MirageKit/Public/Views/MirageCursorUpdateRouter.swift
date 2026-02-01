@@ -41,9 +41,7 @@ final class MirageCursorUpdateRouter: @unchecked Sendable {
     func notify(streamID: StreamID) {
         lock.lock()
         let view = viewsByStream[streamID]?.value
-        if view == nil {
-            viewsByStream.removeValue(forKey: streamID)
-        }
+        if view == nil { viewsByStream.removeValue(forKey: streamID) }
         lock.unlock()
 
         guard let view else { return }

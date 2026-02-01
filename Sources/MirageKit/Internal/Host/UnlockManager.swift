@@ -5,13 +5,13 @@
 //  Created by Ethan Lipnik on 1/7/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 import Security
 
 #if os(macOS)
-import IOKit.pwr_mgt
 import Carbon.HIToolbox
+import IOKit.pwr_mgt
 
 // Private SkyLight functions for session management - loaded dynamically at runtime
 // These are used by loginwindow and other system components
@@ -21,22 +21,18 @@ import Carbon.HIToolbox
 /// Returns 0 on success, non-zero on failure, or nil if the function isn't available
 func callSLSSessionSwitchToUser(_ username: String) -> Int32? {
     // Get handle to SkyLight framework
-    guard let skylight = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY) else {
-        return nil
-    }
+    guard let skylight = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY) else { return nil }
     defer { dlclose(skylight) }
 
     // Get function pointer
-    guard let sym = dlsym(skylight, "SLSSessionSwitchToUser") else {
-        return nil
-    }
+    guard let sym = dlsym(skylight, "SLSSessionSwitchToUser") else { return nil }
 
     // Cast to function type and call
     typealias SLSSessionSwitchToUserFunc = @convention(c) (UnsafePointer<CChar>) -> Int32
-    let func_ptr = unsafeBitCast(sym, to: SLSSessionSwitchToUserFunc.self)
+    let functionPointer = unsafeBitCast(sym, to: SLSSessionSwitchToUserFunc.self)
 
     return username.withCString { usernamePtr in
-        func_ptr(usernamePtr)
+        functionPointer(usernamePtr)
     }
 }
 
@@ -54,16 +50,12 @@ actor UnlockManager {
         }
 
         var error: UnlockError? {
-            if case .failure(let code, let message) = self {
-                return UnlockError(code: code, message: message)
-            }
+            if case let .failure(code, message) = self { return UnlockError(code: code, message: message) }
             return nil
         }
 
         var canRetry: Bool {
-            if case .failure(let code, _) = self {
-                return code != .rateLimited && code != .notAuthorized
-            }
+            if case let .failure(code, _) = self { return code != .rateLimited && code != .notAuthorized }
             return false
         }
     }

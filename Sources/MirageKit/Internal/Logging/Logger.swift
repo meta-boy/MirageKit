@@ -42,23 +42,23 @@ actor MirageLogSinkStore {
 /// Log categories for Mirage
 /// Use MIRAGE_LOG environment variable to enable: "all", "none", or comma-separated list
 public enum LogCategory: String, CaseIterable, Sendable {
-    case timing         // Frame capture/encode timing
-    case metrics        // Pipeline throughput metrics
-    case capture        // Screen capture engine
-    case encoder        // Video encoding
-    case decoder        // Video decoding
-    case client         // Client service operations
-    case host           // Host service operations
-    case renderer       // Metal rendering
-    case appState       // Application state
-    case windowFilter   // Window filtering logic
-    case stream         // Stream lifecycle
-    case frameAssembly  // Frame reassembly
-    case discovery      // Bonjour discovery
-    case network        // Network/advertiser operations
-    case accessibility  // Accessibility permission
+    case timing // Frame capture/encode timing
+    case metrics // Pipeline throughput metrics
+    case capture // Screen capture engine
+    case encoder // Video encoding
+    case decoder // Video decoding
+    case client // Client service operations
+    case host // Host service operations
+    case renderer // Metal rendering
+    case appState // Application state
+    case windowFilter // Window filtering logic
+    case stream // Stream lifecycle
+    case frameAssembly // Frame reassembly
+    case discovery // Bonjour discovery
+    case network // Network/advertiser operations
+    case accessibility // Accessibility permission
     case windowActivator // Window activation
-    case menuBar         // Menu bar streaming
+    case menuBar // Menu bar streaming
 }
 
 /// Centralized logging for Mirage using Apple's unified logging system (os.Logger)
@@ -153,16 +153,15 @@ public struct MirageLogger: Sendable {
         switch trimmed {
         case "all":
             return Set(LogCategory.allCases)
-        case "none", "":
+        case "",
+             "none":
             return []
         default:
             // Parse comma-separated list
             let names = trimmed.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
             var categories: Set<LogCategory> = []
             for name in names {
-                if let category = LogCategory(rawValue: name) {
-                    categories.insert(category)
-                }
+                if let category = LogCategory(rawValue: name) { categories.insert(category) }
             }
             return categories
         }

@@ -7,8 +7,8 @@
 //  Message type definitions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 // MARK: - Desktop Streaming Messages
 
@@ -99,7 +99,7 @@ struct DesktopStreamStartedMessage: Codable {
     let displayCount: Int
     /// Dimension token for rejecting old-dimension P-frames after resize.
     /// Client should update its reassembler with this token.
-    var dimensionToken: UInt16? = nil
+    var dimensionToken: UInt16?
 }
 
 /// Desktop stream stopped notification (Host → Client)

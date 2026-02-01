@@ -13,13 +13,9 @@ import Foundation
 @MainActor
 extension MirageHostService {
     func startSessionStateMonitoring() async {
-        if sessionStateMonitor == nil {
-            sessionStateMonitor = SessionStateMonitor()
-        }
+        if sessionStateMonitor == nil { sessionStateMonitor = SessionStateMonitor() }
 
-        if unlockManager == nil, let sessionStateMonitor {
-            unlockManager = UnlockManager(sessionMonitor: sessionStateMonitor)
-        }
+        if unlockManager == nil, let sessionStateMonitor { unlockManager = UnlockManager(sessionMonitor: sessionStateMonitor) }
 
         guard let sessionStateMonitor else { return }
 
@@ -30,9 +26,7 @@ extension MirageHostService {
         }
 
         let refreshed = await sessionStateMonitor.refreshState(notify: false)
-        if refreshed != sessionState {
-            await handleSessionStateChange(refreshed)
-        }
+        if refreshed != sessionState { await handleSessionStateChange(refreshed) }
 
         startSessionRefreshLoopIfNeeded()
     }
@@ -40,9 +34,7 @@ extension MirageHostService {
     func refreshSessionStateIfNeeded() async {
         guard let sessionStateMonitor else { return }
         let refreshed = await sessionStateMonitor.refreshState(notify: false)
-        if refreshed != sessionState {
-            await handleSessionStateChange(refreshed)
-        }
+        if refreshed != sessionState { await handleSessionStateChange(refreshed) }
     }
 
     func handleSessionStateChange(_ newState: HostSessionState) async {
@@ -107,9 +99,7 @@ extension MirageHostService {
                 if clientsByConnection.isEmpty { break }
                 await refreshSessionStateIfNeeded()
             }
-            if generation == sessionRefreshGeneration {
-                sessionRefreshTask = nil
-            }
+            if generation == sessionRefreshGeneration { sessionRefreshTask = nil }
             MirageLogger.host("Session refresh loop stopped")
         }
     }

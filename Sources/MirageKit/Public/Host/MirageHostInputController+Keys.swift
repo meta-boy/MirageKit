@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -17,18 +17,18 @@ import ApplicationServices
 extension MirageHostInputController {
     // MARK: - Key Event Injection (runs on accessibilityQueue)
 
-    func injectKeyEvent(isKeyDown: Bool, _ event: MirageKeyEvent, app: MirageApplication?) {
+    func injectKeyEvent(isKeyDown: Bool, _ event: MirageKeyEvent, app _: MirageApplication?) {
         guard let cgEvent = CGEvent(
             keyboardEventSource: nil,
             virtualKey: CGKeyCode(event.keyCode),
             keyDown: isKeyDown
-        ) else { return }
+        ) else {
+            return
+        }
 
         cgEvent.flags = event.modifiers.cgEventFlags
 
-        if event.isRepeat {
-            cgEvent.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
-        }
+        if event.isRepeat { cgEvent.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
 
         postEvent(cgEvent)
 
@@ -41,7 +41,7 @@ extension MirageHostInputController {
         }
     }
 
-    func injectFlagsChanged(_ modifiers: MirageModifierFlags, app: MirageApplication?) {
+    func injectFlagsChanged(_ modifiers: MirageModifierFlags, app _: MirageApplication?) {
         var newlyPressed: [CGKeyCode] = []
         var newlyReleased: [CGKeyCode] = []
 
@@ -49,9 +49,7 @@ extension MirageHostInputController {
             let wasHeld = lastSentModifiers.contains(flag)
             let isHeld = modifiers.contains(flag)
 
-            if isHeld && !wasHeld {
-                newlyPressed.append(keyCode)
-            } else if !isHeld && wasHeld {
+            if isHeld, !wasHeld { newlyPressed.append(keyCode) } else if !isHeld, wasHeld {
                 newlyReleased.append(keyCode)
             }
         }
@@ -97,13 +95,10 @@ extension MirageHostInputController {
             modifierLastEventTimes.removeValue(forKey: flag)
         }
 
-        if !modifiers.isEmpty {
-            startModifierResetTimerIfNeeded()
-        } else {
+        if !modifiers.isEmpty { startModifierResetTimerIfNeeded() } else {
             stopModifierResetTimer()
         }
     }
-
 }
 
 #endif

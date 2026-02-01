@@ -7,8 +7,8 @@
 //  Standard stream startup paths.
 //
 
-import Foundation
 import CoreVideo
+import Foundation
 
 #if os(macOS)
 import ScreenCaptureKit
@@ -19,7 +19,8 @@ extension StreamContext {
         applicationWrapper: SCApplicationWrapper,
         displayWrapper: SCDisplayWrapper,
         onEncodedFrame: @escaping @Sendable (Data, FrameHeader, @escaping @Sendable () -> Void) -> Void
-    ) async throws {
+    )
+    async throws {
         guard !isRunning else { return }
         isRunning = true
 
@@ -27,7 +28,7 @@ extension StreamContext {
         let application = applicationWrapper.application
         let display = displayWrapper.display
 
-        self.onEncodedPacket = onEncodedFrame
+        onEncodedPacket = onEncodedFrame
         let packetSender = StreamPacketSender(maxPayloadSize: maxPayloadSize, onEncodedFrame: onEncodedFrame)
         self.packetSender = packetSender
         await packetSender.start()
@@ -52,7 +53,10 @@ extension StreamContext {
         captureMode = .window
         lastWindowFrame = window.frame
         updateQueueLimits()
-        MirageLogger.stream("Stream init: latency=\(latencyMode.displayName), scale=\(streamScale), encoded=\(Int(outputSize.width))x\(Int(outputSize.height)), queue=\(maxQueuedBytes / 1024)KB, buffer=\(frameBufferDepth)")
+        MirageLogger
+            .stream(
+                "Stream init: latency=\(latencyMode.displayName), scale=\(streamScale), encoded=\(Int(outputSize.width))x\(Int(outputSize.height)), queue=\(maxQueuedBytes / 1024)KB, buffer=\(frameBufferDepth)"
+            )
         try await encoder.createSession(width: Int(outputSize.width), height: Int(outputSize.height))
         activePixelFormat = await encoder.getActivePixelFormat()
 
@@ -60,64 +64,65 @@ extension StreamContext {
         shouldEncodeFrames = false
         MirageLogger.stream("Waiting for UDP registration before encoding")
 
-        let streamID = self.streamID
+        let streamID = streamID
         var localFrameNumber: UInt32 = 0
         var localSequenceNumber: UInt32 = 0
 
         await encoder.startEncoding(
             onEncodedFrame: { [weak self] encodedData, isKeyframe, presentationTime in
-            guard let self else { return }
+                guard let self else { return }
 
-            let contentRect = self.currentContentRect
-            let frameNum = localFrameNumber
-            let seqStart = localSequenceNumber
+                let contentRect = currentContentRect
+                let frameNum = localFrameNumber
+                let seqStart = localSequenceNumber
 
-            let now = CFAbsoluteTimeGetCurrent()
-            let lossModeActive = self.isLossModeActive(now: now)
-            let fecBlockSize = lossModeActive ? (isKeyframe ? 8 : 16) : 0
-            let frameByteCount = encodedData.count
-            let dataFragments = (frameByteCount + maxPayloadSize - 1) / maxPayloadSize
-            let parityFragments = fecBlockSize > 1 ? (dataFragments + fecBlockSize - 1) / fecBlockSize : 0
-            let totalFragments = dataFragments + parityFragments
-            let wireBytes = frameByteCount + parityFragments * maxPayloadSize
-            localSequenceNumber += UInt32(totalFragments)
-            localFrameNumber += 1
+                let now = CFAbsoluteTimeGetCurrent()
+                let lossModeActive = isLossModeActive(now: now)
+                let fecBlockSize = lossModeActive ? (isKeyframe ? 8 : 16) : 0
+                let frameByteCount = encodedData.count
+                let dataFragments = (frameByteCount + maxPayloadSize - 1) / maxPayloadSize
+                let parityFragments = fecBlockSize > 1 ? (dataFragments + fecBlockSize - 1) / fecBlockSize : 0
+                let totalFragments = dataFragments + parityFragments
+                let wireBytes = frameByteCount + parityFragments * maxPayloadSize
+                localSequenceNumber += UInt32(totalFragments)
+                localFrameNumber += 1
 
-            let flags = self.baseFrameFlags.union(self.dynamicFrameFlags)
-            let dimToken = self.dimensionToken
-            let epoch = self.epoch
+                let flags = baseFrameFlags.union(dynamicFrameFlags)
+                let dimToken = dimensionToken
+                let epoch = epoch
 
-            let generation = packetSender.currentGenerationSnapshot()
-            if isKeyframe {
-                Task(priority: .userInitiated) {
-                    await self.markKeyframeInFlight()
-                    await self.markKeyframeSent()
+                let generation = packetSender.currentGenerationSnapshot()
+                if isKeyframe {
+                    Task(priority: .userInitiated) {
+                        await self.markKeyframeInFlight()
+                        await self.markKeyframeSent()
+                    }
                 }
+                let workItem = StreamPacketSender.WorkItem(
+                    encodedData: encodedData,
+                    frameByteCount: frameByteCount,
+                    isKeyframe: isKeyframe,
+                    presentationTime: presentationTime,
+                    contentRect: contentRect,
+                    streamID: streamID,
+                    frameNumber: frameNum,
+                    sequenceNumberStart: seqStart,
+                    additionalFlags: flags,
+                    dimensionToken: dimToken,
+                    epoch: epoch,
+                    fecBlockSize: fecBlockSize,
+                    lossMode: lossModeActive,
+                    wireBytes: wireBytes,
+                    logPrefix: "Frame",
+                    generation: generation,
+                    onSendStart: nil,
+                    onSendComplete: nil
+                )
+                packetSender.enqueue(workItem)
+            }, onFrameComplete: { [weak self] in
+                Task(priority: .userInitiated) { await self?.finishEncoding() }
             }
-            let workItem = StreamPacketSender.WorkItem(
-                encodedData: encodedData,
-                frameByteCount: frameByteCount,
-                isKeyframe: isKeyframe,
-                presentationTime: presentationTime,
-                contentRect: contentRect,
-                streamID: streamID,
-                frameNumber: frameNum,
-                sequenceNumberStart: seqStart,
-                additionalFlags: flags,
-                dimensionToken: dimToken,
-                epoch: epoch,
-                fecBlockSize: fecBlockSize,
-                lossMode: lossModeActive,
-                wireBytes: wireBytes,
-                logPrefix: "Frame",
-                generation: generation,
-                onSendStart: nil,
-                onSendComplete: nil
-            )
-            packetSender.enqueue(workItem)
-        }, onFrameComplete: { [weak self] in
-            Task(priority: .userInitiated) { await self?.finishEncoding() }
-        })
+        )
 
         let resolvedPixelFormat = await encoder.getActivePixelFormat()
         activePixelFormat = resolvedPixelFormat
@@ -149,13 +154,14 @@ extension StreamContext {
         resolution: CGSize? = nil,
         showsCursor: Bool = true,
         onEncodedFrame: @escaping @Sendable (Data, FrameHeader, @escaping @Sendable () -> Void) -> Void
-    ) async throws {
+    )
+    async throws {
         guard !isRunning else { return }
         isRunning = true
 
         let display = displayWrapper.display
 
-        self.onEncodedPacket = onEncodedFrame
+        onEncodedPacket = onEncodedFrame
         let packetSender = StreamPacketSender(maxPayloadSize: maxPayloadSize, onEncodedFrame: onEncodedFrame)
         self.packetSender = packetSender
         await packetSender.start()
@@ -181,71 +187,75 @@ extension StreamContext {
         updateQueueLimits()
         let width = max(1, Int(outputSize.width))
         let height = max(1, Int(outputSize.height))
-        MirageLogger.stream("Display init: latency=\(latencyMode.displayName), scale=\(streamScale), encoded=\(width)x\(height), queue=\(maxQueuedBytes / 1024)KB, buffer=\(frameBufferDepth)")
+        MirageLogger
+            .stream(
+                "Display init: latency=\(latencyMode.displayName), scale=\(streamScale), encoded=\(width)x\(height), queue=\(maxQueuedBytes / 1024)KB, buffer=\(frameBufferDepth)"
+            )
         try await encoder.createSession(width: width, height: height)
 
         try await encoder.preheat()
         shouldEncodeFrames = false
         MirageLogger.stream("Waiting for UDP registration before encoding")
 
-        let streamID = self.streamID
+        let streamID = streamID
         var localFrameNumber: UInt32 = 0
         var localSequenceNumber: UInt32 = 0
 
         await encoder.startEncoding(
             onEncodedFrame: { [weak self] encodedData, isKeyframe, presentationTime in
-            guard let self else { return }
+                guard let self else { return }
 
-            let contentRect = self.currentContentRect
-            let frameNum = localFrameNumber
-            let seqStart = localSequenceNumber
+                let contentRect = currentContentRect
+                let frameNum = localFrameNumber
+                let seqStart = localSequenceNumber
 
-            let now = CFAbsoluteTimeGetCurrent()
-            let lossModeActive = self.isLossModeActive(now: now)
-            let fecBlockSize = lossModeActive ? (isKeyframe ? 8 : 16) : 0
-            let frameByteCount = encodedData.count
-            let dataFragments = (frameByteCount + maxPayloadSize - 1) / maxPayloadSize
-            let parityFragments = fecBlockSize > 1 ? (dataFragments + fecBlockSize - 1) / fecBlockSize : 0
-            let totalFragments = dataFragments + parityFragments
-            let wireBytes = frameByteCount + parityFragments * maxPayloadSize
-            localSequenceNumber += UInt32(totalFragments)
-            localFrameNumber += 1
+                let now = CFAbsoluteTimeGetCurrent()
+                let lossModeActive = isLossModeActive(now: now)
+                let fecBlockSize = lossModeActive ? (isKeyframe ? 8 : 16) : 0
+                let frameByteCount = encodedData.count
+                let dataFragments = (frameByteCount + maxPayloadSize - 1) / maxPayloadSize
+                let parityFragments = fecBlockSize > 1 ? (dataFragments + fecBlockSize - 1) / fecBlockSize : 0
+                let totalFragments = dataFragments + parityFragments
+                let wireBytes = frameByteCount + parityFragments * maxPayloadSize
+                localSequenceNumber += UInt32(totalFragments)
+                localFrameNumber += 1
 
-            let flags = self.baseFrameFlags.union(self.dynamicFrameFlags)
-            let dimToken = self.dimensionToken
-            let epoch = self.epoch
+                let flags = baseFrameFlags.union(dynamicFrameFlags)
+                let dimToken = dimensionToken
+                let epoch = epoch
 
-            let generation = packetSender.currentGenerationSnapshot()
-            if isKeyframe {
-                Task(priority: .userInitiated) {
-                    await self.markKeyframeInFlight()
-                    await self.markKeyframeSent()
+                let generation = packetSender.currentGenerationSnapshot()
+                if isKeyframe {
+                    Task(priority: .userInitiated) {
+                        await self.markKeyframeInFlight()
+                        await self.markKeyframeSent()
+                    }
                 }
+                let workItem = StreamPacketSender.WorkItem(
+                    encodedData: encodedData,
+                    frameByteCount: frameByteCount,
+                    isKeyframe: isKeyframe,
+                    presentationTime: presentationTime,
+                    contentRect: contentRect,
+                    streamID: streamID,
+                    frameNumber: frameNum,
+                    sequenceNumberStart: seqStart,
+                    additionalFlags: flags,
+                    dimensionToken: dimToken,
+                    epoch: epoch,
+                    fecBlockSize: fecBlockSize,
+                    lossMode: lossModeActive,
+                    wireBytes: wireBytes,
+                    logPrefix: "Login frame",
+                    generation: generation,
+                    onSendStart: nil,
+                    onSendComplete: nil
+                )
+                packetSender.enqueue(workItem)
+            }, onFrameComplete: { [weak self] in
+                Task(priority: .userInitiated) { await self?.finishEncoding() }
             }
-            let workItem = StreamPacketSender.WorkItem(
-                encodedData: encodedData,
-                frameByteCount: frameByteCount,
-                isKeyframe: isKeyframe,
-                presentationTime: presentationTime,
-                contentRect: contentRect,
-                streamID: streamID,
-                frameNumber: frameNum,
-                sequenceNumberStart: seqStart,
-                additionalFlags: flags,
-                dimensionToken: dimToken,
-                epoch: epoch,
-                fecBlockSize: fecBlockSize,
-                lossMode: lossModeActive,
-                wireBytes: wireBytes,
-                logPrefix: "Login frame",
-                generation: generation,
-                onSendStart: nil,
-                onSendComplete: nil
-            )
-            packetSender.enqueue(workItem)
-        }, onFrameComplete: { [weak self] in
-            Task(priority: .userInitiated) { await self?.finishEncoding() }
-        })
+        )
 
         let resolvedPixelFormat = await encoder.getActivePixelFormat()
         activePixelFormat = resolvedPixelFormat
@@ -275,7 +285,8 @@ extension StreamContext {
         displayWrapper: SCDisplayWrapper,
         resolution: CGSize? = nil,
         onEncodedFrame: @escaping @Sendable (Data, FrameHeader, @escaping @Sendable () -> Void) -> Void
-    ) async throws {
+    )
+    async throws {
         guard !isRunning else { return }
         isRunning = true
         captureFrameRateOverride = nil
@@ -284,7 +295,7 @@ extension StreamContext {
 
         let display = displayWrapper.display
 
-        self.onEncodedPacket = onEncodedFrame
+        onEncodedPacket = onEncodedFrame
         let packetSender = StreamPacketSender(maxPayloadSize: maxPayloadSize, onEncodedFrame: onEncodedFrame)
         self.packetSender = packetSender
         await packetSender.start()
@@ -310,70 +321,74 @@ extension StreamContext {
         updateQueueLimits()
         let width = max(1, Int(outputSize.width))
         let height = max(1, Int(outputSize.height))
-        MirageLogger.stream("Desktop encoding at \(width)x\(height) (latency=\(latencyMode.displayName), scale=\(streamScale), queue=\(maxQueuedBytes / 1024)KB)")
+        MirageLogger
+            .stream(
+                "Desktop encoding at \(width)x\(height) (latency=\(latencyMode.displayName), scale=\(streamScale), queue=\(maxQueuedBytes / 1024)KB)"
+            )
         try await encoder.createSession(width: width, height: height)
 
         try await encoder.preheat()
         shouldEncodeFrames = false
         MirageLogger.stream("Waiting for UDP registration before encoding")
 
-        let streamID = self.streamID
+        let streamID = streamID
         var localFrameNumber: UInt32 = 0
         var localSequenceNumber: UInt32 = 0
 
         await encoder.startEncoding(
             onEncodedFrame: { [weak self] encodedData, isKeyframe, presentationTime in
-            guard let self else { return }
+                guard let self else { return }
 
-            let contentRect = self.currentContentRect
-            let frameNum = localFrameNumber
-            let seqStart = localSequenceNumber
-            let now = CFAbsoluteTimeGetCurrent()
-            let lossModeActive = self.isLossModeActive(now: now)
-            let fecBlockSize = lossModeActive ? (isKeyframe ? 8 : 16) : 0
-            let frameByteCount = encodedData.count
-            let dataFragments = (frameByteCount + maxPayloadSize - 1) / maxPayloadSize
-            let parityFragments = fecBlockSize > 1 ? (dataFragments + fecBlockSize - 1) / fecBlockSize : 0
-            let totalFragments = dataFragments + parityFragments
-            let wireBytes = frameByteCount + parityFragments * maxPayloadSize
-            localSequenceNumber += UInt32(totalFragments)
-            localFrameNumber += 1
+                let contentRect = currentContentRect
+                let frameNum = localFrameNumber
+                let seqStart = localSequenceNumber
+                let now = CFAbsoluteTimeGetCurrent()
+                let lossModeActive = isLossModeActive(now: now)
+                let fecBlockSize = lossModeActive ? (isKeyframe ? 8 : 16) : 0
+                let frameByteCount = encodedData.count
+                let dataFragments = (frameByteCount + maxPayloadSize - 1) / maxPayloadSize
+                let parityFragments = fecBlockSize > 1 ? (dataFragments + fecBlockSize - 1) / fecBlockSize : 0
+                let totalFragments = dataFragments + parityFragments
+                let wireBytes = frameByteCount + parityFragments * maxPayloadSize
+                localSequenceNumber += UInt32(totalFragments)
+                localFrameNumber += 1
 
-            let flags = self.baseFrameFlags.union(self.dynamicFrameFlags)
-            let dimToken = self.dimensionToken
-            let epoch = self.epoch
+                let flags = baseFrameFlags.union(dynamicFrameFlags)
+                let dimToken = dimensionToken
+                let epoch = epoch
 
-            let generation = packetSender.currentGenerationSnapshot()
-            if isKeyframe {
-                Task(priority: .userInitiated) {
-                    await self.markKeyframeInFlight()
-                    await self.markKeyframeSent()
+                let generation = packetSender.currentGenerationSnapshot()
+                if isKeyframe {
+                    Task(priority: .userInitiated) {
+                        await self.markKeyframeInFlight()
+                        await self.markKeyframeSent()
+                    }
                 }
+                let workItem = StreamPacketSender.WorkItem(
+                    encodedData: encodedData,
+                    frameByteCount: frameByteCount,
+                    isKeyframe: isKeyframe,
+                    presentationTime: presentationTime,
+                    contentRect: contentRect,
+                    streamID: streamID,
+                    frameNumber: frameNum,
+                    sequenceNumberStart: seqStart,
+                    additionalFlags: flags,
+                    dimensionToken: dimToken,
+                    epoch: epoch,
+                    fecBlockSize: fecBlockSize,
+                    lossMode: lossModeActive,
+                    wireBytes: wireBytes,
+                    logPrefix: "Desktop frame",
+                    generation: generation,
+                    onSendStart: nil,
+                    onSendComplete: nil
+                )
+                packetSender.enqueue(workItem)
+            }, onFrameComplete: { [weak self] in
+                Task(priority: .userInitiated) { await self?.finishEncoding() }
             }
-            let workItem = StreamPacketSender.WorkItem(
-                encodedData: encodedData,
-                frameByteCount: frameByteCount,
-                isKeyframe: isKeyframe,
-                presentationTime: presentationTime,
-                contentRect: contentRect,
-                streamID: streamID,
-                frameNumber: frameNum,
-                sequenceNumberStart: seqStart,
-                additionalFlags: flags,
-                dimensionToken: dimToken,
-                epoch: epoch,
-                fecBlockSize: fecBlockSize,
-                lossMode: lossModeActive,
-                wireBytes: wireBytes,
-                logPrefix: "Desktop frame",
-                generation: generation,
-                onSendStart: nil,
-                onSendComplete: nil
-            )
-            packetSender.enqueue(workItem)
-        }, onFrameComplete: { [weak self] in
-            Task(priority: .userInitiated) { await self?.finishEncoding() }
-        })
+        )
 
         let resolvedPixelFormat = await encoder.getActivePixelFormat()
         activePixelFormat = resolvedPixelFormat

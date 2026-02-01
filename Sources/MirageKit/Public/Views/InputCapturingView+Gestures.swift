@@ -18,7 +18,7 @@ extension InputCapturingView {
         longPressGesture.minimumPressDuration = 0
         longPressGesture.allowedTouchTypes = [
             NSNumber(value: UITouch.TouchType.direct.rawValue),
-            NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)
+            NSNumber(value: UITouch.TouchType.indirectPointer.rawValue),
         ]
         longPressGesture.delegate = self
         addGestureRecognizer(longPressGesture)
@@ -32,7 +32,7 @@ extension InputCapturingView {
         // Scroll gesture - ONLY for direct touch (2-finger pan on screen)
         // Trackpad scrolling uses ScrollPhysicsCapturingView for native momentum/bounce
         scrollGesture = UIPanGestureRecognizer(target: self, action: #selector(handleScroll(_:)))
-        scrollGesture.allowedScrollTypesMask = []  // Disable trackpad scroll handling
+        scrollGesture.allowedScrollTypesMask = [] // Disable trackpad scroll handling
         scrollGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         scrollGesture.minimumNumberOfTouches = 2
         scrollGesture.maximumNumberOfTouches = 2
@@ -66,7 +66,10 @@ extension InputCapturingView {
         virtualCursorTapGesture.require(toFail: virtualCursorLongPressGesture)
         addGestureRecognizer(virtualCursorTapGesture)
 
-        virtualCursorRightTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleVirtualCursorRightTap(_:)))
+        virtualCursorRightTapGesture = UITapGestureRecognizer(
+            target: self,
+            action: #selector(handleVirtualCursorRightTap(_:))
+        )
         virtualCursorRightTapGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         virtualCursorRightTapGesture.numberOfTouchesRequired = 2
         virtualCursorRightTapGesture.delegate = self
@@ -88,9 +91,8 @@ extension InputCapturingView {
     func normalizedLocation(_ point: CGPoint) -> CGPoint {
         // Normalize directly against our bounds - the view receiving the gesture
         // Scale factors cancel out: (point * scale) / (bounds * scale) = point / bounds
-        guard bounds.width > 0 && bounds.height > 0 else {
-            return CGPoint(x: 0.5, y: 0.5)  // Default to center if bounds not ready
-        }
+        // Default to center if bounds not ready
+        guard bounds.width > 0, bounds.height > 0 else { return CGPoint(x: 0.5, y: 0.5) }
 
         var normalized = CGPoint(
             x: point.x / bounds.width,
@@ -105,9 +107,7 @@ extension InputCapturingView {
         var snapped = normalized
         // Snap cursor to bottom edge when in dock trigger zone (bottom 1%)
         // This allows users to easily open the iPad dock without precise edge targeting
-        if snapped.y >= 0.99 {
-            snapped.y = 1.0
-        }
+        if snapped.y >= 0.99 { snapped.y = 1.0 }
 
         return snapped
     }
@@ -131,7 +131,8 @@ extension InputCapturingView {
 
     // MARK: - Gesture Handlers
 
-    @objc func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+    @objc
+    func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
         let rawLocation = gesture.location(in: self)
         let location = normalizedLocation(rawLocation)
         let eventModifiers = modifiers(from: gesture)
@@ -148,9 +149,7 @@ extension InputCapturingView {
             let timeSinceLastTap = now - lastTapTime
             let distance = hypot(location.x - lastTapLocation.x, location.y - lastTapLocation.y)
 
-            if timeSinceLastTap < Self.multiClickTimeThreshold && distance < Self.multiClickDistanceThreshold {
-                currentClickCount += 1
-            } else {
+            if timeSinceLastTap < Self.multiClickTimeThreshold, distance < Self.multiClickDistanceThreshold { currentClickCount += 1 } else {
                 currentClickCount = 1
             }
 
@@ -159,7 +158,10 @@ extension InputCapturingView {
             isDragging = false
             lastPanLocation = location
 
-            MirageLogger.client("PRESS: normalized=(\(String(format: "%.3f", location.x)), \(String(format: "%.3f", location.y))), clickCount=\(currentClickCount)")
+            MirageLogger
+                .client(
+                    "PRESS: normalized=(\(String(format: "%.3f", location.x)), \(String(format: "%.3f", location.y))), clickCount=\(currentClickCount)"
+                )
 
             let mouseEvent = MirageMouseEvent(
                 button: .left,
@@ -172,7 +174,7 @@ extension InputCapturingView {
         case .changed:
             // Track all movement - no threshold, pixel-perfect dragging
             let distance = hypot(location.x - lastPanLocation.x, location.y - lastPanLocation.y)
-            if distance > 0.0001 {  // Any actual movement
+            if distance > 0.0001 { // Any actual movement
                 isDragging = true
                 let mouseEvent = MirageMouseEvent(button: .left, location: location, modifiers: eventModifiers)
                 onInputEvent?(.mouseDragged(mouseEvent))
@@ -205,7 +207,8 @@ extension InputCapturingView {
         }
     }
 
-    @objc func handleRightClick(_ gesture: UITapGestureRecognizer) {
+    @objc
+    func handleRightClick(_ gesture: UITapGestureRecognizer) {
         let location = normalizedLocation(gesture.location(in: self))
         let now = CACurrentMediaTime()
 
@@ -213,9 +216,7 @@ extension InputCapturingView {
         let timeSinceLastTap = now - lastRightTapTime
         let distance = hypot(location.x - lastRightTapLocation.x, location.y - lastRightTapLocation.y)
 
-        if timeSinceLastTap < Self.multiClickTimeThreshold && distance < Self.multiClickDistanceThreshold {
-            currentRightClickCount += 1
-        } else {
+        if timeSinceLastTap < Self.multiClickTimeThreshold, distance < Self.multiClickDistanceThreshold { currentRightClickCount += 1 } else {
             currentRightClickCount = 1
         }
 
@@ -234,19 +235,17 @@ extension InputCapturingView {
         onInputEvent?(.rightMouseUp(mouseEvent))
     }
 
-    @objc func handleScroll(_ gesture: UIPanGestureRecognizer) {
+    @objc
+    func handleScroll(_ gesture: UIPanGestureRecognizer) {
         let translation = gesture.translation(in: self)
-        let location: CGPoint
-        if usesVirtualTrackpad {
-            location = virtualCursorPosition
+        let location: CGPoint = if usesVirtualTrackpad {
+            virtualCursorPosition
         } else {
             // For touch scrolling, use the gesture location (center of two fingers)
-            location = normalizedLocation(gesture.location(in: self))
+            normalizedLocation(gesture.location(in: self))
         }
 
-        if gesture.state == .began {
-            stopTouchScrollDeceleration()
-        }
+        if gesture.state == .began { stopTouchScrollDeceleration() }
 
         // Reset translation to get incremental deltas
         gesture.setTranslation(.zero, in: self)
@@ -256,9 +255,7 @@ extension InputCapturingView {
 
         let eventModifiers = modifiers(from: gesture)
         let phase: MirageScrollPhase = {
-            if shouldDecelerate && (gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed) {
-                return .none
-            }
+            if shouldDecelerate, gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed { return .none }
             return MirageScrollPhase(gestureState: gesture.state)
         }()
 
@@ -268,25 +265,23 @@ extension InputCapturingView {
             location: location,
             phase: phase,
             modifiers: eventModifiers,
-            isPrecise: true  // Trackpad/touch scrolling is precise
+            isPrecise: true // Trackpad/touch scrolling is precise
         )
 
-        if translation != .zero || phase != .none {
-            onInputEvent?(.scrollWheel(scrollEvent))
-        }
+        if translation != .zero || phase != .none { onInputEvent?(.scrollWheel(scrollEvent)) }
 
-        if shouldDecelerate && (gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed) {
-            startTouchScrollDeceleration(with: velocity, location: location)
-        } else if gesture.state == .cancelled || gesture.state == .failed {
+        if shouldDecelerate && (gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed) { startTouchScrollDeceleration(with: velocity, location: location) } else if gesture.state == .cancelled || gesture.state == .failed {
             stopTouchScrollDeceleration()
         }
     }
 
-    @objc func handleHover(_ gesture: UIHoverGestureRecognizer) {
+    @objc
+    func handleHover(_ gesture: UIHoverGestureRecognizer) {
         let location = normalizedLocation(gesture.location(in: self))
 
         switch gesture.state {
-        case .began, .changed:
+        case .began,
+             .changed:
             if usesVirtualTrackpad {
                 setVirtualCursorVisible(false)
                 updateVirtualCursorPosition(location, updateVisibility: false)
@@ -308,40 +303,35 @@ extension InputCapturingView {
 
     // MARK: - Virtual Cursor Handlers
 
-    @objc func handleVirtualCursorPan(_ gesture: UIPanGestureRecognizer) {
+    @objc
+    func handleVirtualCursorPan(_ gesture: UIPanGestureRecognizer) {
         guard usesVirtualTrackpad else { return }
         setVirtualCursorVisible(true)
-        if gesture.state == .began {
-            stopVirtualCursorDeceleration()
-        }
+        if gesture.state == .began { stopVirtualCursorDeceleration() }
         let translation = gesture.translation(in: self)
         gesture.setTranslation(.zero, in: self)
 
         switch gesture.state {
-        case .began, .changed:
+        case .began,
+             .changed:
             moveVirtualCursor(by: translation)
             let eventModifiers = modifiers(from: gesture)
             let mouseEvent = MirageMouseEvent(button: .left, location: virtualCursorPosition, modifiers: eventModifiers)
-            if virtualDragActive {
-                onInputEvent?(.mouseDragged(mouseEvent))
-            } else {
+            if virtualDragActive { onInputEvent?(.mouseDragged(mouseEvent)) } else {
                 onInputEvent?(.mouseMoved(mouseEvent))
             }
         case .ended:
-            if !virtualDragActive {
-                startVirtualCursorDeceleration(with: gesture.velocity(in: self))
-            }
+            if !virtualDragActive { startVirtualCursorDeceleration(with: gesture.velocity(in: self)) }
         default:
             break
         }
     }
 
-    @objc func handleVirtualCursorLongPress(_ gesture: UILongPressGestureRecognizer) {
+    @objc
+    func handleVirtualCursorLongPress(_ gesture: UILongPressGestureRecognizer) {
         guard usesVirtualTrackpad else { return }
         setVirtualCursorVisible(true)
-        if gesture.state == .began {
-            stopVirtualCursorDeceleration()
-        }
+        if gesture.state == .began { stopVirtualCursorDeceleration() }
         let location = normalizedLocation(gesture.location(in: self))
         updateVirtualCursorPosition(location, updateVisibility: false)
         let eventModifiers = modifiers(from: gesture)
@@ -356,7 +346,8 @@ extension InputCapturingView {
                 modifiers: eventModifiers
             )
             onInputEvent?(.mouseDown(mouseEvent))
-        case .ended, .cancelled:
+        case .cancelled,
+             .ended:
             let mouseEvent = MirageMouseEvent(
                 button: .left,
                 location: virtualCursorPosition,
@@ -370,7 +361,8 @@ extension InputCapturingView {
         }
     }
 
-    @objc func handleVirtualCursorTap(_ gesture: UITapGestureRecognizer) {
+    @objc
+    func handleVirtualCursorTap(_ gesture: UITapGestureRecognizer) {
         guard usesVirtualTrackpad else { return }
         stopVirtualCursorDeceleration()
         setVirtualCursorVisible(true)
@@ -382,9 +374,7 @@ extension InputCapturingView {
             virtualCursorPosition.y - lastTapLocation.y
         )
 
-        if timeSinceLastTap < Self.multiClickTimeThreshold && distance < Self.multiClickDistanceThreshold {
-            currentClickCount += 1
-        } else {
+        if timeSinceLastTap < Self.multiClickTimeThreshold, distance < Self.multiClickDistanceThreshold { currentClickCount += 1 } else {
             currentClickCount = 1
         }
 
@@ -403,7 +393,8 @@ extension InputCapturingView {
         onInputEvent?(.mouseUp(mouseEvent))
     }
 
-    @objc func handleVirtualCursorRightTap(_ gesture: UITapGestureRecognizer) {
+    @objc
+    func handleVirtualCursorRightTap(_ gesture: UITapGestureRecognizer) {
         guard usesVirtualTrackpad else { return }
         stopVirtualCursorDeceleration()
         setVirtualCursorVisible(true)
@@ -415,9 +406,7 @@ extension InputCapturingView {
             virtualCursorPosition.y - lastRightTapLocation.y
         )
 
-        if timeSinceLastTap < Self.multiClickTimeThreshold && distance < Self.multiClickDistanceThreshold {
-            currentRightClickCount += 1
-        } else {
+        if timeSinceLastTap < Self.multiClickTimeThreshold, distance < Self.multiClickDistanceThreshold { currentRightClickCount += 1 } else {
             currentRightClickCount = 1
         }
 
@@ -438,7 +427,8 @@ extension InputCapturingView {
 
     // MARK: - Direct Touch Gesture Handlers
 
-    @objc func handleDirectPinch(_ gesture: UIPinchGestureRecognizer) {
+    @objc
+    func handleDirectPinch(_ gesture: UIPinchGestureRecognizer) {
         let phase = MirageScrollPhase(gestureState: gesture.state)
         refreshModifiersForInput()
 
@@ -454,7 +444,8 @@ extension InputCapturingView {
             let event = MirageMagnifyEvent(magnification: magnification, phase: phase)
             onInputEvent?(.magnify(event))
 
-        case .ended, .cancelled:
+        case .cancelled,
+             .ended:
             let event = MirageMagnifyEvent(magnification: 0, phase: phase)
             onInputEvent?(.magnify(event))
             lastDirectPinchScale = 1.0
@@ -464,7 +455,8 @@ extension InputCapturingView {
         }
     }
 
-    @objc func handleDirectRotation(_ gesture: UIRotationGestureRecognizer) {
+    @objc
+    func handleDirectRotation(_ gesture: UIRotationGestureRecognizer) {
         let phase = MirageScrollPhase(gestureState: gesture.state)
         refreshModifiersForInput()
 
@@ -481,7 +473,8 @@ extension InputCapturingView {
             let event = MirageRotateEvent(rotation: rotationDelta, phase: phase)
             onInputEvent?(.rotate(event))
 
-        case .ended, .cancelled:
+        case .cancelled,
+             .ended:
             let event = MirageRotateEvent(rotation: 0, phase: phase)
             onInputEvent?(.rotate(event))
             lastDirectRotationAngle = 0
@@ -510,9 +503,7 @@ extension InputCapturingView {
 
         virtualCursorPosition = clamped
         lastCursorPosition = clamped
-        if updateVisibility {
-            setVirtualCursorVisible(true)
-        }
+        if updateVisibility { setVirtualCursorVisible(true) }
         updateVirtualCursorViewPosition()
     }
 
@@ -556,7 +547,8 @@ extension InputCapturingView {
         touchScrollDecelerationVelocity = .zero
     }
 
-    @objc func handleTouchScrollDeceleration(_ displayLink: CADisplayLink) {
+    @objc
+    func handleTouchScrollDeceleration(_ displayLink: CADisplayLink) {
         let dt = displayLink.targetTimestamp - displayLink.timestamp
         let decelerationRate = UIScrollView.DecelerationRate.normal.rawValue
 
@@ -597,7 +589,8 @@ extension InputCapturingView {
         }
     }
 
-    @objc func handleVirtualCursorDeceleration(_ displayLink: CADisplayLink) {
+    @objc
+    func handleVirtualCursorDeceleration(_ displayLink: CADisplayLink) {
         guard !virtualDragActive else {
             stopVirtualCursorDeceleration()
             return
@@ -623,24 +616,24 @@ extension InputCapturingView {
         virtualCursorVelocity.x *= decay
         virtualCursorVelocity.y *= decay
 
-        if hypot(virtualCursorVelocity.x, virtualCursorVelocity.y) < 5 {
-            stopVirtualCursorDeceleration()
-        }
+        if hypot(virtualCursorVelocity.x, virtualCursorVelocity.y) < 5 { stopVirtualCursorDeceleration() }
     }
 }
 
 // MARK: - UIGestureRecognizerDelegate
 
 extension InputCapturingView: UIGestureRecognizerDelegate {
-    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    )
+    -> Bool {
         // Allow hover to work with other gestures
-        if gestureRecognizer is UIHoverGestureRecognizer || otherGestureRecognizer is UIHoverGestureRecognizer {
-            return true
-        }
+        if gestureRecognizer is UIHoverGestureRecognizer || otherGestureRecognizer is UIHoverGestureRecognizer { return true }
 
         // Allow pinch and rotation to work simultaneously (map-style interaction)
         if (gestureRecognizer is UIPinchGestureRecognizer && otherGestureRecognizer is UIRotationGestureRecognizer) ||
-           (gestureRecognizer is UIRotationGestureRecognizer && otherGestureRecognizer is UIPinchGestureRecognizer) {
+            (gestureRecognizer is UIRotationGestureRecognizer && otherGestureRecognizer is UIPinchGestureRecognizer) {
             return true
         }
 

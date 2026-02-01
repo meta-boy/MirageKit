@@ -27,11 +27,11 @@ public enum MirageTrustDecision: Sendable, Equatable {
 
     public static func == (lhs: MirageTrustDecision, rhs: MirageTrustDecision) -> Bool {
         switch (lhs, rhs) {
-        case (.trusted, .trusted): return true
-        case (.requiresApproval, .requiresApproval): return true
-        case (.denied, .denied): return true
-        case (.unavailable(let a), .unavailable(let b)): return a == b
-        default: return false
+        case (.trusted, .trusted): true
+        case (.requiresApproval, .requiresApproval): true
+        case (.denied, .denied): true
+        case let (.unavailable(a), .unavailable(b)): a == b
+        default: false
         }
     }
 }
@@ -106,7 +106,8 @@ public protocol MirageTrustProvider: AnyObject, Sendable {
     ///
     /// - Parameter peer: Identity information about the connecting device.
     /// - Returns: Decision on how to handle the connection.
-    @MainActor func evaluateTrust(for peer: MiragePeerIdentity) async -> MirageTrustDecision
+    @MainActor
+    func evaluateTrust(for peer: MiragePeerIdentity) async -> MirageTrustDecision
 
     /// Grants trust to a peer, persisting the decision.
     ///
@@ -114,10 +115,12 @@ public protocol MirageTrustProvider: AnyObject, Sendable {
     /// The provider should persist this trust decision for future connections.
     ///
     /// - Parameter peer: Identity of the peer to trust.
-    @MainActor func grantTrust(to peer: MiragePeerIdentity) async throws
+    @MainActor
+    func grantTrust(to peer: MiragePeerIdentity) async throws
 
     /// Revokes previously granted trust for a device.
     ///
     /// - Parameter deviceID: Identifier of the device to revoke trust for.
-    @MainActor func revokeTrust(for deviceID: UUID) async throws
+    @MainActor
+    func revokeTrust(for deviceID: UUID) async throws
 }

@@ -63,9 +63,7 @@ public final class MirageClientSessionStore {
     }
 
     /// Get all active sessions.
-    public var activeSessions: [MirageStreamSessionState] {
-        Array(streamSessions.values)
-    }
+    public var activeSessions: [MirageStreamSessionState] { Array(streamSessions.values) }
 
     /// Create a new stream session.
     /// - Parameters:
@@ -80,7 +78,8 @@ public final class MirageClientSessionStore {
         window: MirageWindow,
         hostName: String,
         minSize: CGSize?
-    ) -> StreamSessionID {
+    )
+    -> StreamSessionID {
         let sessionID = StreamSessionID()
 
         let state = MirageStreamSessionState(
@@ -104,9 +103,7 @@ public final class MirageClientSessionStore {
     /// Remove a stream session and its cached state.
     /// - Parameter sessionID: The session identifier to remove.
     public func removeSession(_ sessionID: StreamSessionID) {
-        if focusedSessionID == sessionID {
-            focusedSessionID = nil
-        }
+        if focusedSessionID == sessionID { focusedSessionID = nil }
 
         streamSessions.removeValue(forKey: sessionID)
         sessionMinSizes.removeValue(forKey: sessionID)
@@ -131,9 +128,7 @@ public final class MirageClientSessionStore {
     ///   - streamID: Stream identifier to update.
     ///   - minSize: Minimum size in points reported by the host.
     public func updateMinimumSize(for streamID: StreamID, minSize: CGSize) {
-        guard let sessionEntry = streamSessions.first(where: { $0.value.streamID == streamID }) else {
-            return
-        }
+        guard let sessionEntry = streamSessions.first(where: { $0.value.streamID == streamID }) else { return }
 
         let session = sessionEntry.value
         session.minWidth = max(1, minSize.width)
@@ -182,9 +177,7 @@ public final class MirageClientSessionStore {
     /// Used to drive UI state without per-frame SwiftUI updates.
     public func markFirstFrameReceived(for streamID: StreamID) {
         if streamID == loginDisplayStreamID {
-            if !loginDisplayHasFrame {
-                loginDisplayHasFrame = true
-            }
+            if !loginDisplayHasFrame { loginDisplayHasFrame = true }
             return
         }
 

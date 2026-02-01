@@ -46,7 +46,7 @@ public struct MirageAppStreamSession: Identifiable, Sendable {
     /// When the client disconnected unexpectedly (for reservation period)
     public var disconnectedAt: Date?
 
-    public var id_: String { id.uuidString }
+    public var _id: String { id.uuidString }
 
     public init(
         id: UUID = UUID(),
@@ -136,9 +136,7 @@ public struct WindowStreamInfo: Sendable {
 
 public extension MirageAppStreamSession {
     /// Whether this session has any active (non-cooldown) windows
-    var hasActiveWindows: Bool {
-        !windowStreams.isEmpty
-    }
+    var hasActiveWindows: Bool { !windowStreams.isEmpty }
 
     /// Whether this session is in a reservation period (client disconnected)
     var isReserved: Bool {
@@ -148,14 +146,12 @@ public extension MirageAppStreamSession {
 
     /// Whether the reservation has expired
     var reservationExpired: Bool {
-        guard case .disconnected(let expiresAt) = state else { return false }
+        guard case let .disconnected(expiresAt) = state else { return false }
         return Date() > expiresAt
     }
 
     /// Total number of windows (streaming + cooldown)
-    var totalWindowCount: Int {
-        windowStreams.count + windowsInCooldown.count
-    }
+    var totalWindowCount: Int { windowStreams.count + windowsInCooldown.count }
 
     /// Check if a specific window is in cooldown
     func isWindowInCooldown(_ windowID: WindowID) -> Bool {

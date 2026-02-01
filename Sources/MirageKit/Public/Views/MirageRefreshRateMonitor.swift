@@ -62,14 +62,12 @@ final class MirageRefreshRateMonitor: NSObject {
         pollTask = Task { @MainActor [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                if self.isProMotionEnabled, self.isViewReadyForSampling {
-                    self.evaluateScreenMaxFPS()
-                } else if !self.isProMotionEnabled {
-                    self.setOverride(60)
+                if isProMotionEnabled, isViewReadyForSampling { evaluateScreenMaxFPS() } else if !isProMotionEnabled {
+                    setOverride(60)
                 }
 
                 do {
-                    try await Task.sleep(for: self.pollInterval)
+                    try await Task.sleep(for: pollInterval)
                 } catch {
                     break
                 }
@@ -84,24 +82,16 @@ final class MirageRefreshRateMonitor: NSObject {
 
     private func evaluateScreenMaxFPS() {
         let maxFPS = resolveScreenMaxFPS()
-        if maxFPS != lastScreenMaxFPS {
-            lastScreenMaxFPS = maxFPS
-        }
-        if maxFPS > 0 {
-            MirageClientService.lastKnownScreenMaxFPS = maxFPS
-        }
+        if maxFPS != lastScreenMaxFPS { lastScreenMaxFPS = maxFPS }
+        if maxFPS > 0 { MirageClientService.lastKnownScreenMaxFPS = maxFPS }
         let target = maxFPS >= 120 ? 120 : 60
         setOverride(target)
     }
 
     private func resolveScreenMaxFPS() -> Int {
         #if os(iOS)
-        if let screen = view?.window?.windowScene?.screen {
-            return screen.maximumFramesPerSecond
-        }
-        if let screen = view?.window?.screen {
-            return screen.maximumFramesPerSecond
-        }
+        if let screen = view?.window?.windowScene?.screen { return screen.maximumFramesPerSecond }
+        if let screen = view?.window?.screen { return screen.maximumFramesPerSecond }
         return 60
         #else
         // visionOS doesn't have UIScreen; use 90 fps (Vision Pro native rate)

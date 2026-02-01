@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/5/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -38,9 +38,7 @@ func currentWindowFrame(for windowID: WindowID) -> CGRect? {
 
 /// Fetches extended window metadata from CGWindowList for visibility filtering
 func fetchWindowMetadata() -> [CGWindowID: (alpha: CGFloat, isOnScreen: Bool)] {
-    guard let windowList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
-        return [:]
-    }
+    guard let windowList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else { return [:] }
 
     var metadata: [CGWindowID: (alpha: CGFloat, isOnScreen: Bool)] = [:]
     for info in windowList {
@@ -55,14 +53,18 @@ func fetchWindowMetadata() -> [CGWindowID: (alpha: CGFloat, isOnScreen: Bool)] {
 /// Checks if two frames are nearly identical (used for tab detection)
 func framesAreNearlyIdentical(_ a: CGRect, _ b: CGRect, tolerance: CGFloat = 5) -> Bool {
     abs(a.origin.x - b.origin.x) < tolerance &&
-    abs(a.origin.y - b.origin.y) < tolerance &&
-    abs(a.width - b.width) < tolerance &&
-    abs(a.height - b.height) < tolerance
+        abs(a.origin.y - b.origin.y) < tolerance &&
+        abs(a.width - b.width) < tolerance &&
+        abs(a.height - b.height) < tolerance
 }
 
 /// Detects tabbed windows, collapses them, and filters by visibility
 /// Native macOS tabs share the exact same frame since only one tab is visible at a time
-func detectAndCollapseTabGroups(_ windows: [MirageWindow], metadata: [CGWindowID: (alpha: CGFloat, isOnScreen: Bool)]) -> [MirageWindow] {
+func detectAndCollapseTabGroups(
+    _ windows: [MirageWindow],
+    metadata: [CGWindowID: (alpha: CGFloat, isOnScreen: Bool)]
+)
+-> [MirageWindow] {
     // Group windows by application
     var windowsByApp: [Int32: [MirageWindow]] = [:]
     for window in windows {
@@ -87,13 +89,13 @@ func detectAndCollapseTabGroups(_ windows: [MirageWindow], metadata: [CGWindowID
 
             let similarFrameWindows = appWindows.filter { other in
                 guard other.id != window.id,
-                      !processed.contains(other.id) else { return false }
+                      !processed.contains(other.id) else {
+                    return false
+                }
                 return framesAreNearlyIdentical(window.frame, other.frame)
             }
 
-            if similarFrameWindows.isEmpty {
-                collapsedWindows.append(window)
-            } else {
+            if similarFrameWindows.isEmpty { collapsedWindows.append(window) } else {
                 let allInGroup = [window] + similarFrameWindows
                 let tabCount = allInGroup.count
 
@@ -133,9 +135,7 @@ func detectAndCollapseTabGroups(_ windows: [MirageWindow], metadata: [CGWindowID
             result.append(contentsOf: onScreenWindows)
         } else {
             // No on-screen windows - show one (likely minimized)
-            if let first = appWindows.first {
-                result.append(first)
-            }
+            if let first = appWindows.first { result.append(first) }
         }
     }
 

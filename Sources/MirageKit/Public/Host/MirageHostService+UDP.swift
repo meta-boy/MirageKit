@@ -18,10 +18,11 @@ extension MirageHostService {
         params.serviceClass = .interactiveVideo
         params.includePeerToPeer = networkConfig.enablePeerToPeer
 
-        let port: NWEndpoint.Port = networkConfig.dataPort == 0 ? .any : NWEndpoint.Port(rawValue: networkConfig.dataPort) ?? .any
+        let port: NWEndpoint.Port = networkConfig.dataPort == 0 ? .any : NWEndpoint
+            .Port(rawValue: networkConfig.dataPort) ?? .any
 
         let listener = try NWListener(using: params, on: port)
-        self.udpListener = listener
+        udpListener = listener
 
         listener.newConnectionHandler = { [weak self] connection in
             connection.start(queue: .global(qos: .userInteractive))
@@ -36,10 +37,8 @@ extension MirageHostService {
             listener.stateUpdateHandler = { [continuationBox] state in
                 switch state {
                 case .ready:
-                    if let port = listener.port?.rawValue {
-                        continuationBox.resume(returning: port)
-                    }
-                case .failed(let error):
+                    if let port = listener.port?.rawValue { continuationBox.resume(returning: port) }
+                case let .failed(error):
                     continuationBox.resume(throwing: error)
                 case .cancelled:
                     continuationBox.resume(throwing: MirageError.protocolError("Listener cancelled"))
@@ -55,7 +54,12 @@ extension MirageHostService {
     /// Handle an incoming UDP connection from a client (for video data).
     func handleIncomingVideoConnection(_ connection: NWConnection) async {
         while true {
-            let result: (Data?, NWConnection.ContentContext?, Bool, NWError?) = await withCheckedContinuation { continuation in
+            let result: (
+                Data?,
+                NWConnection.ContentContext?,
+                Bool,
+                NWError?
+            ) = await withCheckedContinuation { continuation in
                 connection.receive(minimumIncompleteLength: 22, maximumLength: 64) { data, context, isComplete, error in
                     continuation.resume(returning: (data, context, isComplete, error))
                 }

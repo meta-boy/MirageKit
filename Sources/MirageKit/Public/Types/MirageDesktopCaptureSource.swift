@@ -14,9 +14,9 @@ public enum MirageDesktopCaptureSource: String, Sendable, CaseIterable, Codable 
     public var displayName: String {
         switch self {
         case .virtualDisplay:
-            return "Virtual Display"
+            "Virtual Display"
         case .mainDisplay:
-            return "Main Display"
+            "Main Display"
         }
     }
 }

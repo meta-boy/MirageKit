@@ -11,13 +11,11 @@ import CoreGraphics
 import Foundation
 
 @MainActor
-extension MirageClientService {
+public extension MirageClientService {
     /// Request list of installed apps from host.
     /// - Parameter includeIcons: Whether to include app icons (increases message size).
-    public func requestAppList(includeIcons: Bool = true) async throws {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+    func requestAppList(includeIcons: Bool = true) async throws {
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         MirageLogger.client("Requesting app list from host (includeIcons: \(includeIcons))")
         let request = AppListRequestMessage(includeIcons: includeIcons)
@@ -37,7 +35,7 @@ extension MirageClientService {
     ///   - encoderOverrides: Optional per-stream encoder overrides.
     // TODO: HDR support - requires proper virtual display EDR configuration.
     // ///   - preferHDR: Whether to request HDR streaming (Rec. 2020 with PQ).
-    public func selectApp(
+    func selectApp(
         bundleIdentifier: String,
         quality: MirageQualityPreset = .medium,
         scaleFactor: CGFloat? = nil,
@@ -46,10 +44,9 @@ extension MirageClientService {
         keyframeQuality: Float? = nil,
         encoderOverrides: MirageEncoderOverrides? = nil
         // preferHDR: Bool = false
-    ) async throws {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+    )
+    async throws {
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         // Use provided display resolution or detect from main display.
         let effectiveDisplayResolution = scaledDisplayResolution(displayResolution ?? getMainDisplayResolution())
@@ -77,12 +74,8 @@ extension MirageClientService {
         // request.preferHDR = preferHDR
 
         var overrides = encoderOverrides ?? MirageEncoderOverrides()
-        if overrides.keyFrameInterval == nil {
-            overrides.keyFrameInterval = keyFrameInterval
-        }
-        if overrides.frameQuality == nil {
-            overrides.frameQuality = keyframeQuality
-        }
+        if overrides.keyFrameInterval == nil { overrides.keyFrameInterval = keyFrameInterval }
+        if overrides.frameQuality == nil { overrides.frameQuality = keyframeQuality }
         applyEncoderOverrides(overrides, to: &request)
 
         let message = try ControlMessage(type: .selectApp, content: request)
@@ -94,10 +87,8 @@ extension MirageClientService {
 
     /// Cancel a window cooldown and close immediately.
     /// - Parameter windowID: The window currently in cooldown.
-    public func cancelCooldown(windowID: WindowID) async throws {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+    func cancelCooldown(windowID: WindowID) async throws {
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         let request = CancelCooldownMessage(windowID: windowID)
         let message = try ControlMessage(type: .cancelCooldown, content: request)

@@ -13,11 +13,11 @@ import Foundation
 import ScreenCaptureKit
 
 @MainActor
-extension MirageHostService {
-    public func startStream(
+public extension MirageHostService {
+    func startStream(
         for window: MirageWindow,
         to client: MirageConnectedClient,
-        dataPort: UInt16? = nil,
+        dataPort _: UInt16? = nil,
         clientDisplayResolution: CGSize? = nil,
         keyFrameInterval: Int? = nil,
         frameQuality: Float? = nil,
@@ -33,20 +33,17 @@ extension MirageHostService {
         minBitrate: Int? = nil,
         maxBitrate: Int? = nil
         // hdr: Bool = false
-    ) async throws -> MirageStreamSession {
+    )
+    async throws -> MirageStreamSession {
         // Clear any stuck modifier state from previous streams
         inputController.clearAllModifiers()
 
         // Get the actual SCWindow, its owning application, and the display it's on
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        guard let scWindow = content.windows.first(where: { $0.windowID == window.id }) else {
-            throw MirageError.windowNotFound
-        }
+        guard let scWindow = content.windows.first(where: { $0.windowID == window.id }) else { throw MirageError.windowNotFound }
 
         // Get the owning application (needed for app-level capture that includes alerts/sheets)
-        guard let scApplication = scWindow.owningApplication else {
-            throw MirageError.protocolError("Window has no owning application")
-        }
+        guard let scApplication = scWindow.owningApplication else { throw MirageError.protocolError("Window has no owning application") }
 
         // Find the display containing this window (needed for app-level capture filter)
         guard let scDisplay = content.displays.first(where: { display in
@@ -74,49 +71,17 @@ extension MirageHostService {
             client: client
         )
 
-        // Create encoder config with client-requested overrides
-        var effectiveEncoderConfig: MirageEncoderConfiguration
-        if keyFrameInterval != nil || frameQuality != nil || keyframeQuality != nil || pixelFormat != nil || colorSpace != nil || captureQueueDepth != nil || minBitrate != nil || maxBitrate != nil {
-            effectiveEncoderConfig = encoderConfig.withOverrides(
-                keyFrameInterval: keyFrameInterval,
-                frameQuality: frameQuality,
-                keyframeQuality: keyframeQuality,
-                pixelFormat: pixelFormat,
-                colorSpace: colorSpace,
-                captureQueueDepth: captureQueueDepth,
-                minBitrate: minBitrate,
-                maxBitrate: maxBitrate
-            )
-            if let interval = keyFrameInterval {
-                MirageLogger.host("Using client-requested keyframe interval: \(interval) frames")
-            }
-            if let quality = frameQuality {
-                MirageLogger.host("Using client-requested frame quality: \(quality)")
-            }
-            if let quality = keyframeQuality {
-                MirageLogger.host("Using client-requested keyframe quality: \(quality)")
-            }
-            if let colorSpace {
-                MirageLogger.host("Using client-requested color space: \(colorSpace.displayName)")
-            }
-            if let captureQueueDepth {
-                MirageLogger.host("Using client-requested capture queue depth: \(captureQueueDepth)")
-            }
-            if let minBitrate {
-                MirageLogger.host("Using client-requested minimum bitrate: \(minBitrate)")
-            }
-            if let maxBitrate {
-                MirageLogger.host("Using client-requested maximum bitrate: \(maxBitrate)")
-            }
-        } else {
-            effectiveEncoderConfig = encoderConfig
-        }
-
-        // Apply target frame rate override if specified (based on P2P + client capability)
-        if let targetFrameRate {
-            effectiveEncoderConfig = effectiveEncoderConfig.withTargetFrameRate(targetFrameRate)
-            MirageLogger.host("Using target frame rate: \(targetFrameRate)fps")
-        }
+        let effectiveEncoderConfig = resolveEncoderConfiguration(
+            keyFrameInterval: keyFrameInterval,
+            frameQuality: frameQuality,
+            keyframeQuality: keyframeQuality,
+            targetFrameRate: targetFrameRate,
+            pixelFormat: pixelFormat,
+            colorSpace: colorSpace,
+            captureQueueDepth: captureQueueDepth,
+            minBitrate: minBitrate,
+            maxBitrate: maxBitrate
+        )
 
         // TODO: HDR support - requires proper virtual display EDR configuration
         // Apply HDR color space if requested
@@ -139,7 +104,7 @@ extension MirageHostService {
         await context.setMetricsUpdateHandler { [weak self] metrics in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                guard let clientContext = self.findClientContext(clientID: client.id) else { return }
+                guard let clientContext = findClientContext(clientID: client.id) else { return }
                 do {
                     try await clientContext.send(.streamMetricsUpdate, content: metrics)
                 } catch {
@@ -177,9 +142,13 @@ extension MirageHostService {
         // This will throw if screen recording permission is not granted
         do {
             // Use virtual display if client provides display resolution, otherwise use legacy window capture
-            if let displayResolution = clientDisplayResolution, displayResolution.width > 0, displayResolution.height > 0 {
+            if let displayResolution = clientDisplayResolution, displayResolution.width > 0,
+               displayResolution.height > 0 {
                 // Virtual display mode - captures entire virtual display at client resolution
-                MirageLogger.host("Starting stream with virtual display at \(Int(displayResolution.width))x\(Int(displayResolution.height))")
+                MirageLogger
+                    .host(
+                        "Starting stream with virtual display at \(Int(displayResolution.width))x\(Int(displayResolution.height))"
+                    )
 
                 try await context.startWithVirtualDisplay(
                     windowWrapper: windowWrapper,
@@ -291,14 +260,54 @@ extension MirageHostService {
         }
 
         // Start menu bar monitoring for this stream
-        if let app = updatedWindow.application {
-            await startMenuBarMonitoring(streamID: streamID, app: app, client: client)
-        }
+        if let app = updatedWindow.application { await startMenuBarMonitoring(streamID: streamID, app: app, client: client) }
 
         return session
     }
 
-    public func stopStream(_ session: MirageStreamSession, minimizeWindow: Bool = false) async {
+    private func resolveEncoderConfiguration(
+        keyFrameInterval: Int?,
+        frameQuality: Float?,
+        keyframeQuality: Float?,
+        targetFrameRate: Int?,
+        pixelFormat: MiragePixelFormat?,
+        colorSpace: MirageColorSpace?,
+        captureQueueDepth: Int?,
+        minBitrate: Int?,
+        maxBitrate: Int?
+    ) -> MirageEncoderConfiguration {
+        var effectiveEncoderConfig = encoderConfig
+        if keyFrameInterval != nil || frameQuality != nil || keyframeQuality != nil || pixelFormat != nil ||
+            colorSpace != nil || captureQueueDepth != nil || minBitrate != nil || maxBitrate != nil {
+            effectiveEncoderConfig = encoderConfig.withOverrides(
+                keyFrameInterval: keyFrameInterval,
+                frameQuality: frameQuality,
+                keyframeQuality: keyframeQuality,
+                pixelFormat: pixelFormat,
+                colorSpace: colorSpace,
+                captureQueueDepth: captureQueueDepth,
+                minBitrate: minBitrate,
+                maxBitrate: maxBitrate
+            )
+            if let interval = keyFrameInterval { MirageLogger.host("Using client-requested keyframe interval: \(interval) frames") }
+            if let quality = frameQuality { MirageLogger.host("Using client-requested frame quality: \(quality)") }
+            if let quality = keyframeQuality { MirageLogger.host("Using client-requested keyframe quality: \(quality)") }
+            if let colorSpace { MirageLogger.host("Using client-requested color space: \(colorSpace.displayName)") }
+            if let captureQueueDepth { MirageLogger.host("Using client-requested capture queue depth: \(captureQueueDepth)") }
+            if let minBitrate { MirageLogger.host("Using client-requested minimum bitrate: \(minBitrate)") }
+            if let maxBitrate { MirageLogger.host("Using client-requested maximum bitrate: \(maxBitrate)") }
+        }
+
+        // Apply target frame rate override if specified (based on P2P + client capability)
+        if let targetFrameRate {
+            effectiveEncoderConfig = effectiveEncoderConfig.withTargetFrameRate(targetFrameRate)
+            MirageLogger.host("Using target frame rate: \(targetFrameRate)fps")
+        }
+
+        return effectiveEncoderConfig
+    }
+
+    func stopStream(_ session: MirageStreamSession, minimizeWindow: Bool = false) async {
         guard let context = streamsByID[session.id] else { return }
 
         // Clear any stuck modifier state when stream ends
@@ -317,9 +326,7 @@ extension MirageHostService {
         windowsUsingVirtualDisplay.remove(windowID)
 
         // Clear shared bounds if no more windows using virtual display
-        if windowsUsingVirtualDisplay.isEmpty {
-            sharedVirtualDisplayBounds = nil
-        }
+        if windowsUsingVirtualDisplay.isEmpty { sharedVirtualDisplayBounds = nil }
 
         await context.stop()
         streamsByID.removeValue(forKey: session.id)
@@ -329,14 +336,10 @@ extension MirageHostService {
         inputStreamCacheActor.remove(session.id)
 
         // Clean up UDP connection for this stream
-        if let udpConnection = udpConnectionsByStream.removeValue(forKey: session.id) {
-            udpConnection.cancel()
-        }
+        if let udpConnection = udpConnectionsByStream.removeValue(forKey: session.id) { udpConnection.cancel() }
 
         // Minimize the window if requested (after stopping capture so window is restored from virtual display)
-        if minimizeWindow {
-            WindowManager.minimizeWindow(windowID)
-        }
+        if minimizeWindow { WindowManager.minimizeWindow(windowID) }
 
         if activeStreams.isEmpty {
             // Stop activity monitor when no more streams are active
@@ -344,13 +347,11 @@ extension MirageHostService {
             windowActivityMonitor = nil
 
             // Disable power assertion when no more streams are active (including login display)
-            if loginDisplayStreamID == nil {
-                await PowerAssertionManager.shared.disable()
-            }
+            if loginDisplayStreamID == nil { await PowerAssertionManager.shared.disable() }
         }
     }
 
-    public func notifyWindowResized(_ window: MirageWindow) async {
+    func notifyWindowResized(_ window: MirageWindow) async {
         // Find any active streams for this window and update their dimensions
         let latestFrame = currentWindowFrame(for: window.id) ?? window.frame
         let updatedWindow = MirageWindow(
@@ -404,7 +405,8 @@ extension MirageHostService {
                         dimensionToken: dimensionToken
                     )
                     try await clientContext.send(.streamStarted, content: message)
-                    MirageLogger.host("Encoding at scaled resolution: \(encodedDimensions.width)x\(encodedDimensions.height)")
+                    MirageLogger
+                        .host("Encoding at scaled resolution: \(encodedDimensions.width)x\(encodedDimensions.height)")
                 }
             } catch {
                 MirageLogger.error(.host, "Failed to update stream dimensions: \(error)")
@@ -412,7 +414,7 @@ extension MirageHostService {
         }
     }
 
-    public func updateCaptureResolution(for windowID: WindowID, width: Int, height: Int) async {
+    func updateCaptureResolution(for windowID: WindowID, width: Int, height: Int) async {
         // Find the stream for this window
         guard let session = activeStreams.first(where: { $0.window.id == windowID }),
               let context = streamsByID[session.id] else {
@@ -455,12 +457,12 @@ extension MirageHostService {
                 let minWidth = Int(minSize?.width ?? CGFloat(fallbackMin.minWidth))
                 let minHeight = Int(minSize?.height ?? CGFloat(fallbackMin.minHeight))
 
-                let message = StreamStartedMessage(
+                let message = await StreamStartedMessage(
                     streamID: session.id,
                     windowID: windowID,
                     width: width,
                     height: height,
-                    frameRate: await context.getTargetFrameRate(),
+                    frameRate: context.getTargetFrameRate(),
                     codec: encoderConfig.codec,
                     minWidth: minWidth,
                     minHeight: minHeight,

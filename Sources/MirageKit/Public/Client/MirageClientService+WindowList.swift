@@ -10,12 +10,10 @@
 import Foundation
 
 @MainActor
-extension MirageClientService {
+public extension MirageClientService {
     /// Request updated window list from host.
-    public func requestWindowList() async throws {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+    func requestWindowList() async throws {
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         let message = ControlMessage(type: .windowListRequest)
         connection.send(content: message.serialize(), completion: .idempotent)

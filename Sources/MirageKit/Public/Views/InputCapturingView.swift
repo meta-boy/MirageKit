@@ -20,14 +20,12 @@ public class InputCapturingView: UIView {
     /// Override safe area insets to ensure Metal view fills entire screen.
     /// SwiftUI's .ignoresSafeArea() doesn't propagate through UIViewRepresentable boundaries,
     /// so we must explicitly return zero insets at the UIKit layer.
-    public override var safeAreaInsets: UIEdgeInsets { .zero }
+    override public var safeAreaInsets: UIEdgeInsets { .zero }
 
     /// Callback for input events - set by the SwiftUI representable's coordinator
     public var onInputEvent: ((MirageInputEvent) -> Void)? {
         didSet {
-            if onInputEvent != nil {
-                sendModifierStateIfNeeded(force: true)
-            }
+            if onInputEvent != nil { sendModifierStateIfNeeded(force: true) }
         }
     }
 
@@ -51,13 +49,9 @@ public class InputCapturingView: UIView {
         didSet {
             metalView.streamID = streamID
             let previousID = registeredCursorStreamID
-            if let previousID, previousID != streamID {
-                MirageCursorUpdateRouter.shared.unregister(streamID: previousID)
-            }
+            if let previousID, previousID != streamID { MirageCursorUpdateRouter.shared.unregister(streamID: previousID) }
             registeredCursorStreamID = streamID
-            if let streamID {
-                MirageCursorUpdateRouter.shared.register(view: self, for: streamID)
-            }
+            if let streamID { MirageCursorUpdateRouter.shared.register(view: self, for: streamID) }
             cursorSequence = 0
             refreshCursorIfNeeded(force: true)
         }
@@ -113,7 +107,7 @@ public class InputCapturingView: UIView {
     #else
     private let virtualCursorView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
     #endif
-    var virtualCursorPosition: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    var virtualCursorPosition: CGPoint = .init(x: 0.5, y: 0.5)
     private let virtualCursorSize: CGFloat = 14
     var virtualCursorVelocity: CGPoint = .zero
     var virtualCursorDecelerationLink: CADisplayLink?
@@ -122,13 +116,14 @@ public class InputCapturingView: UIView {
     var touchScrollDecelerationLink: CADisplayLink?
     var touchScrollDecelerationLocation: CGPoint = .zero
 
-    // Software keyboard state
+    /// Software keyboard state
     public var softwareKeyboardVisible: Bool = false {
         didSet {
             guard softwareKeyboardVisible != oldValue else { return }
             updateSoftwareKeyboardVisibility()
         }
     }
+
     var softwareKeyboardField: SoftwareKeyboardTextField?
     var softwareKeyboardAccessoryView: SoftwareKeyboardAccessoryView?
     var isSoftwareKeyboardShown: Bool = false
@@ -148,7 +143,7 @@ public class InputCapturingView: UIView {
     var isDragging = false
     var lastPanLocation: CGPoint = .zero
 
-    // Track last cursor position for scroll events (normalized 0-1)
+    /// Track last cursor position for scroll events (normalized 0-1)
     var lastCursorPosition: CGPoint?
 
     // Track keyboard modifier state - single source of truth
@@ -158,7 +153,7 @@ public class InputCapturingView: UIView {
     var lastSentModifiers: MirageModifierFlags = []
     var modifierRefreshTask: Task<Void, Never>?
     var hardwareRefreshFailureCount: Int = 0
-#if canImport(GameController)
+    #if canImport(GameController)
     static let hardwareModifierKeyCodes: Set<GCKeyCode> = [
         .leftShift,
         .rightShift,
@@ -168,21 +163,17 @@ public class InputCapturingView: UIView {
         .rightAlt,
         .leftGUI,
         .rightGUI,
-        .capsLock
+        .capsLock,
     ]
-#endif
+    #endif
 
     /// Get current modifier state from held keyboard keys
     var keyboardModifiers: MirageModifierFlags {
         var modifiers: MirageModifierFlags = []
         for keyCode in heldModifierKeys {
-            if let modifier = Self.modifierKeyMap[keyCode] {
-                modifiers.insert(modifier)
-            }
+            if let modifier = Self.modifierKeyMap[keyCode] { modifiers.insert(modifier) }
         }
-        if capsLockEnabled {
-            modifiers.insert(.capsLock)
-        }
+        if capsLockEnabled { modifiers.insert(.capsLock) }
         modifiers.formUnion(softwareHeldModifiers)
         return modifiers
     }
@@ -198,9 +189,7 @@ public class InputCapturingView: UIView {
     @discardableResult
     func refreshModifiersForInput() -> Bool {
         let hardwareAvailable = refreshModifierStateFromHardware()
-        if hardwareAvailable {
-            sendModifierSnapshotIfNeeded(keyboardModifiers)
-        }
+        if hardwareAvailable { sendModifierSnapshotIfNeeded(keyboardModifiers) }
         return hardwareAvailable
     }
 
@@ -224,9 +213,7 @@ public class InputCapturingView: UIView {
         for (flag, keys) in Self.modifierFlagToKeys where flags.contains(flag) {
             let existingKeys = keys.filter { heldModifierKeys.contains($0) }
             if existingKeys.isEmpty {
-                if let primaryKey = keys.first {
-                    newHeldKeys.insert(primaryKey)
-                }
+                if let primaryKey = keys.first { newHeldKeys.insert(primaryKey) }
             } else {
                 newHeldKeys.formUnion(existingKeys)
             }
@@ -238,16 +225,17 @@ public class InputCapturingView: UIView {
         heldModifierKeys = newHeldKeys
         capsLockEnabled = newCapsLockEnabled
         sendModifierStateIfNeeded(force: true)
-        if heldModifierKeys.isEmpty {
-            stopModifierRefresh()
-        } else {
+        if heldModifierKeys.isEmpty { stopModifierRefresh() } else {
             startModifierRefreshIfNeeded()
         }
     }
 
     /// Clear all held modifiers with a snapshot update
     func resetAllModifiers() {
-        guard !heldModifierKeys.isEmpty || !softwareHeldModifiers.isEmpty || capsLockEnabled || !lastSentModifiers.isEmpty else { return }
+        guard !heldModifierKeys.isEmpty || !softwareHeldModifiers.isEmpty || capsLockEnabled || !lastSentModifiers
+            .isEmpty else {
+            return
+        }
         stopModifierRefresh()
         heldModifierKeys.removeAll()
         softwareHeldModifiers = []
@@ -261,30 +249,30 @@ public class InputCapturingView: UIView {
         modifierRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                if self.refreshModifierStateFromHardware() {
-                    self.hardwareRefreshFailureCount = 0
+                if refreshModifierStateFromHardware() {
+                    hardwareRefreshFailureCount = 0
 
                     // Always send heartbeat while modifiers are held.
                     // This keeps host timestamps fresh even when state is unchanged,
                     // preventing the host's 0.5s timeout from clearing held modifiers.
-                    if !self.heldModifierKeys.isEmpty {
-                        let modifiers = self.keyboardModifiers
-                        self.lastSentModifiers = modifiers
-                        self.onInputEvent?(.flagsChanged(modifiers))
+                    if !heldModifierKeys.isEmpty {
+                        let modifiers = keyboardModifiers
+                        lastSentModifiers = modifiers
+                        onInputEvent?(.flagsChanged(modifiers))
                     }
                 } else {
-                    self.hardwareRefreshFailureCount += 1
-                    if self.hardwareRefreshFailureCount >= 3 {
+                    hardwareRefreshFailureCount += 1
+                    if hardwareRefreshFailureCount >= 3 {
                         // Hardware unavailable, clear modifiers to prevent stuck state
                         MirageLogger.client("Hardware keyboard unavailable, clearing modifiers")
-                        self.resetAllModifiers()
-                        self.modifierRefreshTask = nil
+                        resetAllModifiers()
+                        modifierRefreshTask = nil
                         return
                     }
                 }
 
-                if self.heldModifierKeys.isEmpty {
-                    self.modifierRefreshTask = nil
+                if heldModifierKeys.isEmpty {
+                    modifierRefreshTask = nil
                     return
                 }
 
@@ -306,52 +294,34 @@ public class InputCapturingView: UIView {
         guard hardwareKeyboardPresent != isPresent else { return }
         hardwareKeyboardPresent = isPresent
         onHardwareKeyboardPresenceChanged?(isPresent)
-        if isPresent {
-            clearSoftwareKeyboardState()
-        }
+        if isPresent { clearSoftwareKeyboardState() }
     }
 
     @discardableResult
     func refreshModifierStateFromHardware() -> Bool {
-#if canImport(GameController)
+        #if canImport(GameController)
         guard let keyboardInput = GCKeyboard.coalesced?.keyboardInput else { return false }
         var refreshedKeys: Set<UIKeyboardHIDUsage> = []
 
-        if keyboardInput.button(forKeyCode: .leftShift)?.isPressed == true {
-            refreshedKeys.insert(.keyboardLeftShift)
-        }
-        if keyboardInput.button(forKeyCode: .rightShift)?.isPressed == true {
-            refreshedKeys.insert(.keyboardRightShift)
-        }
-        if keyboardInput.button(forKeyCode: .leftControl)?.isPressed == true {
-            refreshedKeys.insert(.keyboardLeftControl)
-        }
-        if keyboardInput.button(forKeyCode: .rightControl)?.isPressed == true {
-            refreshedKeys.insert(.keyboardRightControl)
-        }
-        if keyboardInput.button(forKeyCode: .leftAlt)?.isPressed == true {
-            refreshedKeys.insert(.keyboardLeftAlt)
-        }
-        if keyboardInput.button(forKeyCode: .rightAlt)?.isPressed == true {
-            refreshedKeys.insert(.keyboardRightAlt)
-        }
-        if keyboardInput.button(forKeyCode: .leftGUI)?.isPressed == true {
-            refreshedKeys.insert(.keyboardLeftGUI)
-        }
-        if keyboardInput.button(forKeyCode: .rightGUI)?.isPressed == true {
-            refreshedKeys.insert(.keyboardRightGUI)
-        }
+        if keyboardInput.button(forKeyCode: .leftShift)?.isPressed == true { refreshedKeys.insert(.keyboardLeftShift) }
+        if keyboardInput.button(forKeyCode: .rightShift)?.isPressed == true { refreshedKeys.insert(.keyboardRightShift) }
+        if keyboardInput.button(forKeyCode: .leftControl)?.isPressed == true { refreshedKeys.insert(.keyboardLeftControl) }
+        if keyboardInput.button(forKeyCode: .rightControl)?.isPressed == true { refreshedKeys.insert(.keyboardRightControl) }
+        if keyboardInput.button(forKeyCode: .leftAlt)?.isPressed == true { refreshedKeys.insert(.keyboardLeftAlt) }
+        if keyboardInput.button(forKeyCode: .rightAlt)?.isPressed == true { refreshedKeys.insert(.keyboardRightAlt) }
+        if keyboardInput.button(forKeyCode: .leftGUI)?.isPressed == true { refreshedKeys.insert(.keyboardLeftGUI) }
+        if keyboardInput.button(forKeyCode: .rightGUI)?.isPressed == true { refreshedKeys.insert(.keyboardRightGUI) }
 
         guard refreshedKeys != heldModifierKeys else { return true }
         heldModifierKeys = refreshedKeys
         sendModifierStateIfNeeded(force: true)
         return true
-#else
+        #else
         return false
-#endif
+        #endif
     }
 
-#if canImport(GameController)
+    #if canImport(GameController)
     func installHardwareKeyboardHandler() {
         HardwareKeyboardCoordinator.shared.register(self)
     }
@@ -359,7 +329,7 @@ public class InputCapturingView: UIView {
     func uninstallHardwareKeyboardHandler() {
         HardwareKeyboardCoordinator.shared.unregister(self)
     }
-#endif
+    #endif
 
     // Double-click detection state (left click)
     var lastTapTime: TimeInterval = 0
@@ -376,7 +346,7 @@ public class InputCapturingView: UIView {
     /// Maximum distance between taps to count as multi-click (in normalized coordinates)
     static let multiClickDistanceThreshold: CGFloat = 0.05
 
-    // Scroll physics capturing view for native trackpad momentum/bounce
+    /// Scroll physics capturing view for native trackpad momentum/bounce
     var scrollPhysicsView: ScrollPhysicsCapturingView?
 
     // Direct touch multi-finger gestures
@@ -395,7 +365,7 @@ public class InputCapturingView: UIView {
         .keyboardRightAlt: .option,
         .keyboardLeftGUI: .command,
         .keyboardRightGUI: .command,
-        .keyboardCapsLock: .capsLock
+        .keyboardCapsLock: .capsLock,
     ]
 
     /// Preferred key codes for modifier flag resync (preserve left/right when possible)
@@ -403,10 +373,10 @@ public class InputCapturingView: UIView {
         (.shift, [.keyboardLeftShift, .keyboardRightShift]),
         (.control, [.keyboardLeftControl, .keyboardRightControl]),
         (.option, [.keyboardLeftAlt, .keyboardRightAlt]),
-        (.command, [.keyboardLeftGUI, .keyboardRightGUI])
+        (.command, [.keyboardLeftGUI, .keyboardRightGUI]),
     ]
 
-    // Key repeat handling
+    /// Key repeat handling
     /// Active key repeat timers keyed by HID usage code
     var keyRepeatTimers: [UIKeyboardHIDUsage: Timer] = [:]
     /// Held key press references for generating repeat events
@@ -416,7 +386,7 @@ public class InputCapturingView: UIView {
     /// Interval between repeat events (matches macOS default ~30 chars/sec)
     static let keyRepeatInterval: TimeInterval = 0.033
 
-    public override init(frame: CGRect) {
+    override public init(frame: CGRect) {
         metalView = MirageMetalView(frame: frame, device: nil)
         super.init(frame: frame)
         setup()
@@ -455,34 +425,34 @@ public class InputCapturingView: UIView {
             metalView.topAnchor.constraint(equalTo: scrollPhysicsView!.contentView.topAnchor),
             metalView.leadingAnchor.constraint(equalTo: scrollPhysicsView!.contentView.leadingAnchor),
             metalView.trailingAnchor.constraint(equalTo: scrollPhysicsView!.contentView.trailingAnchor),
-            metalView.bottomAnchor.constraint(equalTo: scrollPhysicsView!.contentView.bottomAnchor)
+            metalView.bottomAnchor.constraint(equalTo: scrollPhysicsView!.contentView.bottomAnchor),
         ])
 
         // Configure scroll physics callback
         // Scroll events don't have a gesture recognizer with modifierFlags, so use keyboard state only
         scrollPhysicsView!.onScroll = { [weak self] deltaX, deltaY, phase, momentumPhase in
             guard let self else { return }
-            self.refreshModifiersForInput()
-            let modifiers = self.keyboardModifiers
-            self.sendModifierSnapshotIfNeeded(modifiers)
+            refreshModifiersForInput()
+            let modifiers = keyboardModifiers
+            sendModifierSnapshotIfNeeded(modifiers)
             let scrollEvent = MirageScrollEvent(
                 deltaX: deltaX,
                 deltaY: deltaY,
-                location: self.lastCursorPosition,
+                location: lastCursorPosition,
                 phase: phase,
                 momentumPhase: momentumPhase,
                 modifiers: modifiers,
-                isPrecise: true  // Trackpad scrolling is precise
+                isPrecise: true // Trackpad scrolling is precise
             )
-            self.onInputEvent?(.scrollWheel(scrollEvent))
+            onInputEvent?(.scrollWheel(scrollEvent))
         }
 
         // Configure trackpad rotation callback
         scrollPhysicsView!.onRotation = { [weak self] rotation, phase in
             guard let self else { return }
-            self.refreshModifiersForInput()
+            refreshModifiersForInput()
             let event = MirageRotateEvent(rotation: rotation, phase: phase)
-            self.onInputEvent?(.rotate(event))
+            onInputEvent?(.rotate(event))
         }
 
         // Enable user interaction
@@ -498,7 +468,10 @@ public class InputCapturingView: UIView {
     }
 
     private func setupVirtualCursorView() {
-        virtualCursorView.bounds = CGRect(origin: .zero, size: CGSize(width: virtualCursorSize, height: virtualCursorSize))
+        virtualCursorView.bounds = CGRect(
+            origin: .zero,
+            size: CGSize(width: virtualCursorSize, height: virtualCursorSize)
+        )
         virtualCursorView.contentView.backgroundColor = UIColor.white.withAlphaComponent(0.2)
         virtualCursorView.clipsToBounds = true
         virtualCursorView.layer.cornerRadius = virtualCursorSize / 2
@@ -572,7 +545,7 @@ public class InputCapturingView: UIView {
             object: nil
         )
 
-#if canImport(GameController)
+        #if canImport(GameController)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(keyboardDidConnect(_:)),
@@ -588,10 +561,11 @@ public class InputCapturingView: UIView {
 
         installHardwareKeyboardHandler()
         updateHardwareKeyboardPresence(GCKeyboard.coalesced != nil)
-#endif
+        #endif
     }
 
-    @objc private func appWillResignActive() {
+    @objc
+    private func appWillResignActive() {
         // Clear all modifier and key repeat state when app loses focus
         stopAllKeyRepeats()
         resetAllModifiers()
@@ -603,29 +577,30 @@ public class InputCapturingView: UIView {
         metalView.suspendRendering()
     }
 
-    @objc private func appDidBecomeActive() {
-        if window != nil {
-            metalView.resumeRendering()
-        }
+    @objc
+    private func appDidBecomeActive() {
+        if window != nil { metalView.resumeRendering() }
 
         sendModifierStateIfNeeded(force: true)
-#if canImport(GameController)
+        #if canImport(GameController)
         installHardwareKeyboardHandler()
         updateHardwareKeyboardPresence(GCKeyboard.coalesced != nil)
-#endif
+        #endif
 
         // Notify SwiftUI layer to trigger stream recovery
         onBecomeActive?()
     }
 
-#if canImport(GameController)
-    @objc private func keyboardDidConnect(_ notification: Notification) {
+    #if canImport(GameController)
+    @objc
+    private func keyboardDidConnect(_: Notification) {
         installHardwareKeyboardHandler()
         refreshModifierStateFromHardware()
         updateHardwareKeyboardPresence(true)
     }
 
-    @objc private func keyboardDidDisconnect(_ notification: Notification) {
+    @objc
+    private func keyboardDidDisconnect(_: Notification) {
         HardwareKeyboardCoordinator.shared.handleKeyboardDisconnect()
         stopModifierRefresh()
         updateHardwareKeyboardPresence(false)
@@ -637,23 +612,21 @@ public class InputCapturingView: UIView {
         lastSentModifiers = []
         onInputEvent?(.flagsChanged([]))
     }
-#endif
+    #endif
 
-    public override var canBecomeFirstResponder: Bool { true }
+    override public var canBecomeFirstResponder: Bool { true }
 
-    public override func didMoveToWindow() {
+    override public func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil {
-            becomeFirstResponder()
-        }
+        if window != nil { becomeFirstResponder() }
     }
 
-    public override func layoutSubviews() {
+    override public func layoutSubviews() {
         super.layoutSubviews()
         updateVirtualCursorViewPosition()
     }
 
-    public override func resignFirstResponder() -> Bool {
+    override public func resignFirstResponder() -> Bool {
         // Clear all modifier and key repeat state when losing focus
         stopAllKeyRepeats()
         resetAllModifiers()
@@ -664,12 +637,10 @@ public class InputCapturingView: UIView {
         stopModifierRefresh()
         stopVirtualCursorDeceleration()
         stopTouchScrollDeceleration()
-#if canImport(GameController)
+        #if canImport(GameController)
         uninstallHardwareKeyboardHandler()
-#endif
-        if let registeredCursorStreamID {
-            MirageCursorUpdateRouter.shared.unregister(streamID: registeredCursorStreamID)
-        }
+        #endif
+        if let registeredCursorStreamID { MirageCursorUpdateRouter.shared.unregister(streamID: registeredCursorStreamID) }
         NotificationCenter.default.removeObserver(self)
     }
 }
@@ -715,9 +686,7 @@ private final class HardwareKeyboardCoordinator {
             guard view.window?.isKeyWindow == true, view.isFirstResponder else { continue }
             guard view.refreshModifierStateFromHardware() else { continue }
 
-            if view.heldModifierKeys.isEmpty {
-                view.stopModifierRefresh()
-            } else {
+            if view.heldModifierKeys.isEmpty { view.stopModifierRefresh() } else {
                 view.startModifierRefreshIfNeeded()
             }
         }

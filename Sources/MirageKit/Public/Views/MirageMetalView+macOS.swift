@@ -27,9 +27,7 @@ public class MirageMetalView: MTKView {
         didSet {
             renderState.reset()
             let previousID = registeredStreamID
-            if let previousID, previousID != streamID {
-                MirageRenderScheduler.shared.unregister(streamID: previousID)
-            }
+            if let previousID, previousID != streamID { MirageRenderScheduler.shared.unregister(streamID: previousID) }
             registeredStreamID = streamID
             if let streamID {
                 MirageRenderScheduler.shared.register(view: self, for: streamID)
@@ -51,7 +49,7 @@ public class MirageMetalView: MTKView {
     private static let maxDrawableWidth: CGFloat = 5120
     private static let maxDrawableHeight: CGFloat = 2880
 
-    public override init(frame: CGRect, device: MTLDevice?) {
+    override public init(frame: CGRect, device: MTLDevice?) {
         super.init(frame: frame, device: device ?? MTLCreateSystemDefaultDevice())
         setup()
     }
@@ -83,32 +81,26 @@ public class MirageMetalView: MTKView {
         startObservingPreferences()
     }
 
-    public override func layout() {
+    override public func layout() {
         super.layout()
         reportDrawableMetricsIfChanged()
-        if let streamID {
-            MirageRenderScheduler.shared.signalFrame(for: streamID)
-        }
+        if let streamID { MirageRenderScheduler.shared.signalFrame(for: streamID) }
     }
 
     deinit {
         let streamID = registeredStreamID
         Task { @MainActor in
-            if let streamID {
-                MirageRenderScheduler.shared.unregister(streamID: streamID)
-            }
+            if let streamID { MirageRenderScheduler.shared.unregister(streamID: streamID) }
         }
         stopObservingPreferences()
     }
 
     /// Report actual drawable pixel size to ensure host captures at correct resolution
     private func reportDrawableMetricsIfChanged() {
-        let rawDrawableSize = self.drawableSize
+        let rawDrawableSize = drawableSize
         let cappedDrawableSize = cappedDrawableSize(rawDrawableSize)
-        if cappedDrawableSize != rawDrawableSize {
-            self.drawableSize = cappedDrawableSize
-        }
-        if cappedDrawableSize != lastReportedDrawableSize && cappedDrawableSize.width > 0 && cappedDrawableSize.height > 0 {
+        if cappedDrawableSize != rawDrawableSize { drawableSize = cappedDrawableSize }
+        if cappedDrawableSize != lastReportedDrawableSize, cappedDrawableSize.width > 0, cappedDrawableSize.height > 0 {
             lastReportedDrawableSize = cappedDrawableSize
             renderState.markNeedsRedraw()
             if cappedDrawableSize != rawDrawableSize {
@@ -117,7 +109,10 @@ public class MirageMetalView: MTKView {
                         "\(cappedDrawableSize.width)x\(cappedDrawableSize.height) px (bounds: \(bounds.size))"
                 )
             } else {
-                MirageLogger.renderer("Drawable size: \(cappedDrawableSize.width)x\(cappedDrawableSize.height) px (bounds: \(bounds.size))")
+                MirageLogger
+                    .renderer(
+                        "Drawable size: \(cappedDrawableSize.width)x\(cappedDrawableSize.height) px (bounds: \(bounds.size))"
+                    )
             }
             onDrawableMetricsChanged?(currentDrawableMetrics(drawableSize: cappedDrawableSize))
         }
@@ -160,7 +155,7 @@ public class MirageMetalView: MTKView {
         return max(2, even)
     }
 
-    public override func draw(_ rect: CGRect) {
+    override public func draw(_: CGRect) {
         // Pull-based frame update to avoid MainActor stalls during menu tracking/dragging.
         guard !renderingSuspended else {
             onDrawCompleted?()
@@ -171,9 +166,7 @@ public class MirageMetalView: MTKView {
             return
         }
 
-        if let pixelFormatType = renderState.currentPixelFormatType {
-            updateOutputFormatIfNeeded(pixelFormatType)
-        }
+        if let pixelFormatType = renderState.currentPixelFormatType { updateOutputFormatIfNeeded(pixelFormatType) }
 
         guard let drawable = currentDrawable,
               let pixelBuffer = renderState.currentPixelBuffer else {
@@ -210,9 +203,7 @@ public class MirageMetalView: MTKView {
     func resumeRendering() {
         renderingSuspended = false
         renderState.markNeedsRedraw()
-        if let streamID {
-            MirageRenderScheduler.shared.signalFrame(for: streamID)
-        }
+        if let streamID { MirageRenderScheduler.shared.signalFrame(for: streamID) }
     }
 
     @MainActor

@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -39,7 +39,8 @@ extension MirageHostInputController {
         }
 
         if settable == false {
-            if let actualFrame = windowController.axWindowFrame(axWindow) ?? windowController.currentWindowFrame(for: window.id) {
+            if let actualFrame = windowController.axWindowFrame(axWindow) ?? windowController
+                .currentWindowFrame(for: window.id) {
                 windowController.updateMinimumSizeCache(for: window.id, size: actualFrame.size)
                 notifyWindowResized(window, with: actualFrame)
             }
@@ -64,14 +65,16 @@ extension MirageHostInputController {
     func handleRelativeResize(_ window: MirageWindow, event: MirageRelativeResizeEvent) {
         guard let windowController else { return }
         guard let axWindow = windowController.getOrCacheAXWindow(for: window),
-              let visibleFrame = windowController.maxWindowSizeRect(for: window) else { return }
+              let visibleFrame = windowController.maxWindowSizeRect(for: window) else {
+            return
+        }
 
         let clientAspectRatio = event.aspectRatio
         let isOnVirtualDisplay = hostService?.isStreamUsingVirtualDisplay(windowID: window.id) ?? false
         let hostScale: CGFloat = isOnVirtualDisplay ? 2.0 : (NSScreen.main?.backingScaleFactor ?? 2.0)
 
         let initialTargetSize: CGSize
-        if event.pixelWidth > 0 && event.pixelHeight > 0 {
+        if event.pixelWidth > 0, event.pixelHeight > 0 {
             let rawSize = CGSize(
                 width: CGFloat(event.pixelWidth) / hostScale,
                 height: CGFloat(event.pixelHeight) / hostScale
@@ -91,14 +94,15 @@ extension MirageHostInputController {
             var currentTargetSize = initialTargetSize
             var finalSize: CGSize?
 
-            for _ in 0..<15 {
+            for _ in 0 ..< 15 {
                 var mutableSize = currentTargetSize
                 guard let sizeValue = AXValueCreate(.cgSize, &mutableSize) else { break }
                 AXUIElementSetAttributeValue(axWindow, kAXSizeAttribute as CFString, sizeValue)
 
                 try? await Task.sleep(for: .milliseconds(30))
 
-                let actualSize = (windowController.axWindowFrame(axWindow) ?? windowController.currentWindowFrame(for: window.id))?.size ?? currentTargetSize
+                let actualSize = (windowController.axWindowFrame(axWindow) ?? windowController
+                    .currentWindowFrame(for: window.id))?.size ?? currentTargetSize
 
                 let actualAspectRatio = actualSize.width / actualSize.height
                 let aspectDiff = abs(actualAspectRatio - clientAspectRatio)
@@ -118,7 +122,8 @@ extension MirageHostInputController {
                     break
                 }
 
-                let sizeDiff = abs(newTarget.width - currentTargetSize.width) + abs(newTarget.height - currentTargetSize.height)
+                let sizeDiff = abs(newTarget.width - currentTargetSize.width) +
+                    abs(newTarget.height - currentTargetSize.height)
                 if sizeDiff < 2 {
                     finalSize = actualSize
                     break
@@ -132,9 +137,7 @@ extension MirageHostInputController {
             let captureWidth = Int(size.width * hostScale)
             let captureHeight = Int(size.height * hostScale)
 
-            if captureWidth > 0 && captureHeight > 0 {
-                windowController.scheduleResizeUpdate(windowID: window.id, width: captureWidth, height: captureHeight)
-            }
+            if captureWidth > 0, captureHeight > 0 { windowController.scheduleResizeUpdate(windowID: window.id, width: captureWidth, height: captureHeight) }
 
             windowController.centerWindowOnScreen(axWindow, newSize: size, windowID: window.id)
         }
@@ -184,7 +187,6 @@ extension MirageHostInputController {
             await self?.hostService?.notifyWindowResized(updatedWindow)
         }
     }
-
 }
 
 #endif

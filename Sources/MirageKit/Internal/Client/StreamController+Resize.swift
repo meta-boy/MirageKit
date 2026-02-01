@@ -7,8 +7,8 @@
 //  Stream controller extensions.
 //
 
-import Foundation
 import CoreVideo
+import Foundation
 
 extension StreamController {
     // MARK: - Resize Handling
@@ -22,13 +22,12 @@ extension StreamController {
         _ pixelSize: CGSize,
         screenBounds: CGSize,
         scaleFactor: CGFloat
-    ) async {
+    )
+    async {
         guard pixelSize.width > 0, pixelSize.height > 0 else { return }
 
         // Only enter resize mode after first frame
-        if hasReceivedFirstFrame {
-            await setResizeState(.awaiting(expectedSize: pixelSize))
-        }
+        if hasReceivedFirstFrame { await setResizeState(.awaiting(expectedSize: pixelSize)) }
 
         // Cancel pending debounce
         resizeDebounceTask?.cancel()
@@ -43,7 +42,7 @@ extension StreamController {
                 return // Cancelled
             }
 
-            await self.processResizeEvent(pixelSize: pixelSize, screenBounds: screenBounds, scaleFactor: scaleFactor)
+            await processResizeEvent(pixelSize: pixelSize, screenBounds: screenBounds, scaleFactor: scaleFactor)
         }
     }
 
@@ -79,5 +78,4 @@ extension StreamController {
             await self?.onKeyframeNeeded?()
         }
     }
-
 }

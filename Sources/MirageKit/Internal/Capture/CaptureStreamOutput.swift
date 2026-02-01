@@ -5,14 +5,14 @@
 //  Created by Ethan Lipnik on 1/24/26.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 import os
 
 #if os(macOS)
-import ScreenCaptureKit
 import AppKit
+import ScreenCaptureKit
 
 /// Stream output delegate
 final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
@@ -29,7 +29,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
     private var lastStatusLogTime: CFAbsoluteTime = 0
     private var lastFrameTime: CFAbsoluteTime = 0
     private var maxFrameGap: CFAbsoluteTime = 0
-    private var lastFpsLogTime: CFAbsoluteTime = 0
+    private var lastFPSLogTime: CFAbsoluteTime = 0
     private var deliveredFrameCount: UInt64 = 0
     private var deliveredCompleteCount: UInt64 = 0
     private var deliveredIdleCount: UInt64 = 0
@@ -62,11 +62,11 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
     // Track if we've been in fallback mode - when SCK resumes, we may need a keyframe
     // to prevent decode errors from reference frame discontinuity
     private var wasInFallbackMode: Bool = false
-    private var fallbackStartTime: CFAbsoluteTime = 0  // When fallback mode started
+    private var fallbackStartTime: CFAbsoluteTime = 0 // When fallback mode started
     private let fallbackLock = NSLock()
 
-    // Only request keyframe if fallback lasted longer than this threshold
-    // Brief fallbacks (<200ms) don't need keyframes - they're just normal SCK latency
+    /// Only request keyframe if fallback lasted longer than this threshold
+    /// Brief fallbacks (<200ms) don't need keyframes - they're just normal SCK latency
     private let keyframeThreshold: CFAbsoluteTime = 0.35
 
     init(
@@ -91,7 +91,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         self.stallThreshold = stallThreshold
         self.expectedFrameRate = expectedFrameRate
         self.poolMinimumBufferCount = max(2, poolMinimumBufferCount)
-        self.frameCopier = CaptureFrameCopier()
+        frameCopier = CaptureFrameCopier()
         super.init()
         startWatchdogTimer()
     }
@@ -176,8 +176,8 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         fallbackLock.unlock()
     }
 
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        let wallTime = CFAbsoluteTimeGetCurrent()  // Timing: when SCK delivered the frame
+    func stream(_: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        let wallTime = CFAbsoluteTimeGetCurrent() // Timing: when SCK delivered the frame
         let captureTime = wallTime
 
         // NOTE: lastDeliveredFrameTime is updated ONLY for .complete frames (below)
@@ -196,9 +196,15 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             // Brief fallbacks don't cause decoder reference frame issues
             if fallbackDuration > keyframeThreshold {
                 onKeyframeRequest()
-                MirageLogger.capture("SCK resumed after long fallback (\(Int(fallbackDuration * 1000))ms) - scheduling keyframe")
+                MirageLogger
+                    .capture(
+                        "SCK resumed after long fallback (\(Int(fallbackDuration * 1000))ms) - scheduling keyframe"
+                    )
             } else {
-                MirageLogger.capture("SCK resumed after brief fallback (\(Int(fallbackDuration * 1000))ms) - no keyframe needed")
+                MirageLogger
+                    .capture(
+                        "SCK resumed after brief fallback (\(Int(fallbackDuration * 1000))ms) - no keyframe needed"
+                    )
             }
         }
         fallbackLock.unlock()
@@ -206,13 +212,13 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         // DIAGNOSTIC: Track frame delivery gaps to detect drag/menu freeze
         if lastFrameTime > 0 {
             let gap = captureTime - lastFrameTime
-            if gap > 0.1 {  // Log gaps > 100ms
+            if gap > 0.1 { // Log gaps > 100ms
                 let gapMs = (gap * 1000).formatted(.number.precision(.fractionLength(1)))
                 MirageLogger.capture("FRAME GAP: \(gapMs)ms since last frame")
             }
             if gap > maxFrameGap {
                 maxFrameGap = gap
-                if maxFrameGap > 0.2 {  // Only log significant new records
+                if maxFrameGap > 0.2 { // Only log significant new records
                     let gapMs = (maxFrameGap * 1000).formatted(.number.precision(.fractionLength(1)))
                     MirageLogger.capture("NEW MAX FRAME GAP: \(gapMs)ms")
                 }
@@ -224,14 +230,12 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
 
         if diagnosticsEnabled {
             rawFrameWindowCount += 1
-            if rawFrameWindowStartTime == 0 {
-                rawFrameWindowStartTime = captureTime
-            } else if captureTime - rawFrameWindowStartTime > 2.0 {
+            if rawFrameWindowStartTime == 0 { rawFrameWindowStartTime = captureTime } else if captureTime - rawFrameWindowStartTime > 2.0 {
                 let elapsed = captureTime - rawFrameWindowStartTime
-                let rawFps = Double(rawFrameWindowCount) / elapsed
-                let rawFpsText = rawFps.formatted(.number.precision(.fractionLength(1)))
+                let rawFPS = Double(rawFrameWindowCount) / elapsed
+                let rawFPSText = rawFPS.formatted(.number.precision(.fractionLength(1)))
                 let targetText = expectedFrameRate.formatted(.number.precision(.fractionLength(1)))
-                MirageLogger.capture("Capture raw fps: \(rawFpsText) (target=\(targetText))")
+                MirageLogger.capture("Capture raw fps: \(rawFPSText) (target=\(targetText))")
                 rawFrameWindowCount = 0
                 rawFrameWindowStartTime = captureTime
             }
@@ -248,24 +252,20 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             stallSignaled = false
             if diagnosticsEnabled {
                 deliveredFrameCount += 1
-                if lastFpsLogTime == 0 {
-                    lastFpsLogTime = captureTime
-                } else if captureTime - lastFpsLogTime > 2.0 {
-                    let elapsed = captureTime - lastFpsLogTime
+                if lastFPSLogTime == 0 { lastFPSLogTime = captureTime } else if captureTime - lastFPSLogTime > 2.0 {
+                    let elapsed = captureTime - lastFPSLogTime
                     let fps = Double(deliveredFrameCount) / elapsed
                     let fpsText = fps.formatted(.number.precision(.fractionLength(1)))
                     MirageLogger.capture("Capture fps: \(fpsText)")
                     deliveredFrameCount = 0
-                    lastFpsLogTime = captureTime
+                    lastFPSLogTime = captureTime
                 }
             }
 
             let bufferWidth = CVPixelBufferGetWidth(pixelBuffer)
             let bufferHeight = CVPixelBufferGetHeight(pixelBuffer)
             frameCount += 1
-            if frameCount == 1 || frameCount % 600 == 0 {
-                MirageLogger.capture("Frame \(frameCount): \(bufferWidth)x\(bufferHeight)")
-            }
+            if frameCount == 1 || frameCount % 600 == 0 { MirageLogger.capture("Frame \(frameCount): \(bufferWidth)x\(bufferHeight)") }
 
             let frameInfo = CapturedFrameInfo(
                 contentRect: CGRect(x: 0, y: 0, width: CGFloat(bufferWidth), height: CGFloat(bufferHeight)),
@@ -277,7 +277,11 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         }
 
         // Check SCFrameStatus - track all statuses for diagnostics
-        let attachments = (CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]])?.first
+        let attachments =
+            (CMSampleBufferGetSampleAttachmentsArray(
+                sampleBuffer,
+                createIfNecessary: false
+            ) as? [[SCStreamFrameInfo: Any]])?.first
         var isIdleFrame = false
         var status: SCFrameStatus?
         if let attachments,
@@ -290,16 +294,15 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
                 statusCounts[statusRawValue, default: 0] += 1
                 if captureTime - lastStatusLogTime > 2.0 {
                     lastStatusLogTime = captureTime
-                    let statusNames = statusCounts.map { (key, count) in
-                        let name: String
-                        switch SCFrameStatus(rawValue: key) {
-                        case .idle: name = "idle"
-                        case .complete: name = "complete"
-                        case .blank: name = "blank"
-                        case .suspended: name = "suspended"
-                        case .started: name = "started"
-                        case .stopped: name = "stopped"
-                        default: name = "unknown(\(key))"
+                    let statusNames = statusCounts.map { key, count in
+                        let name = switch SCFrameStatus(rawValue: key) {
+                        case .idle: "idle"
+                        case .complete: "complete"
+                        case .blank: "blank"
+                        case .suspended: "suspended"
+                        case .started: "started"
+                        case .stopped: "stopped"
+                        default: "unknown(\(key))"
                         }
                         return "\(name):\(count)"
                     }.joined(separator: ", ")
@@ -315,16 +318,12 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             }
 
             // Skip blank/suspended frames - these indicate actual capture issues.
-            if resolvedStatus == .blank || resolvedStatus == .suspended {
-                return
-            }
+            if resolvedStatus == .blank || resolvedStatus == .suspended { return }
         }
 
         let effectiveStatus = status ?? .complete
         guard effectiveStatus == .complete || effectiveStatus == .idle else { return }
-        if effectiveStatus == .idle {
-            isIdleFrame = true
-        }
+        if effectiveStatus == .idle { isIdleFrame = true }
 
         // Update watchdog timer for any delivered frame so fallback only runs
         // when SCK stops delivering frames entirely.
@@ -332,22 +331,19 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         stallSignaled = false
         if diagnosticsEnabled {
             deliveredFrameCount += 1
-            if effectiveStatus == .idle {
-                deliveredIdleCount += 1
-            } else {
+            if effectiveStatus == .idle { deliveredIdleCount += 1 } else {
                 deliveredCompleteCount += 1
             }
-            if lastFpsLogTime == 0 {
-                lastFpsLogTime = captureTime
-            } else if captureTime - lastFpsLogTime > 2.0 {
-                let elapsed = captureTime - lastFpsLogTime
+            if lastFPSLogTime == 0 { lastFPSLogTime = captureTime } else if captureTime - lastFPSLogTime > 2.0 {
+                let elapsed = captureTime - lastFPSLogTime
                 let fps = Double(deliveredFrameCount) / elapsed
                 let fpsText = fps.formatted(.number.precision(.fractionLength(1)))
-                MirageLogger.capture("Capture fps: \(fpsText) (complete=\(deliveredCompleteCount), idle=\(deliveredIdleCount))")
+                MirageLogger
+                    .capture("Capture fps: \(fpsText) (complete=\(deliveredCompleteCount), idle=\(deliveredIdleCount))")
                 deliveredFrameCount = 0
                 deliveredCompleteCount = 0
                 deliveredIdleCount = 0
-                lastFpsLogTime = captureTime
+                lastFPSLogTime = captureTime
             }
         }
 
@@ -360,15 +356,14 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
            !isIdleFrame,
            let attachments,
            let contentRectValue = attachments[.contentRect] {
-            let scaleFactor: CGFloat
-            if let scale = attachments[.scaleFactor] as? CGFloat {
-                scaleFactor = scale
+            let scaleFactor: CGFloat = if let scale = attachments[.scaleFactor] as? CGFloat {
+                scale
             } else if let scale = attachments[.scaleFactor] as? Double {
-                scaleFactor = CGFloat(scale)
+                CGFloat(scale)
             } else if let scale = attachments[.scaleFactor] as? NSNumber {
-                scaleFactor = CGFloat(scale.doubleValue)
+                CGFloat(scale.doubleValue)
             } else {
-                scaleFactor = 1.0
+                1.0
             }
             let contentRectDict = contentRectValue as! CFDictionary
             if let rect = CGRect(dictionaryRepresentation: contentRectDict) {
@@ -388,13 +383,12 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
 
         // Calculate dirty region statistics for diagnostics only.
         let totalPixels = bufferWidth * bufferHeight
-        let dirtyPercentage: Float
-        if isIdleFrame {
-            dirtyPercentage = 0
+        let dirtyPercentage: Float = if isIdleFrame {
+            0
         } else if totalPixels > 0 {
-            dirtyPercentage = 100
+            100
         } else {
-            dirtyPercentage = 0
+            0
         }
 
         // Fallback: if contentRect is zero/invalid, use full buffer dimensions
@@ -409,9 +403,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
 
         // Log frame dimensions periodically (first frame and every 10 seconds at 60fps)
         frameCount += 1
-        if frameCount == 1 || frameCount % 600 == 0 {
-            MirageLogger.capture("Frame \(frameCount): \(bufferWidth)x\(bufferHeight)")
-        }
+        if frameCount == 1 || frameCount % 600 == 0 { MirageLogger.capture("Frame \(frameCount): \(bufferWidth)x\(bufferHeight)") }
 
         // Create frame info with minimal capture metadata
         // Keyframe requests are now handled by StreamContext cadence, so don't flag here.
@@ -450,12 +442,12 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             ) { [weak self] result in
                 guard let self else { return }
                 switch result {
-                case .copied(let copiedBuffer):
+                case let .copied(copiedBuffer):
                     emitFrame(copiedBuffer)
                 case .poolExhausted:
-                    self.logPoolDrop()
+                    logPoolDrop()
                 case .unsupported:
-                    self.logCopyFallback("Capture copy failed: dropping frame")
+                    logCopyFallback("Capture copy failed: dropping frame")
                 }
             }
 

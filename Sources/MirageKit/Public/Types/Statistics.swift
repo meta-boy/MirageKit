@@ -100,11 +100,11 @@ public struct MirageNetworkQuality: Sendable {
     /// Quality rating for display
     public var rating: QualityRating {
         switch overallScore {
-        case 0.8...: return .excellent
-        case 0.6..<0.8: return .good
-        case 0.4..<0.6: return .fair
-        case 0.2..<0.4: return .poor
-        default: return .critical
+        case 0.8...: .excellent
+        case 0.6 ..< 0.8: .good
+        case 0.4 ..< 0.6: .fair
+        case 0.2 ..< 0.4: .poor
+        default: .critical
         }
     }
 
@@ -115,17 +115,15 @@ public struct MirageNetworkQuality: Sendable {
         case poor
         case critical
 
-        public var displayName: String {
-            rawValue.capitalized
-        }
+        public var displayName: String { rawValue.capitalized }
 
         public var systemImage: String {
             switch self {
-            case .excellent: return "wifi"
-            case .good: return "wifi"
-            case .fair: return "wifi.exclamationmark"
-            case .poor: return "wifi.slash"
-            case .critical: return "wifi.slash"
+            case .excellent: "wifi"
+            case .good: "wifi"
+            case .fair: "wifi.exclamationmark"
+            case .poor: "wifi.slash"
+            case .critical: "wifi.slash"
             }
         }
     }

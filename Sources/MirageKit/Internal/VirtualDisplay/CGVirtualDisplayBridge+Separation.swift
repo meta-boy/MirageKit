@@ -8,8 +8,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import CoreGraphics
+import Foundation
 
 extension CGVirtualDisplayBridge {
     // MARK: - Display Separation Configuration
@@ -17,25 +17,19 @@ extension CGVirtualDisplayBridge {
     /// Known vendor IDs for third-party virtual display software
     /// These displays behave like physical displays but are virtual
     private static let knownVirtualDisplayVendors: Set<UInt32> = [
-        0x1E6D,  // BetterDisplay / BetterDummy
-        0x0610,  // Apple Silicon display (virtual mode)
-        0xAC10,  // Duet Display
+        0x1E6D, // BetterDisplay / BetterDummy
+        0x0610, // Apple Silicon display (virtual mode)
+        0xAC10, // Duet Display
     ]
 
     /// Check if a display is a virtual display (Mirage or third-party)
     static func isVirtualDisplay(_ displayID: CGDirectDisplayID) -> Bool {
-        if isMirageDisplay(displayID) {
-            return true
-        }
-        if CGDisplayIsBuiltin(displayID) != 0 {
-            return false
-        }
+        if isMirageDisplay(displayID) { return true }
+        if CGDisplayIsBuiltin(displayID) != 0 { return false }
         let vendorID = CGDisplayVendorNumber(displayID)
         // Jump Desktop and similar remote desktop tools create displays with vendor 0
         // or use headless dummy plugs which may have various vendor IDs
-        if vendorID == 0 || knownVirtualDisplayVendors.contains(vendorID) {
-            return true
-        }
+        if vendorID == 0 || knownVirtualDisplayVendors.contains(vendorID) { return true }
         return false
     }
 
@@ -71,7 +65,10 @@ extension CGVirtualDisplayBridge {
         // Simply exclude the virtual display we created - mirror everything else
         let result = displays.filter { $0 != excludingDisplayID }
 
-        MirageLogger.host("getDisplaysToMirror: \(displays.count) online displays, \(result.count) to mirror (excluding virtual display \(excludingDisplayID))")
+        MirageLogger
+            .host(
+                "getDisplaysToMirror: \(displays.count) online displays, \(result.count) to mirror (excluding virtual display \(excludingDisplayID))"
+            )
 
         return result
     }
@@ -81,8 +78,8 @@ extension CGVirtualDisplayBridge {
     static func configureDisplaySeparation(
         virtualDisplayID: CGDirectDisplayID,
         originalMainDisplayID: CGDirectDisplayID,
-        requestedWidth: Int,
-        requestedHeight: Int
+        requestedWidth _: Int,
+        requestedHeight _: Int
     ) {
         MirageLogger.host("=== DISPLAY SEPARATION CONFIGURATION ===")
 
@@ -100,14 +97,18 @@ extension CGVirtualDisplayBridge {
             let isMirage = isMirageDisplay(display)
             let isVirtual = isVirtualDisplay(display)
             let isMain = display == CGMainDisplayID()
-            MirageLogger.host("  Display \(display): bounds=\(bounds), vendor=0x\(String(vendorID, radix: 16)), model=0x\(String(modelID, radix: 16)), mirage=\(isMirage), virtual=\(isVirtual), main=\(isMain)")
+            MirageLogger
+                .host(
+                    "  Display \(display): bounds=\(bounds), vendor=0x\(String(vendorID, radix: 16)), model=0x\(String(modelID, radix: 16)), mirage=\(isMirage), virtual=\(isVirtual), main=\(isMain)"
+                )
         }
 
         let isHeadless = isHeadlessEnvironment()
-        MirageLogger.host("Environment: headless=\(isHeadless), originalMain=\(originalMainDisplayID), displays=\(displays)")
+        MirageLogger
+            .host("Environment: headless=\(isHeadless), originalMain=\(originalMainDisplayID), displays=\(displays)")
 
         // Retry configuration up to 3 times to handle race conditions
-        for attempt in 1...3 {
+        for attempt in 1 ... 3 {
             let success = performDisplayConfiguration(
                 virtualDisplayID: virtualDisplayID,
                 originalMainDisplayID: originalMainDisplayID,
@@ -120,7 +121,7 @@ extension CGVirtualDisplayBridge {
                 break
             } else if attempt < 3 {
                 MirageLogger.host("Display configuration attempt \(attempt) failed, retrying...")
-                Thread.sleep(forTimeInterval: 0.1)  // Brief delay before retry
+                Thread.sleep(forTimeInterval: 0.1) // Brief delay before retry
             } else {
                 MirageLogger.error(.host, "Display configuration failed after \(attempt) attempts")
             }
@@ -138,7 +139,8 @@ extension CGVirtualDisplayBridge {
         originalMainDisplayID: CGDirectDisplayID,
         displays: [CGDirectDisplayID],
         isHeadless: Bool
-    ) -> Bool {
+    )
+    -> Bool {
         let newMainDisplayID = CGMainDisplayID()
         let originalMainExists = displays.contains(originalMainDisplayID)
 
@@ -151,7 +153,7 @@ extension CGVirtualDisplayBridge {
 
         var configurationChanged = false
         var pendingVirtualOrigin: CGPoint?
-        var targetPosition: String = "unknown"
+        var targetPosition = "unknown"
 
         // Step 1: Disable mirroring first (this is critical for consistency)
         for display in displays {
@@ -159,9 +161,7 @@ extension CGVirtualDisplayBridge {
             if mirrorSource != kCGNullDirectDisplay {
                 MirageLogger.host("Disabling mirroring for display \(display) (mirrors \(mirrorSource))")
                 let result = CGConfigureDisplayMirrorOfDisplay(config, display, kCGNullDirectDisplay)
-                if result == .success {
-                    configurationChanged = true
-                } else {
+                if result == .success { configurationChanged = true } else {
                     MirageLogger.error(.host, "Failed to disable mirroring for display \(display): \(result)")
                 }
             }
@@ -197,21 +197,20 @@ extension CGVirtualDisplayBridge {
             }
         } else {
             // Has physical display: restore original main if virtual became main
-            if newMainDisplayID == virtualDisplayID && newMainDisplayID != originalMainDisplayID && originalMainExists {
+            if newMainDisplayID == virtualDisplayID, newMainDisplayID != originalMainDisplayID, originalMainExists {
                 MirageLogger.host("Restoring original main display \(originalMainDisplayID) to origin")
                 let result = CGConfigureDisplayOrigin(config, originalMainDisplayID, 0, 0)
-                if result == .success {
-                    configurationChanged = true
-                } else {
+                if result == .success { configurationChanged = true } else {
                     MirageLogger.error(.host, "Failed to restore original main display: \(result)")
                 }
             }
 
             // Position virtual display to the right of base display
-            let baseDisplayID = originalMainExists ? originalMainDisplayID : displays.first(where: { $0 != virtualDisplayID })
+            let baseDisplayID = originalMainExists ? originalMainDisplayID : displays
+                .first(where: { $0 != virtualDisplayID })
             if let baseDisplayID {
                 let baseBounds = CGDisplayBounds(baseDisplayID)
-                if baseBounds.width > 0 && baseBounds.height > 0 {
+                if baseBounds.width > 0, baseBounds.height > 0 {
                     let virtualX = Int32(baseBounds.origin.x + baseBounds.width)
                     let virtualY = Int32(baseBounds.origin.y)
                     targetPosition = "right of display \(baseDisplayID) at (\(virtualX), \(virtualY))"
@@ -238,9 +237,7 @@ extension CGVirtualDisplayBridge {
                 CGCancelDisplayConfiguration(config)
                 return false
             } else {
-                if let pendingVirtualOrigin {
-                    configuredDisplayOrigins[virtualDisplayID] = pendingVirtualOrigin
-                }
+                if let pendingVirtualOrigin { configuredDisplayOrigins[virtualDisplayID] = pendingVirtualOrigin }
                 return true
             }
         } else {

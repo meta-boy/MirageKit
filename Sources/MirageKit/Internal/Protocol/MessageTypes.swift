@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 /// Control channel message types (sent over TCP)
 enum ControlMessageType: UInt8, Codable {
@@ -33,13 +33,13 @@ enum ControlMessageType: UInt8, Codable {
     case streamStopped = 0x26
     case streamMetricsUpdate = 0x27
 
-    // Input events
+    /// Input events
     case inputEvent = 0x30
 
-    // Keyframe control
+    /// Keyframe control
     case keyframeRequest = 0x42
 
-    // Cursor updates
+    /// Cursor updates
     case cursorUpdate = 0x50
 
     // Virtual display updates
@@ -52,8 +52,8 @@ enum ControlMessageType: UInt8, Codable {
     case sessionStateUpdate = 0x70
     case unlockRequest = 0x71
     case unlockResponse = 0x72
-    case loginDisplayReady = 0x73    // Host -> Client: Login display stream is starting
-    case loginDisplayStopped = 0x74  // Host -> Client: Login complete, display stream stopped
+    case loginDisplayReady = 0x73 // Host -> Client: Login display stream is starting
+    case loginDisplayStopped = 0x74 // Host -> Client: Login complete, display stream stopped
 
     // App-centric streaming (new)
     case appListRequest = 0x80
@@ -73,17 +73,17 @@ enum ControlMessageType: UInt8, Codable {
     case appTerminated = 0x8E
 
     // Menu bar passthrough
-    case menuBarUpdate = 0x90       // Host → Client: Menu structure update
-    case menuActionRequest = 0x91   // Client → Host: Execute menu action
-    case menuActionResult = 0x92    // Host → Client: Action result
+    case menuBarUpdate = 0x90 // Host → Client: Menu structure update
+    case menuActionRequest = 0x91 // Client → Host: Execute menu action
+    case menuActionResult = 0x92 // Host → Client: Action result
 
     // Desktop streaming (full virtual display mirroring)
-    case startDesktopStream = 0xA0      // Client → Host: Start full desktop stream
-    case stopDesktopStream = 0xA1       // Client → Host: Stop desktop stream
-    case desktopStreamStarted = 0xA2    // Host → Client: Desktop stream is active
-    case desktopStreamStopped = 0xA3    // Host → Client: Desktop stream ended
+    case startDesktopStream = 0xA0 // Client → Host: Start full desktop stream
+    case stopDesktopStream = 0xA1 // Client → Host: Stop desktop stream
+    case desktopStreamStarted = 0xA2 // Host → Client: Desktop stream is active
+    case desktopStreamStopped = 0xA3 // Host → Client: Desktop stream ended
 
-    // Errors
+    /// Errors
     case error = 0xFF
 }
 
@@ -97,9 +97,9 @@ struct ControlMessage: Codable {
         self.payload = payload
     }
 
-    init<T: Encodable>(type: ControlMessageType, content: T) throws {
+    init(type: ControlMessageType, content: some Encodable) throws {
         self.type = type
-        self.payload = try JSONEncoder().encode(content)
+        payload = try JSONEncoder().encode(content)
     }
 
     func decode<T: Decodable>(_ type: T.Type) throws -> T {
@@ -126,7 +126,7 @@ struct ControlMessage: Codable {
         }
 
         // Read length from bytes 1-4 (after the type byte)
-        let lengthBytes = data[data.index(startIdx, offsetBy: 1)..<data.index(startIdx, offsetBy: 5)]
+        let lengthBytes = data[data.index(startIdx, offsetBy: 1) ..< data.index(startIdx, offsetBy: 5)]
         let length = lengthBytes.withUnsafeBytes { ptr in
             UInt32(littleEndian: ptr.loadUnaligned(fromByteOffset: 0, as: UInt32.self))
         }
@@ -137,7 +137,7 @@ struct ControlMessage: Codable {
         // Extract payload using proper indices
         let payloadStart = data.index(startIdx, offsetBy: 5)
         let payloadEnd = data.index(startIdx, offsetBy: totalLength)
-        let payload = Data(data[payloadStart..<payloadEnd])
+        let payload = Data(data[payloadStart ..< payloadEnd])
 
         return (ControlMessage(type: type, payload: payload), totalLength)
     }

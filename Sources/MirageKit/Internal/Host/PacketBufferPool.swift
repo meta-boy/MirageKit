@@ -25,9 +25,7 @@ final class PacketBufferPool: @unchecked Sendable {
 
         func prepareForReuse() {
             isReleased = false
-            if data.count != capacity {
-                data.count = capacity
-            }
+            if data.count != capacity { data.count = capacity }
         }
 
         func prepare(length: Int) {
@@ -48,9 +46,7 @@ final class PacketBufferPool: @unchecked Sendable {
         func release() {
             guard !isReleased else { return }
             isReleased = true
-            if data.count != capacity {
-                data.count = capacity
-            }
+            if data.count != capacity { data.count = capacity }
             pool.reclaim(self)
         }
     }

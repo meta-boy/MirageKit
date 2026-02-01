@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/11/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 
@@ -15,9 +15,7 @@ import CoreGraphics
 extension MirageHostService {
     /// Send content bounds update to client
     func sendContentBoundsUpdate(streamID: StreamID, bounds: CGRect, to client: MirageConnectedClient) async {
-        guard let clientContext = clientsByConnection.values.first(where: { $0.client.id == client.id }) else {
-            return
-        }
+        guard let clientContext = clientsByConnection.values.first(where: { $0.client.id == client.id }) else { return }
 
         let message = ContentBoundsUpdateMessage(streamID: streamID, bounds: bounds)
         do {
@@ -29,7 +27,12 @@ extension MirageHostService {
     }
 
     /// Handle detection of new independent window (auto-stream to client)
-    func handleNewIndependentWindow(_ window: MirageWindow, originalStreamID: StreamID, client: MirageConnectedClient) async {
+    func handleNewIndependentWindow(
+        _ window: MirageWindow,
+        originalStreamID: StreamID,
+        client: MirageConnectedClient
+    )
+    async {
         MirageLogger.host("New independent window detected: \(window.id) '\(window.displayName)'")
 
         // Verify the original stream exists
@@ -37,12 +40,11 @@ extension MirageHostService {
 
         // Get the virtual display resolution (client's display size)
         // Use SharedVirtualDisplayManager's getDisplayBounds which uses known resolution
-        let displayResolution: CGSize
-        if let bounds = await SharedVirtualDisplayManager.shared.getDisplayBounds() {
-            displayResolution = bounds.size
+        let displayResolution: CGSize = if let bounds = await SharedVirtualDisplayManager.shared.getDisplayBounds() {
+            bounds.size
         } else {
             // Fallback to window size if no virtual display
-            displayResolution = window.frame.size
+            window.frame.size
         }
 
         let streamScale = await originalContext.getStreamScale()
@@ -85,9 +87,7 @@ extension MirageHostService {
         }
 
         do {
-            if let adaptiveScaleEnabled {
-                await context.setAdaptiveScaleEnabled(adaptiveScaleEnabled)
-            }
+            if let adaptiveScaleEnabled { await context.setAdaptiveScaleEnabled(adaptiveScaleEnabled) }
             try await context.updateStreamScale(clampedScale)
             await sendStreamScaleUpdate(streamID: streamID)
         } catch {
@@ -99,7 +99,8 @@ extension MirageHostService {
         streamID: StreamID,
         maxRefreshRate: Int,
         forceDisplayRefresh: Bool
-    ) async {
+    )
+    async {
         let targetFrameRate = resolvedTargetFrameRate(maxRefreshRate)
 
         if streamID == desktopStreamID, let desktopContext = desktopStreamContext {
@@ -114,10 +115,11 @@ extension MirageHostService {
                     await handleDisplayResolutionChange(streamID: streamID, newResolution: resolution)
                 }
                 let appliedRate = await desktopContext.getTargetFrameRate()
-                if appliedRate == targetFrameRate {
-                    MirageLogger.host("Desktop stream refresh override applied: \(targetFrameRate)fps")
-                } else {
-                    MirageLogger.host("Desktop stream refresh override pending: requested \(targetFrameRate)fps, applied \(appliedRate)fps")
+                if appliedRate == targetFrameRate { MirageLogger.host("Desktop stream refresh override applied: \(targetFrameRate)fps") } else {
+                    MirageLogger
+                        .host(
+                            "Desktop stream refresh override pending: requested \(targetFrameRate)fps, applied \(appliedRate)fps"
+                        )
                 }
             } catch {
                 MirageLogger.error(.host, "Failed to update desktop stream refresh rate: \(error)")
@@ -142,10 +144,9 @@ extension MirageHostService {
                 await sendStreamScaleUpdate(streamID: streamID)
             }
             let appliedRate = await context.getTargetFrameRate()
-            if appliedRate == targetFrameRate {
-                MirageLogger.host("Stream refresh override applied: \(targetFrameRate)fps")
-            } else {
-                MirageLogger.host("Stream refresh override pending: requested \(targetFrameRate)fps, applied \(appliedRate)fps")
+            if appliedRate == targetFrameRate { MirageLogger.host("Stream refresh override applied: \(targetFrameRate)fps") } else {
+                MirageLogger
+                    .host("Stream refresh override pending: requested \(targetFrameRate)fps, applied \(appliedRate)fps")
             }
         } catch {
             MirageLogger.error(.host, "Failed to update stream refresh rate: \(error)")
@@ -163,12 +164,12 @@ extension MirageHostService {
 
         if streamID == desktopStreamID {
             if let clientContext = desktopStreamClientContext {
-                let message = DesktopStreamStartedMessage(
+                let message = await DesktopStreamStartedMessage(
                     streamID: streamID,
                     width: encodedDimensions.width,
                     height: encodedDimensions.height,
-                    frameRate: await context.getTargetFrameRate(),
-                    codec: await context.getCodec(),
+                    frameRate: context.getTargetFrameRate(),
+                    codec: context.getCodec(),
                     displayCount: 1,
                     dimensionToken: dimensionToken
                 )
@@ -191,13 +192,13 @@ extension MirageHostService {
         guard let session = activeStreams.first(where: { $0.id == streamID }) else { return }
         guard let clientContext = clientsByConnection.values.first(where: { $0.client.id == session.client.id }) else { return }
 
-        let message = StreamStartedMessage(
+        let message = await StreamStartedMessage(
             streamID: streamID,
             windowID: session.window.id,
             width: encodedDimensions.width,
             height: encodedDimensions.height,
-            frameRate: await context.getTargetFrameRate(),
-            codec: await context.getCodec(),
+            frameRate: context.getTargetFrameRate(),
+            codec: context.getCodec(),
             minWidth: nil,
             minHeight: nil,
             dimensionToken: dimensionToken
@@ -217,13 +218,17 @@ extension MirageHostService {
                 if let snapshot = await SharedVirtualDisplayManager.shared.getDisplaySnapshot() {
                     let currentResolution = snapshot.resolution
                     let currentRefresh = Int(snapshot.refreshRate.rounded())
-                    if currentResolution == newResolution && currentRefresh == streamRefreshRate {
-                        MirageLogger.host("Desktop stream resize skipped (already \(Int(newResolution.width))x\(Int(newResolution.height))@\(streamRefreshRate)Hz)")
+                    if currentResolution == newResolution, currentRefresh == streamRefreshRate {
+                        MirageLogger
+                            .host(
+                                "Desktop stream resize skipped (already \(Int(newResolution.width))x\(Int(newResolution.height))@\(streamRefreshRate)Hz)"
+                            )
                         return
                     }
                 }
 
-                MirageLogger.host("Desktop stream resize requested: \(Int(newResolution.width))x\(Int(newResolution.height))")
+                MirageLogger
+                    .host("Desktop stream resize requested: \(Int(newResolution.width))x\(Int(newResolution.height))")
 
                 // 1. Update the virtual display resolution in place (no recreate, no displayID change)
                 //    This uses applySettings: to change the display mode without destroying it
@@ -234,9 +239,7 @@ extension MirageHostService {
                 )
 
                 // Re-apply mirroring after mode changes (display updates can drop mirror state).
-                if let displayID = await SharedVirtualDisplayManager.shared.getDisplayID() {
-                    await setupDisplayMirroring(targetDisplayID: displayID)
-                }
+                if let displayID = await SharedVirtualDisplayManager.shared.getDisplayID() { await setupDisplayMirroring(targetDisplayID: displayID) }
 
                 // 2. Update the capture/encoder dimensions to match new resolution
                 //    Since displayID doesn't change, we just need to update the stream config
@@ -252,7 +255,10 @@ extension MirageHostService {
                     virtualResolution: newResolution
                 )
                 inputStreamCacheActor.updateWindowFrame(streamID, newFrame: inputBounds)
-                MirageLogger.host("Desktop stream resized to \(Int(newResolution.width))x\(Int(newResolution.height)), input bounds: \(inputBounds)")
+                MirageLogger
+                    .host(
+                        "Desktop stream resized to \(Int(newResolution.width))x\(Int(newResolution.height)), input bounds: \(inputBounds)"
+                    )
 
                 // 4. Send desktopStreamStarted to notify client that resize is complete
                 //    This triggers onStreamMinimumSizeUpdate which clears the resize blur
@@ -297,12 +303,13 @@ extension MirageHostService {
 
                 // Also update input cache with new bounds for correct mouse coordinate translation
                 let windowID = context.getWindowID()
-                if let newFrame = currentWindowFrame(for: windowID) {
-                    inputStreamCacheActor.updateWindowFrame(streamID, newFrame: newFrame)
-                }
+                if let newFrame = currentWindowFrame(for: windowID) { inputStreamCacheActor.updateWindowFrame(streamID, newFrame: newFrame) }
             }
 
-            MirageLogger.host("Updated virtual display resolution for stream \(streamID) to \(Int(newResolution.width))x\(Int(newResolution.height))")
+            MirageLogger
+                .host(
+                    "Updated virtual display resolution for stream \(streamID) to \(Int(newResolution.width))x\(Int(newResolution.height))"
+                )
         } catch {
             MirageLogger.error(.host, "Failed to update virtual display resolution: \(error)")
         }

@@ -8,16 +8,16 @@
 //
 
 #if os(macOS)
-import Foundation
 import AppKit
+import Foundation
 
-extension AppStreamManager {
+public extension AppStreamManager {
     // MARK: - App Launching
 
     /// Launch an app if not running
     /// - Parameter bundleIdentifier: The app to launch
     /// - Returns: True if app was launched or already running
-    public func launchAppIfNeeded(_ bundleIdentifier: String, path: String) async -> Bool {
+    func launchAppIfNeeded(_ bundleIdentifier: String, path: String) async -> Bool {
         let isRunning = NSWorkspace.shared.runningApplications.contains { app in
             app.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased()
         }
@@ -42,7 +42,7 @@ extension AppStreamManager {
     }
 
     /// Request a new window from an app (for apps that are running but have no windows)
-    public func requestNewWindow(bundleIdentifier: String) async {
+    func requestNewWindow(bundleIdentifier: String) async {
         guard let app = NSWorkspace.shared.runningApplications.first(where: {
             $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased()
         }) else {
@@ -68,9 +68,7 @@ extension AppStreamManager {
         if let appleScript = NSAppleScript(source: script) {
             var error: NSDictionary?
             appleScript.executeAndReturnError(&error)
-            if let error = error {
-                logger.warning("Apple Script error requesting new window: \(error)")
-            }
+            if let error { logger.warning("Apple Script error requesting new window: \(error)") }
         }
     }
 }

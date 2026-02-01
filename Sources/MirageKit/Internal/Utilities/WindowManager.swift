@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/9/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -14,7 +14,6 @@ import ApplicationServices
 
 /// Utility for managing windows via the Accessibility API
 enum WindowManager {
-
     /// Minimizes a window by its WindowID
     /// - Parameter windowID: The WindowID of the window to minimize
     /// - Returns: true if the window was successfully minimized, false otherwise
@@ -64,7 +63,7 @@ enum WindowManager {
         if axWindows.count == 1 {
             // Only one window, use it directly
             targetWindow = axWindows[0]
-        } else if let windowX = windowX, let windowY = windowY {
+        } else if let windowX, let windowY {
             // Match by position
             for axWindow in axWindows {
                 var positionRef: CFTypeRef?
@@ -75,7 +74,7 @@ enum WindowManager {
                     AXValueGetValue(positionValue as! AXValue, .cgPoint, &position)
 
                     // Allow small tolerance for floating point comparison
-                    if abs(position.x - windowX) < 1.0 && abs(position.y - windowY) < 1.0 {
+                    if abs(position.x - windowX) < 1.0, abs(position.y - windowY) < 1.0 {
                         targetWindow = axWindow
                         break
                     }
@@ -84,7 +83,7 @@ enum WindowManager {
         }
 
         // Fall back to first window if no match found
-        if targetWindow == nil && !axWindows.isEmpty {
+        if targetWindow == nil, !axWindows.isEmpty {
             MirageLogger.host("WindowManager: Could not match window by position, using first window")
             targetWindow = axWindows[0]
         }
@@ -105,7 +104,8 @@ enum WindowManager {
             MirageLogger.host("WindowManager: Successfully minimized window \(windowID)")
             return true
         } else {
-            MirageLogger.host("WindowManager: Failed to minimize window \(windowID): AXError \(minimizeResult.rawValue)")
+            MirageLogger
+                .host("WindowManager: Failed to minimize window \(windowID): AXError \(minimizeResult.rawValue)")
             return false
         }
     }

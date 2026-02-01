@@ -51,7 +51,8 @@ actor HybridTransport {
         controlEndpoint: NWEndpoint,
         dataHost: NWEndpoint.Host,
         dataPort: NWEndpoint.Port
-    ) async throws {
+    )
+    async throws {
         state = .connecting
 
         // TCP Control Connection
@@ -88,24 +89,18 @@ actor HybridTransport {
         Task { await receiveDataLoop() }
     }
 
-    private func waitForReady(_ connection: NWConnection, name: String) async throws {
+    private func waitForReady(_ connection: NWConnection, name _: String) async throws {
         let completionFlag = TransportCompletionFlag()
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    if completionFlag.completeOnce() {
-                        continuation.resume()
-                    }
-                case .failed(let error):
-                    if completionFlag.completeOnce() {
-                        continuation.resume(throwing: error)
-                    }
+                    if completionFlag.completeOnce() { continuation.resume() }
+                case let .failed(error):
+                    if completionFlag.completeOnce() { continuation.resume(throwing: error) }
                 case .cancelled:
-                    if completionFlag.completeOnce() {
-                        continuation.resume(throwing: CancellationError())
-                    }
+                    if completionFlag.completeOnce() { continuation.resume(throwing: CancellationError()) }
                 default:
                     break
                 }
@@ -138,17 +133,13 @@ actor HybridTransport {
 
     /// Send a control message over TCP
     func sendControl(_ message: ControlMessage) async throws {
-        guard case .connected = state, let connection = controlConnection else {
-            throw MirageError.protocolError("Not connected")
-        }
+        guard case .connected = state, let connection = controlConnection else { throw MirageError.protocolError("Not connected") }
 
         let data = message.serialize()
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: data, completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
+                if let error { continuation.resume(throwing: error) } else {
                     continuation.resume()
                 }
             })
@@ -185,9 +176,7 @@ actor HybridTransport {
                     onControlMessage?(message)
                 }
             } catch {
-                if case .connected = state {
-                    state = .failed(error)
-                }
+                if case .connected = state { state = .failed(error) }
                 break
             }
         }
@@ -196,20 +185,16 @@ actor HybridTransport {
     private func receiveDataLoop() async {
         while case .connected = state, let connection = dataConnection {
             do {
-                let data = try await receiveData(from: connection, min: MirageHeaderSize, max: 65536)
+                let data = try await receiveData(from: connection, min: mirageHeaderSize, max: 65536)
 
                 // Parse header
-                guard let header = FrameHeader.deserialize(from: data) else {
-                    continue
-                }
+                guard let header = FrameHeader.deserialize(from: data) else { continue }
 
                 // Extract payload
-                let payload = data.dropFirst(MirageHeaderSize)
+                let payload = data.dropFirst(mirageHeaderSize)
                 onVideoPacket?(Data(payload), header)
             } catch {
-                if case .connected = state {
-                    state = .failed(error)
-                }
+                if case .connected = state { state = .failed(error) }
                 break
             }
         }
@@ -218,9 +203,7 @@ actor HybridTransport {
     private func receiveData(from connection: NWConnection, min: Int, max: Int) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
             connection.receive(minimumIncompleteLength: min, maximumLength: max) { content, _, isComplete, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if let data = content, !data.isEmpty {
+                if let error { continuation.resume(throwing: error) } else if let data = content, !data.isEmpty {
                     continuation.resume(returning: data)
                 } else if isComplete {
                     continuation.resume(throwing: MirageError.protocolError("Connection closed"))

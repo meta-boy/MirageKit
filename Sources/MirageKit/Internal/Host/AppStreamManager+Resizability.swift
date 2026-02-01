@@ -16,7 +16,7 @@ import Foundation
 public extension AppStreamManager {
     /// Check if a window is resizable using Accessibility API
     /// Checks if the kAXSizeAttribute is settable for the window
-    nonisolated func checkWindowResizability(windowID: WindowID, processID: Int32) -> Bool {
+    nonisolated func checkWindowResizability(windowID _: WindowID, processID: Int32) -> Bool {
         let appElement = AXUIElementCreateApplication(processID)
 
         var windowsRef: CFTypeRef?
@@ -27,17 +27,13 @@ public extension AppStreamManager {
 
         // For simplicity, check the first window - in practice we'd need to match by window ID
         // which requires private API. Most apps have consistent resizability across windows.
-        guard let axWindow = windows.first else {
-            return true
-        }
+        guard let axWindow = windows.first else { return true }
 
         // Check if size attribute is settable
         var isSettable: DarwinBoolean = false
         let result = AXUIElementIsAttributeSettable(axWindow, kAXSizeAttribute as CFString, &isSettable)
 
-        if result == .success {
-            return isSettable.boolValue
-        }
+        if result == .success { return isSettable.boolValue }
 
         return true // Default to resizable
     }

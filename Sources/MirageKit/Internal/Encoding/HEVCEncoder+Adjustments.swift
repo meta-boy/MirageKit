@@ -7,8 +7,8 @@
 //  HEVC encoder extensions.
 //
 
-import Foundation
 import CoreMedia
+import Foundation
 import VideoToolbox
 
 #if os(macOS)
@@ -21,6 +21,7 @@ extension HEVCEncoder {
         guard !qualityOverrideActive else { return }
         applyQualitySettings(session, quality: baseQuality, log: false)
     }
+
     func prepareForKeyframe(quality: Float) {
         guard let session = compressionSession else { return }
         let clamped = max(0.02, min(1.0, quality))
@@ -28,24 +29,32 @@ extension HEVCEncoder {
         qualityOverrideActive = true
         applyQualitySettings(session, quality: clamped, log: false)
     }
+
     func restoreBaseQualityIfNeeded() {
         guard qualityOverrideActive, let session = compressionSession else { return }
         qualityOverrideActive = false
         applyQualitySettings(session, quality: baseQuality, log: false)
     }
+
     func updateFrameRate(_ fps: Int) {
         guard let session = compressionSession else { return }
         let clamped = max(1, fps)
         setProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: clamped as CFNumber)
         let intervalSeconds = max(1.0, Double(configuration.keyFrameInterval) / Double(clamped))
-        setProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: intervalSeconds as CFNumber)
+        setProperty(
+            session,
+            key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration,
+            value: intervalSeconds as CFNumber
+        )
     }
+
     func updateInFlightLimit(_ limit: Int) {
         let clamped = max(1, limit)
         encoderInFlightLock.lock()
         encoderInFlightLimit = clamped
         encoderInFlightLock.unlock()
     }
+
     func updateDimensions(width: Int, height: Int) async throws {
         MirageLogger.encoder("Updating dimensions to \(width)x\(height)")
 
@@ -73,19 +82,24 @@ extension HEVCEncoder {
         try createSession(width: width, height: height)
         MirageLogger.encoder("Session recreated with new dimensions")
     }
+
     func forceKeyframe() {
         MirageLogger.encoder("Keyframe requested")
         forceNextKeyframe = true
     }
+
     func resetFrameNumber() {
         frameNumber = 0
     }
+
     func getActivePixelFormat() -> MiragePixelFormat {
         activePixelFormat
     }
+
     func getAverageEncodeTimeMs() -> Double {
         performanceTracker.averageMs()
     }
+
     func flush() {
         guard let session = compressionSession else { return }
 
@@ -98,9 +112,10 @@ extension HEVCEncoder {
 
         MirageLogger.encoder("Encoder flushed - next frame will be keyframe")
     }
+
     func reset() async throws {
         guard let session = compressionSession else { return }
-        guard currentWidth > 0 && currentHeight > 0 else { return }
+        guard currentWidth > 0, currentHeight > 0 else { return }
 
         MirageLogger.encoder("Resetting encoder session (\(currentWidth)x\(currentHeight))")
 

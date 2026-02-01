@@ -8,8 +8,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import CoreGraphics
+import Foundation
 
 extension SharedVirtualDisplayManager {
     // MARK: - Display Acquisition
@@ -29,7 +29,8 @@ extension SharedVirtualDisplayManager {
         windowID: WindowID,
         refreshRate: Int = 60,
         colorSpace: MirageColorSpace
-    ) async throws -> DisplaySnapshot {
+    )
+    async throws -> DisplaySnapshot {
         let requestedRate = refreshRate
         let refreshRate = SharedVirtualDisplayManager.streamRefreshRate(for: requestedRate)
         let consumer = DisplayConsumer.stream(streamID)
@@ -52,15 +53,29 @@ extension SharedVirtualDisplayManager {
         let optimalResolution = calculateOptimalResolution()
         let previousGeneration = sharedDisplay?.generation ?? 0
 
-        MirageLogger.host("Stream \(streamID) acquiring shared display. Consumers: \(activeConsumers.count), client res: \(Int(clientResolution.width))x\(Int(clientResolution.height)) → virtual display: \(Int(optimalResolution.width))x\(Int(optimalResolution.height)), color=\(colorSpace.displayName), refresh=\(refreshRate)Hz (requested \(requestedRate)Hz)")
+        MirageLogger
+            .host(
+                "Stream \(streamID) acquiring shared display. Consumers: \(activeConsumers.count), client res: \(Int(clientResolution.width))x\(Int(clientResolution.height)) → virtual display: \(Int(optimalResolution.width))x\(Int(optimalResolution.height)), color=\(colorSpace.displayName), refresh=\(refreshRate)Hz (requested \(requestedRate)Hz)"
+            )
 
         // Create or resize display as needed
         if sharedDisplay == nil {
             // First consumer - create the display
-            sharedDisplay = try await createDisplay(resolution: optimalResolution, refreshRate: refreshRate, colorSpace: colorSpace)
+            sharedDisplay = try await createDisplay(
+                resolution: optimalResolution,
+                refreshRate: refreshRate,
+                colorSpace: colorSpace
+            )
         } else if sharedDisplay?.colorSpace != colorSpace {
-            MirageLogger.host("Recreating shared display for color space change (\(sharedDisplay?.colorSpace.displayName ?? "Unknown") → \(colorSpace.displayName))")
-            sharedDisplay = try await recreateDisplay(newResolution: optimalResolution, refreshRate: refreshRate, colorSpace: colorSpace)
+            MirageLogger
+                .host(
+                    "Recreating shared display for color space change (\(sharedDisplay?.colorSpace.displayName ?? "Unknown") → \(colorSpace.displayName))"
+                )
+            sharedDisplay = try await recreateDisplay(
+                newResolution: optimalResolution,
+                refreshRate: refreshRate,
+                colorSpace: colorSpace
+            )
         } else {
             let currentResolution = sharedDisplay!.resolution
             let needsRefresh = sharedDisplay?.refreshRate != Double(refreshRate)
@@ -76,20 +91,28 @@ extension SharedVirtualDisplayManager {
 
                 if !updated {
                     if needsRefresh {
-                        MirageLogger.host("Recreating shared display for refresh rate change (\(sharedDisplay?.refreshRate ?? 0) → \(Double(refreshRate)))")
+                        MirageLogger
+                            .host(
+                                "Recreating shared display for refresh rate change (\(sharedDisplay?.refreshRate ?? 0) → \(Double(refreshRate)))"
+                            )
                     } else {
-                        MirageLogger.host("Resizing shared display from \(Int(currentResolution.width))x\(Int(currentResolution.height)) to \(Int(optimalResolution.width))x\(Int(optimalResolution.height))")
+                        MirageLogger
+                            .host(
+                                "Resizing shared display from \(Int(currentResolution.width))x\(Int(currentResolution.height)) to \(Int(optimalResolution.width))x\(Int(optimalResolution.height))"
+                            )
                     }
-                    sharedDisplay = try await recreateDisplay(newResolution: optimalResolution, refreshRate: refreshRate, colorSpace: colorSpace)
+                    sharedDisplay = try await recreateDisplay(
+                        newResolution: optimalResolution,
+                        refreshRate: refreshRate,
+                        colorSpace: colorSpace
+                    )
                 }
             }
         }
 
         notifyGenerationChangeIfNeeded(previousGeneration: previousGeneration)
 
-        guard let display = sharedDisplay else {
-            throw SharedDisplayError.noActiveDisplay
-        }
+        guard let display = sharedDisplay else { throw SharedDisplayError.noActiveDisplay }
 
         return snapshot(from: display)
     }
@@ -113,6 +136,5 @@ extension SharedVirtualDisplayManager {
         // Note: We don't downsize when consumers leave to avoid disruption
         // The display will be destroyed when all consumers leave
     }
-
 }
 #endif

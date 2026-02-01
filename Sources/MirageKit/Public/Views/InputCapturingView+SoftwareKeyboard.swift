@@ -37,7 +37,7 @@ extension InputCapturingView {
         accessoryView.onModifierToggle = { [weak self] key, isSelected in
             self?.toggleSoftwareModifier(key, isSelected: isSelected)
         }
-#if os(visionOS)
+        #if os(visionOS)
         accessoryView.translatesAutoresizingMaskIntoConstraints = false
         accessoryView.isHidden = true
         addSubview(accessoryView)
@@ -45,18 +45,18 @@ extension InputCapturingView {
             accessoryView.leadingAnchor.constraint(equalTo: leadingAnchor),
             accessoryView.trailingAnchor.constraint(equalTo: trailingAnchor),
             accessoryView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            accessoryView.heightAnchor.constraint(equalToConstant: 44)
+            accessoryView.heightAnchor.constraint(equalToConstant: 44),
         ])
-#else
+        #else
         textField.inputAccessoryView = accessoryView
-#endif
+        #endif
 
         addSubview(textField)
         NSLayoutConstraint.activate([
             textField.leadingAnchor.constraint(equalTo: leadingAnchor),
             textField.topAnchor.constraint(equalTo: topAnchor),
             textField.widthAnchor.constraint(equalToConstant: 1),
-            textField.heightAnchor.constraint(equalToConstant: 1)
+            textField.heightAnchor.constraint(equalToConstant: 1),
         ])
 
         softwareKeyboardField = textField
@@ -65,15 +65,15 @@ extension InputCapturingView {
 
     func updateSoftwareKeyboardVisibility() {
         guard let textField = softwareKeyboardField else { return }
-        if softwareKeyboardVisible && !hardwareKeyboardPresent {
+        if softwareKeyboardVisible, !hardwareKeyboardPresent {
             textField.becomeFirstResponder()
             textField.reloadInputViews()
         } else {
             textField.resignFirstResponder()
         }
-#if os(visionOS)
+        #if os(visionOS)
         softwareKeyboardAccessoryView?.isHidden = !(softwareKeyboardVisible && !hardwareKeyboardPresent)
-#endif
+        #endif
     }
 
     func clearSoftwareKeyboardState() {
@@ -93,9 +93,7 @@ extension InputCapturingView {
     }
 
     func toggleSoftwareModifier(_ key: SoftwareModifierKey, isSelected: Bool) {
-        if isSelected {
-            softwareHeldModifiers.insert(key.modifier)
-        } else {
+        if isSelected { softwareHeldModifiers.insert(key.modifier) } else {
             softwareHeldModifiers.remove(key.modifier)
         }
         updateSoftwareModifierButtons()
@@ -109,7 +107,12 @@ extension InputCapturingView {
         for scalar in text {
             let character = String(scalar)
             if character == "\n" {
-                sendSoftwareKeyEvent(keyCode: 0x24, characters: "\n", charactersIgnoringModifiers: "\n", modifiers: modifiers)
+                sendSoftwareKeyEvent(
+                    keyCode: 0x24,
+                    characters: "\n",
+                    charactersIgnoringModifiers: "\n",
+                    modifiers: modifiers
+                )
                 continue
             }
             guard let event = softwareKeyEvent(for: character, baseModifiers: modifiers) else { continue }
@@ -187,29 +190,24 @@ extension InputCapturingView {
 extension InputCapturingView: UITextFieldDelegate {
     public func textField(
         _ textField: UITextField,
-        shouldChangeCharactersIn range: NSRange,
+        shouldChangeCharactersIn _: NSRange,
         replacementString string: String
-    ) -> Bool {
+    )
+    -> Bool {
         guard textField === softwareKeyboardField else { return true }
-        if !string.isEmpty {
-            handleSoftwareKeyboardInsertText(string)
-        }
+        if !string.isEmpty { handleSoftwareKeyboardInsertText(string) }
         return false
     }
 
-    public func textFieldDidBeginEditing(_ textField: UITextField) {
+    public func textFieldDidBeginEditing(_: UITextField) {
         isSoftwareKeyboardShown = true
-        if !softwareKeyboardVisible {
-            softwareKeyboardVisible = true
-        }
+        if !softwareKeyboardVisible { softwareKeyboardVisible = true }
         onSoftwareKeyboardVisibilityChanged?(true)
     }
 
-    public func textFieldDidEndEditing(_ textField: UITextField) {
+    public func textFieldDidEndEditing(_: UITextField) {
         isSoftwareKeyboardShown = false
-        if softwareKeyboardVisible {
-            softwareKeyboardVisible = false
-        }
+        if softwareKeyboardVisible { softwareKeyboardVisible = false }
         softwareHeldModifiers = []
         updateSoftwareModifierButtons()
         sendModifierStateIfNeeded(force: true)
@@ -247,7 +245,7 @@ final class SoftwareKeyboardAccessoryView: UIView {
     private let keys: [SoftwareModifierKey] = [
         SoftwareModifierKey(title: "Cmd", modifier: .command),
         SoftwareModifierKey(title: "Option", modifier: .option),
-        SoftwareModifierKey(title: "Control", modifier: .control)
+        SoftwareModifierKey(title: "Control", modifier: .control),
     ]
     private var buttons: [MirageModifierFlags: UIButton] = [:]
 
@@ -261,9 +259,7 @@ final class SoftwareKeyboardAccessoryView: UIView {
         setup()
     }
 
-    override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: 44)
-    }
+    override var intrinsicContentSize: CGSize { CGSize(width: UIView.noIntrinsicMetric, height: 44) }
 
     override func sizeThatFits(_ size: CGSize) -> CGSize {
         CGSize(width: size.width, height: 44)
@@ -304,8 +300,8 @@ final class SoftwareKeyboardAccessoryView: UIView {
                 guard let self else { return }
                 let isSelected = !(button.isSelected)
                 button.isSelected = isSelected
-                self.updateButton(button, isSelected: isSelected)
-                self.onModifierToggle?(key, isSelected)
+                updateButton(button, isSelected: isSelected)
+                onModifierToggle?(key, isSelected)
             }, for: .touchUpInside)
             updateButton(button, isSelected: false)
             buttons[key.modifier] = button
@@ -321,7 +317,7 @@ final class SoftwareKeyboardAccessoryView: UIView {
             stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
             stackView.trailingAnchor.constraint(equalTo: trailingAnchor),
             stackView.topAnchor.constraint(equalTo: topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
 
@@ -366,7 +362,7 @@ extension InputCapturingView {
         "<": ",",
         ">": ".",
         "?": "/",
-        "~": "`"
+        "~": "`",
     ]
 }
 #endif

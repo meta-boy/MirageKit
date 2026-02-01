@@ -8,8 +8,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import AppKit
+import Foundation
 
 extension AppStreamManager {
     // MARK: - App List
@@ -114,14 +114,11 @@ extension AppStreamManager {
     public func isAppAvailableForStreaming(_ bundleIdentifier: String) -> Bool {
         let key = bundleIdentifier.lowercased()
 
-        guard let session = sessions[key] else {
-            return true // Not being streamed
-        }
+        // Not being streamed
+        guard let session = sessions[key] else { return true }
 
         // Check if reservation has expired
-        if session.reservationExpired {
-            return true
-        }
+        if session.reservationExpired { return true }
 
         return false
     }
@@ -129,12 +126,9 @@ extension AppStreamManager {
     /// Get the client ID that has exclusive access to an app (if any)
     public func clientStreamingApp(_ bundleIdentifier: String) -> UUID? {
         let key = bundleIdentifier.lowercased()
-        guard let session = sessions[key], !session.reservationExpired else {
-            return nil
-        }
+        guard let session = sessions[key], !session.reservationExpired else { return nil }
         return session.clientID
     }
-
 }
 
 #endif

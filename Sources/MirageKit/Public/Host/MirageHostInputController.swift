@@ -6,9 +6,9 @@
 //
 
 #if os(macOS)
-import Foundation
 import AppKit
 import ApplicationServices
+import Foundation
 
 // MARK: - Private Accessibility API
 
@@ -115,7 +115,13 @@ public final class MirageHostInputController: @unchecked Sendable {
     var scrollRemainderY: CGFloat = 0
 
     /// Context for scroll injection.
-    var scrollContext: (frame: CGRect, app: MirageApplication?, location: CGPoint?, modifiers: MirageModifierFlags, isPrecise: Bool)?
+    var scrollContext: (
+        frame: CGRect,
+        app: MirageApplication?,
+        location: CGPoint?,
+        modifiers: MirageModifierFlags,
+        isPrecise: Bool
+    )?
 
     /// Timer for smooth scroll output (120Hz).
     var scrollOutputTimer: DispatchSourceTimer?
@@ -169,15 +175,15 @@ public final class MirageHostInputController: @unchecked Sendable {
         }
 
         switch event {
-        case .windowResize(let resizeEvent):
+        case let .windowResize(resizeEvent):
             Task { @MainActor [weak self] in
                 self?.handleWindowResize(window, resizeEvent: resizeEvent)
             }
-        case .relativeResize(let event):
+        case let .relativeResize(event):
             Task { @MainActor [weak self] in
                 self?.handleRelativeResize(window, event: event)
             }
-        case .pixelResize(let event):
+        case let .pixelResize(event):
             Task { @MainActor [weak self] in
                 self?.handlePixelResize(window, event: event)
             }

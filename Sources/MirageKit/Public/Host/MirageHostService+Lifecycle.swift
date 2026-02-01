@@ -13,13 +13,14 @@ import Network
 #if os(macOS)
 import CoreGraphics
 import ScreenCaptureKit
+
 @MainActor
-extension MirageHostService {
-    public func getActiveStreamingSessions() async -> [MirageAppStreamSession] {
+public extension MirageHostService {
+    func getActiveStreamingSessions() async -> [MirageAppStreamSession] {
         await appStreamManager.getAllSessions()
     }
 
-    public func start() async throws {
+    func start() async throws {
         guard state == .idle else {
             MirageLogger.host("Already started, state: \(state)")
             return
@@ -48,14 +49,15 @@ extension MirageHostService {
 
             // Set up app streaming callbacks
             setupAppStreamManagerCallbacks()
-            await SharedVirtualDisplayManager.shared.setGenerationChangeHandler { [weak self] context, previousGeneration in
-                Task { @MainActor [weak self] in
-                    await self?.handleSharedDisplayGenerationChange(
-                        newContext: context,
-                        previousGeneration: previousGeneration
-                    )
+            await SharedVirtualDisplayManager.shared
+                .setGenerationChangeHandler { [weak self] context, previousGeneration in
+                    Task { @MainActor [weak self] in
+                        await self?.handleSharedDisplayGenerationChange(
+                            newContext: context,
+                            previousGeneration: previousGeneration
+                        )
+                    }
                 }
-            }
         } catch {
             MirageLogger.error(.host, "Failed to start: \(error)")
             state = .error(error.localizedDescription)
@@ -77,7 +79,7 @@ extension MirageHostService {
         await startSessionStateMonitoring()
     }
 
-    public func stop() async {
+    func stop() async {
         sessionRefreshTask?.cancel()
         sessionRefreshTask = nil
         stopLoginDisplayWatchdog()
@@ -110,18 +112,14 @@ extension MirageHostService {
         state = .idle
     }
 
-    public func endAppStream(bundleIdentifier: String) async {
-        guard let session = await appStreamManager.getSession(bundleIdentifier: bundleIdentifier) else {
-            return
-        }
+    func endAppStream(bundleIdentifier: String) async {
+        guard let session = await appStreamManager.getSession(bundleIdentifier: bundleIdentifier) else { return }
 
         let windowIDs = Array(session.windowStreams.keys)
 
         // Stop all window streams for this app
         for windowID in windowIDs {
-            if let stream = activeStreams.first(where: { $0.window.id == windowID }) {
-                await stopStream(stream)
-            }
+            if let stream = activeStreams.first(where: { $0.window.id == windowID }) { await stopStream(stream) }
         }
 
         // Notify client that the app stream has ended
@@ -147,7 +145,10 @@ extension MirageHostService {
             )
             if let controlMessage = try? ControlMessage(type: .appTerminated, content: message) {
                 let data = controlMessage.serialize()
-                clientContext.tcpConnection.send(content: data, completion: NWConnection.SendCompletion.contentProcessed { _ in })
+                clientContext.tcpConnection.send(
+                    content: data,
+                    completion: NWConnection.SendCompletion.contentProcessed { _ in }
+                )
             }
         }
 
@@ -157,10 +158,10 @@ extension MirageHostService {
         MirageLogger.host("Ended app stream for \(bundleIdentifier)")
     }
 
-    public func refreshWindows() async throws {
+    func refreshWindows() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(
             false,
-            onScreenWindowsOnly: false  // Include minimized/off-screen windows
+            onScreenWindowsOnly: false // Include minimized/off-screen windows
         )
 
         // Fetch extended metadata for alpha and visibility filtering
@@ -182,9 +183,7 @@ extension MirageHostService {
             guard let scApp = scWindow.owningApplication else { continue }
 
             // Skip invisible windows (alpha near zero) - keeps minimized windows which have normal alpha
-            if let windowMeta = metadata[CGWindowID(scWindow.windowID)], windowMeta.alpha < 0.01 {
-                continue
-            }
+            if let windowMeta = metadata[CGWindowID(scWindow.windowID)], windowMeta.alpha < 0.01 { continue }
 
             let app = MirageApplication(
                 id: scApp.processID,

@@ -8,9 +8,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import AppKit
-
+import Foundation
 import ScreenCaptureKit
 
 extension AppStreamManager {
@@ -35,7 +34,7 @@ extension AppStreamManager {
     }
 
     private func monitoringLoop() async {
-        while !Task.isCancelled && isMonitoring {
+        while !Task.isCancelled, isMonitoring {
             await checkForWindowChanges()
             await checkForExpiredCooldowns()
             await checkForExpiredReservations()
@@ -75,24 +74,22 @@ extension AppStreamManager {
                 for window in validWindows {
                     let windowID = WindowID(window.windowID)
                     // Only notify for truly NEW windows (not seen before) that are on-screen
-                    if !session.knownWindowIDs.contains(windowID) && window.isOnScreen {
+                    if !session.knownWindowIDs.contains(windowID), window.isOnScreen {
                         logger.info("New window detected: \(window.title ?? "untitled") for \(bundleID)")
                         session.knownWindowIDs.insert(windowID)
                         sessionUpdated = true
-                        await _onNewWindowDetected?(bundleID, window)
+                        await onNewWindowDetected?(bundleID, window)
                     }
                 }
 
                 // Update session if we added new known windows
-                if sessionUpdated {
-                    sessions[bundleID] = session
-                }
+                if sessionUpdated { sessions[bundleID] = session }
 
                 // Check for closed windows (only windows that were actively streaming)
                 for windowID in currentStreamingIDs {
                     if !currentValidIDs.contains(windowID) {
                         logger.info("Window closed: \(windowID) for \(bundleID)")
-                        await _onWindowClosed?(bundleID, windowID)
+                        await onWindowClosed?(bundleID, windowID)
                     }
                 }
 
@@ -102,9 +99,9 @@ extension AppStreamManager {
                         app.bundleIdentifier?.lowercased() == bundleID
                     }
 
-                    if !appIsRunning && session.hasActiveWindows {
+                    if !appIsRunning, session.hasActiveWindows {
                         logger.info("App terminated: \(bundleID)")
-                        await _onAppTerminated?(bundleID)
+                        await onAppTerminated?(bundleID)
                     }
                 }
             }
@@ -118,13 +115,13 @@ extension AppStreamManager {
             for windowID in session.expiredCooldowns {
                 sessions[bundleID]?.windowsInCooldown.removeValue(forKey: windowID)
                 logger.debug("Cooldown expired for window \(windowID) in \(bundleID)")
-                await _onCooldownExpired?(bundleID, windowID)
+                await onCooldownExpired?(bundleID, windowID)
             }
         }
     }
 
     private func checkForExpiredReservations() async {
-        let expiredSessions = sessions.filter { $0.value.reservationExpired }
+        let expiredSessions = sessions.filter(\.value.reservationExpired)
 
         for (bundleID, session) in expiredSessions {
             logger.info("Reservation expired for \(session.appName), ending session")
@@ -132,11 +129,8 @@ extension AppStreamManager {
         }
 
         // Stop monitoring if no more sessions
-        if sessions.isEmpty {
-            stopMonitoring()
-        }
+        if sessions.isEmpty { stopMonitoring() }
     }
-
 }
 
 #endif

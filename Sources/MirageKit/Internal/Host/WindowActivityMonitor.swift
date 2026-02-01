@@ -59,7 +59,7 @@ actor WindowActivityMonitor {
     /// Add a window to monitoring
     /// - Parameter windowID: The window ID to start tracking
     func addWindow(_ windowID: WindowID) {
-        trackedWindows[windowID] = true  // New windows start as active
+        trackedWindows[windowID] = true // New windows start as active
         MirageLogger.host("WindowActivityMonitor: Added window \(windowID)")
 
         // Immediately check actual state
@@ -113,7 +113,9 @@ actor WindowActivityMonitor {
         guard let windowList = CGWindowListCopyWindowInfo(
             [.optionAll],
             kCGNullWindowID
-        ) as? [[String: Any]] else { return }
+        ) as? [[String: Any]] else {
+            return
+        }
 
         // Build a map of windowID -> ownerPID
         var windowOwners: [CGWindowID: pid_t] = [:]
@@ -141,7 +143,8 @@ actor WindowActivityMonitor {
                 trackedWindows[windowID] = isActive
 
                 let activityString = isActive ? "active" : "inactive"
-                MirageLogger.host("Window \(windowID) became \(activityString) (PID \(ownerPID), front PID \(frontPID))")
+                MirageLogger
+                    .host("Window \(windowID) became \(activityString) (PID \(ownerPID), front PID \(frontPID))")
 
                 // Call the async callback
                 await onActivityChange?(windowID, isActive)

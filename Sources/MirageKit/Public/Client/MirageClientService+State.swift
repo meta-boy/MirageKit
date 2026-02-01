@@ -12,15 +12,11 @@ import Foundation
 @MainActor
 extension MirageClientService {
     func setInputBlocked(_ blocked: Bool, for streamID: StreamID) {
-        if blocked {
-            sendInputReleaseEvents(for: streamID)
-        }
+        if blocked { sendInputReleaseEvents(for: streamID) }
 
         inputBlockedStreamIDsLock.lock()
-        if blocked {
-            _inputBlockedStreamIDs.insert(streamID)
-        } else {
-            _inputBlockedStreamIDs.remove(streamID)
+        if blocked { inputBlockedStreamIDsStorage.insert(streamID) } else {
+            inputBlockedStreamIDsStorage.remove(streamID)
         }
         inputBlockedStreamIDsLock.unlock()
     }
@@ -30,7 +26,7 @@ extension MirageClientService {
         guard case .connected = connectionState, let connection else { return }
 
         lastCursorPositionsLock.lock()
-        let releaseLocation = _lastCursorPositions[streamID] ?? CGPoint(x: 0.5, y: 0.5)
+        let releaseLocation = lastCursorPositionsStorage[streamID] ?? CGPoint(x: 0.5, y: 0.5)
         lastCursorPositionsLock.unlock()
 
         do {
@@ -69,13 +65,13 @@ extension MirageClientService {
 
     func addActiveStreamID(_ id: StreamID) {
         activeStreamIDsLock.lock()
-        _activeStreamIDs.insert(id)
+        activeStreamIDsStorage.insert(id)
         activeStreamIDsLock.unlock()
     }
 
     func removeActiveStreamID(_ id: StreamID) {
         activeStreamIDsLock.lock()
-        _activeStreamIDs.remove(id)
+        activeStreamIDsStorage.remove(id)
         activeStreamIDsLock.unlock()
 
         setInputBlocked(false, for: id)
@@ -83,11 +79,11 @@ extension MirageClientService {
 
     func clearAllActiveStreamIDs() {
         activeStreamIDsLock.lock()
-        _activeStreamIDs.removeAll()
+        activeStreamIDsStorage.removeAll()
         activeStreamIDsLock.unlock()
 
         inputBlockedStreamIDsLock.lock()
-        _inputBlockedStreamIDs.removeAll()
+        inputBlockedStreamIDsStorage.removeAll()
         inputBlockedStreamIDsLock.unlock()
     }
 
@@ -95,7 +91,7 @@ extension MirageClientService {
     nonisolated func reassemblerForStream(_ id: StreamID) -> FrameReassembler? {
         reassemblersLock.lock()
         defer { reassemblersLock.unlock() }
-        return _reassemblersSnapshot[id]
+        return reassemblersSnapshotStorage[id]
     }
 
     func updateReassemblerSnapshot() async {
@@ -108,7 +104,7 @@ extension MirageClientService {
 
     private nonisolated func storeReassemblerSnapshot(_ snapshot: [StreamID: FrameReassembler]) {
         reassemblersLock.lock()
-        _reassemblersSnapshot = snapshot
+        reassemblersSnapshotStorage = snapshot
         reassemblersLock.unlock()
     }
 }

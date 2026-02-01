@@ -25,11 +25,9 @@ extension MirageHostService {
                     var streams: [(StreamID, CGRect)] = []
 
                     // Get current window frames for all active app/window streams
-                    let appStreams = self.activeStreams.compactMap { session -> (StreamID, CGRect)? in
+                    let appStreams = activeStreams.compactMap { session -> (StreamID, CGRect)? in
                         // Get the latest window frame from CGWindowList
-                        guard let frame = currentWindowFrame(for: session.window.id) else {
-                            return nil
-                        }
+                        guard let frame = currentWindowFrame(for: session.window.id) else { return nil }
                         // Convert from CGWindowList coordinates (top-left origin) to Cocoa (bottom-left origin)
                         // NSEvent.mouseLocation uses Cocoa coordinates
                         guard let screen = NSScreen.main else { return nil }
@@ -46,7 +44,7 @@ extension MirageHostService {
 
                     // Include desktop stream if active
                     // Desktop stream uses NSScreen.main frame since it mirrors the main display
-                    if let desktopID = self.desktopStreamID, self.desktopDisplayBounds != nil {
+                    if let desktopID = desktopStreamID, desktopDisplayBounds != nil {
                         if let screen = NSScreen.main {
                             // Use the main screen's frame in Cocoa coordinates (already bottom-left origin)
                             streams.append((desktopID, screen.frame))

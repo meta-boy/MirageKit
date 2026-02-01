@@ -7,14 +7,14 @@
 //  Capture engine start/stop.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 import os
 
 #if os(macOS)
-import ScreenCaptureKit
 import AppKit
+import ScreenCaptureKit
 
 extension WindowCaptureEngine {
     /// Start capturing all windows belonging to an application (includes alerts, sheets, dialogs)
@@ -28,19 +28,16 @@ extension WindowCaptureEngine {
         outputScale: CGFloat = 1.0,
         onFrame: @escaping @Sendable (CapturedFrame) -> Void,
         onDimensionChange: @escaping @Sendable (Int, Int) -> Void = { _, _ in }
-    ) async throws {
-        guard !isCapturing else {
-            throw MirageError.protocolError("Already capturing")
-        }
+    )
+        async throws {
+        guard !isCapturing else { throw MirageError.protocolError("Already capturing") }
 
         capturedFrameHandler = onFrame
         dimensionChangeHandler = onDimensionChange
 
         currentDisplayRefreshRate = nil
         updateDisplayRefreshRate(for: display.displayID)
-        if let refreshRate = currentDisplayRefreshRate {
-            MirageLogger.capture("Display mode refresh rate: \(refreshRate)")
-        }
+        if let refreshRate = currentDisplayRefreshRate { MirageLogger.capture("Display mode refresh rate: \(refreshRate)") }
 
         // Create stream configuration
         let streamConfig = SCStreamConfiguration()
@@ -48,11 +45,10 @@ extension WindowCaptureEngine {
         // Calculate target dimensions based on window frame
         // Use known scale factor if provided (for virtual displays on headless Macs),
         // otherwise detect from NSScreen
-        let target: StreamTargetDimensions
-        if let knownScale = knownScaleFactor {
-            target = streamTargetDimensions(windowFrame: window.frame, scaleFactor: knownScale)
+        let target: StreamTargetDimensions = if let knownScale = knownScaleFactor {
+            streamTargetDimensions(windowFrame: window.frame, scaleFactor: knownScale)
         } else {
-            target = streamTargetDimensions(windowFrame: window.frame)
+            streamTargetDimensions(windowFrame: window.frame)
         }
 
         let clampedScale = max(0.1, min(1.0, outputScale))
@@ -80,15 +76,16 @@ extension WindowCaptureEngine {
         // Setting explicit width/height WITHOUT captureResolution lets SCK use our dimensions.
         // For real displays, .best correctly detects backing scale factor.
         useBestCaptureResolution = (knownScaleFactor == nil)
-        if useBestCaptureResolution {
-            streamConfig.captureResolution = .best
-        }
+        if useBestCaptureResolution { streamConfig.captureResolution = .best }
         // When knownScaleFactor is set, we intentionally don't set captureResolution
         // to let our explicit width/height control the output resolution
         streamConfig.width = currentWidth
         streamConfig.height = currentHeight
 
-        MirageLogger.capture("Configuring capture: \(currentWidth)x\(currentHeight), scale=\(currentScaleFactor), outputScale=\(clampedScale), knownScale=\(String(describing: knownScaleFactor))")
+        MirageLogger
+            .capture(
+                "Configuring capture: \(currentWidth)x\(currentHeight), scale=\(currentScaleFactor), outputScale=\(clampedScale), knownScale=\(String(describing: knownScaleFactor))"
+            )
 
         // Frame rate
         streamConfig.minimumFrameInterval = CMTime(
@@ -107,29 +104,31 @@ extension WindowCaptureEngine {
         // TODO: HDR support - add .hdr case when EDR configuration is figured out
 
         // Capture settings
-        streamConfig.showsCursor = false  // Don't capture cursor - iPad shows its own
+        streamConfig.showsCursor = false // Don't capture cursor - iPad shows its own
         streamConfig.queueDepth = captureQueueDepth
-        if let override = configuration.captureQueueDepth, override > 0 {
-            MirageLogger.capture("Using capture queue depth override: \(streamConfig.queueDepth)")
-        }
+        if let override = configuration.captureQueueDepth, override > 0 { MirageLogger.capture("Using capture queue depth override: \(streamConfig.queueDepth)") }
         let queueDepth = streamConfig.queueDepth
         let poolMinimumCount = bufferPoolMinimumCount
-        MirageLogger.capture("Capture buffering: latency=\(latencyMode.displayName), queue=\(queueDepth), pool=\(poolMinimumCount)")
+        MirageLogger
+            .capture(
+                "Capture buffering: latency=\(latencyMode.displayName), queue=\(queueDepth), pool=\(poolMinimumCount)"
+            )
 
         // Use window-level capture for precise dimensions (captures just this window)
         // Note: This may not capture modal dialogs/sheets, but avoids black bars from app-level bounding box
         let filter = SCContentFilter(desktopIndependentWindow: window)
-        self.contentFilter = filter
+        contentFilter = filter
 
         let windowTitle = window.title ?? "untitled"
-        MirageLogger.capture("Starting capture at \(currentWidth)x\(currentHeight) (scale: \(currentScaleFactor)) for window: \(windowTitle)")
+        MirageLogger
+            .capture(
+                "Starting capture at \(currentWidth)x\(currentHeight) (scale: \(currentScaleFactor)) for window: \(windowTitle)"
+            )
 
         // Create stream
         stream = SCStream(filter: filter, configuration: streamConfig, delegate: nil)
 
-        guard let stream else {
-            throw MirageError.protocolError("Failed to create stream")
-        }
+        guard let stream else { throw MirageError.protocolError("Failed to create stream") }
 
         // Create output handler with windowID for fallback capture during SCK pauses
         let captureRate = effectiveCaptureRate()
@@ -241,10 +240,9 @@ extension WindowCaptureEngine {
         showsCursor: Bool = true,
         onFrame: @escaping @Sendable (CapturedFrame) -> Void,
         onDimensionChange: @escaping @Sendable (Int, Int) -> Void = { _, _ in }
-    ) async throws {
-        guard !isCapturing else {
-            throw MirageError.protocolError("Already capturing")
-        }
+    )
+        async throws {
+        guard !isCapturing else { throw MirageError.protocolError("Already capturing") }
 
         capturedFrameHandler = onFrame
         dimensionChangeHandler = onDimensionChange
@@ -271,16 +269,13 @@ extension WindowCaptureEngine {
         )
 
         updateDisplayRefreshRate(for: display.displayID)
-        if let refreshRate = currentDisplayRefreshRate {
-            MirageLogger.capture("Display mode refresh rate: \(refreshRate)")
-        }
+        if let refreshRate = currentDisplayRefreshRate { MirageLogger.capture("Display mode refresh rate: \(refreshRate)") }
 
         // Calculate scale factor: if resolution was explicitly provided (HiDPI override),
         // compare it to display's reported dimensions to determine the scale
-        // For HiDPI virtual displays: resolution=2064x2752 (pixels), display.width/height=1032x1376 (points) -> scale=2.0
-        if let res = resolution, display.width > 0 {
-            currentScaleFactor = res.width / CGFloat(display.width)
-        } else {
+        // For HiDPI virtual displays: resolution=2064x2752 (pixels), display.width/height=1032x1376 (points) ->
+        // scale=2.0
+        if let res = resolution, display.width > 0 { currentScaleFactor = res.width / CGFloat(display.width) } else {
             currentScaleFactor = 1.0
         }
 
@@ -320,32 +315,37 @@ extension WindowCaptureEngine {
         // - Desktop streaming: hide cursor (false) - client renders its own
         streamConfig.showsCursor = showsCursor
         streamConfig.queueDepth = captureQueueDepth
-        if let override = configuration.captureQueueDepth, override > 0 {
-            MirageLogger.capture("Using capture queue depth override: \(streamConfig.queueDepth)")
-        }
+        if let override = configuration.captureQueueDepth, override > 0 { MirageLogger.capture("Using capture queue depth override: \(streamConfig.queueDepth)") }
         let queueDepth = streamConfig.queueDepth
         let poolMinimumCount = bufferPoolMinimumCount
-        MirageLogger.capture("Capture buffering: latency=\(latencyMode.displayName), queue=\(queueDepth), pool=\(poolMinimumCount)")
+        MirageLogger
+            .capture(
+                "Capture buffering: latency=\(latencyMode.displayName), queue=\(queueDepth), pool=\(poolMinimumCount)"
+            )
 
         // Capture displayID before creating filter (for logging after)
         let capturedDisplayID = display.displayID
 
         // Create filter for the entire display
         let filter = SCContentFilter(display: display, excludingWindows: [])
-        self.contentFilter = filter
+        contentFilter = filter
 
         if useExplicitCaptureDimensions {
-            MirageLogger.capture("Starting display capture at \(currentWidth)x\(currentHeight) for display \(capturedDisplayID)")
+            MirageLogger
+                .capture(
+                    "Starting display capture at \(currentWidth)x\(currentHeight) for display \(capturedDisplayID)"
+                )
         } else {
-            MirageLogger.capture("Starting display capture with .best (no explicit dimensions) for display \(capturedDisplayID)")
+            MirageLogger
+                .capture(
+                    "Starting display capture with .best (no explicit dimensions) for display \(capturedDisplayID)"
+                )
         }
 
         // Create stream
         stream = SCStream(filter: filter, configuration: streamConfig, delegate: nil)
 
-        guard let stream else {
-            throw MirageError.protocolError("Failed to create display stream")
-        }
+        guard let stream else { throw MirageError.protocolError("Failed to create display stream") }
 
         // Create output handler
         let captureRate = effectiveCaptureRate()

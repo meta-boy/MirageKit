@@ -5,13 +5,12 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
+import CoreGraphics
 import Foundation
 import Network
 import Observation
-import CoreGraphics
 
 #if canImport(UIKit)
-import UIKit.UIDevice
 import UIKit
 #endif
 
@@ -148,8 +147,8 @@ public final class MirageClientService {
     var udpConnection: NWConnection?
     var hostDataPort: UInt16 = 0
 
-    // Per-stream controllers for lifecycle management
-    // StreamController owns decoder, reassembler, and resize state machine
+    /// Per-stream controllers for lifecycle management
+    /// StreamController owns decoder, reassembler, and resize state machine
     var controllersByStream: [StreamID: StreamController] = [:]
 
     // Track which streams have been registered with the host (prevents duplicate registrations)
@@ -163,30 +162,30 @@ public final class MirageClientService {
 
     /// Thread-safe set of active stream IDs for packet filtering from UDP callback
     let activeStreamIDsLock = NSLock()
-    nonisolated(unsafe) var _activeStreamIDs: Set<StreamID> = []
+    nonisolated(unsafe) var activeStreamIDsStorage: Set<StreamID> = []
 
     /// Thread-safe property to check if a stream is active from nonisolated contexts
     nonisolated var activeStreamIDsForFiltering: Set<StreamID> {
         activeStreamIDsLock.lock()
         defer { activeStreamIDsLock.unlock() }
-        return _activeStreamIDs
+        return activeStreamIDsStorage
     }
 
     /// Thread-safe set of streams awaiting a first-packet startup log.
     let startupPacketPendingLock = NSLock()
-    nonisolated(unsafe) var _startupPacketPending: Set<StreamID> = []
+    nonisolated(unsafe) var startupPacketPendingStorage: Set<StreamID> = []
 
     nonisolated func isStartupPacketPending(_ streamID: StreamID) -> Bool {
         startupPacketPendingLock.lock()
         defer { startupPacketPendingLock.unlock() }
-        return _startupPacketPending.contains(streamID)
+        return startupPacketPendingStorage.contains(streamID)
     }
 
     nonisolated func takeStartupPacketPending(_ streamID: StreamID) -> Bool {
         startupPacketPendingLock.lock()
         defer { startupPacketPendingLock.unlock() }
-        if _startupPacketPending.contains(streamID) {
-            _startupPacketPending.remove(streamID)
+        if startupPacketPendingStorage.contains(streamID) {
+            startupPacketPendingStorage.remove(streamID)
             return true
         }
         return false
@@ -194,34 +193,34 @@ public final class MirageClientService {
 
     func markStartupPacketPending(_ streamID: StreamID) {
         startupPacketPendingLock.lock()
-        _startupPacketPending.insert(streamID)
+        startupPacketPendingStorage.insert(streamID)
         startupPacketPendingLock.unlock()
     }
 
     func clearStartupPacketPending(_ streamID: StreamID) {
         startupPacketPendingLock.lock()
-        _startupPacketPending.remove(streamID)
+        startupPacketPendingStorage.remove(streamID)
         startupPacketPendingLock.unlock()
     }
 
     /// Thread-safe set of stream IDs where input is blocked (decoder unhealthy)
     /// Input is blocked when the stream is frozen for a sustained interval.
     let inputBlockedStreamIDsLock = NSLock()
-    nonisolated(unsafe) var _inputBlockedStreamIDs: Set<StreamID> = []
+    nonisolated(unsafe) var inputBlockedStreamIDsStorage: Set<StreamID> = []
 
     /// Thread-safe storage for last cursor positions per stream
     /// Used by sendInputReleaseEvents to avoid jumping cursor to center during decode errors
     let lastCursorPositionsLock = NSLock()
-    nonisolated(unsafe) var _lastCursorPositions: [StreamID: CGPoint] = [:]
+    nonisolated(unsafe) var lastCursorPositionsStorage: [StreamID: CGPoint] = [:]
 
     /// Thread-safe snapshot of reassemblers for packet routing from UDP callback
     let reassemblersLock = NSLock()
-    nonisolated(unsafe) var _reassemblersSnapshot: [StreamID: FrameReassembler] = [:]
+    nonisolated(unsafe) var reassemblersSnapshotStorage: [StreamID: FrameReassembler] = [:]
 
-    // Stream start synchronization - waits for server to assign stream ID
+    /// Stream start synchronization - waits for server to assign stream ID
     var streamStartedContinuation: CheckedContinuation<StreamID, Error>?
 
-    // Minimum window sizes per stream (from host)
+    /// Minimum window sizes per stream (from host)
     var streamMinSizes: [StreamID: (minWidth: Int, minHeight: Int)] = [:]
 
     // Per-stream refresh rate overrides (60/120 only).
@@ -238,20 +237,21 @@ public final class MirageClientService {
 
         public static func == (lhs: ConnectionState, rhs: ConnectionState) -> Bool {
             switch (lhs, rhs) {
-            case (.disconnected, .disconnected): return true
-            case (.connecting, .connecting): return true
-            case (.connected(let a), .connected(let b)): return a == b
-            case (.reconnecting, .reconnecting): return true
-            case (.error(let a), .error(let b)): return a == b
-            default: return false
+            case (.disconnected, .disconnected): true
+            case (.connecting, .connecting): true
+            case let (.connected(a), .connected(b)): a == b
+            case (.reconnecting, .reconnecting): true
+            case let (.error(a), .error(b)): a == b
+            default: false
             }
         }
 
         /// Whether this state allows starting a new connection
         public var canConnect: Bool {
             switch self {
-            case .disconnected, .error: return true
-            default: return false
+            case .disconnected,
+                 .error: true
+            default: false
             }
         }
     }
@@ -270,18 +270,18 @@ public final class MirageClientService {
         self.deviceName = deviceName ?? UIDevice.current.name
         #endif
 
-        self.networkConfig = networkConfiguration
+        networkConfig = networkConfiguration
         self.sessionStore = sessionStore
 
         // Load existing device ID or generate and persist a new one
         if let savedIDString = UserDefaults.standard.string(forKey: Self.deviceIDKey),
            let savedID = UUID(uuidString: savedIDString) {
-            self.deviceID = savedID
+            deviceID = savedID
             MirageLogger.client("Loaded existing device ID: \(savedID)")
         } else {
             let newID = UUID()
             UserDefaults.standard.set(newID.uuidString, forKey: Self.deviceIDKey)
-            self.deviceID = newID
+            deviceID = newID
             MirageLogger.client("Generated new device ID: \(newID)")
         }
         self.sessionStore.clientService = self

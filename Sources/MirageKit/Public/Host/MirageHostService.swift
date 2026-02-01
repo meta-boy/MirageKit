@@ -5,15 +5,15 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
+import CoreMedia
 import Foundation
 import Network
 import Observation
-import CoreMedia
 
 #if os(macOS)
-import ScreenCaptureKit
 import AppKit
 import ApplicationServices
+import ScreenCaptureKit
 
 /// Main entry point for hosting window streams (macOS only)
 @Observable
@@ -28,7 +28,7 @@ public final class MirageHostService {
     /// Connected clients
     public internal(set) var connectedClients: [MirageConnectedClient] = []
 
-    /// Get all active app streaming sessions
+    // Get all active app streaming sessions
 
     /// Current host state
     public internal(set) var state: HostState = .idle
@@ -67,7 +67,7 @@ public final class MirageHostService {
     var udpListener: NWListener?
     let encoderConfig: MirageEncoderConfiguration
     let networkConfig: MirageNetworkConfiguration
-    var hostID: UUID = UUID()
+    var hostID: UUID = .init()
 
     // Stream management (internal for extension access)
     var nextStreamID: StreamID = 1
@@ -92,7 +92,7 @@ public final class MirageHostService {
     var sharedVirtualDisplayBounds: CGRect?
     var sharedVirtualDisplayGeneration: UInt64 = 0
 
-    // Track which windows are using the shared virtual display
+    /// Track which windows are using the shared virtual display
     var windowsUsingVirtualDisplay: Set<WindowID> = []
 
     // Login display stream (lock/login screen) - internal for extension access
@@ -134,7 +134,7 @@ public final class MirageHostService {
     var desktopPrimaryPhysicalDisplayID: CGDirectDisplayID?
     var desktopPrimaryPhysicalBounds: CGRect?
 
-    // Cursor monitoring - internal for extension access
+    /// Cursor monitoring - internal for extension access
     var cursorMonitor: CursorMonitor?
 
     // Session state monitoring (for headless Mac unlock support) - internal for extension access
@@ -145,18 +145,17 @@ public final class MirageHostService {
     var sessionRefreshGeneration: UInt64 = 0
     let sessionRefreshInterval: Duration = .seconds(3)
 
-    // Window activity monitoring (for throttling inactive streams) - internal for extension access
+    /// Window activity monitoring (for throttling inactive streams) - internal for extension access
     var windowActivityMonitor: WindowActivityMonitor?
 
-    // App-centric streaming manager - internal for extension access
+    /// App-centric streaming manager - internal for extension access
     let appStreamManager = AppStreamManager()
 
-    // Menu bar passthrough - internal for extension access
+    /// Menu bar passthrough - internal for extension access
     let menuBarMonitor = MenuBarMonitor()
 
-    // Window activation (robust multi-method for headless Macs)
-    @ObservationIgnored
-    let windowActivator: WindowActivator = WindowActivator.forCurrentEnvironment()
+    /// Window activation (robust multi-method for headless Macs)
+    @ObservationIgnored let windowActivator: WindowActivator = .forCurrentEnvironment()
 
     // MARK: - Fast Input Path (bypasses MainActor)
 
@@ -169,11 +168,18 @@ public final class MirageHostService {
 
     /// Fast input handler - called on inputQueue, NOT on MainActor
     /// Set this to handle input events with minimal latency
-    public var onInputEvent: ((_ event: MirageInputEvent, _ window: MirageWindow, _ client: MirageConnectedClient) -> Void)? {
-        get { _onInputEvent }
-        set { _onInputEvent = newValue }
+    public var onInputEvent: ((_ event: MirageInputEvent, _ window: MirageWindow, _ client: MirageConnectedClient)
+        -> Void)? {
+        get { onInputEventStorage }
+        set { onInputEventStorage = newValue }
     }
-    nonisolated(unsafe) var _onInputEvent: ((_ event: MirageInputEvent, _ window: MirageWindow, _ client: MirageConnectedClient) -> Void)?
+
+    nonisolated(unsafe) var onInputEventStorage: ((
+        _ event: MirageInputEvent,
+        _ window: MirageWindow,
+        _ client: MirageConnectedClient
+    )
+        -> Void)?
 
     public enum HostState: Equatable {
         case idle
@@ -198,13 +204,13 @@ public final class MirageHostService {
             deviceID: deviceID
         )
 
-        self.advertiser = BonjourAdvertiser(
+        advertiser = BonjourAdvertiser(
             serviceName: name,
             capabilities: capabilities,
             enablePeerToPeer: networkConfiguration.enablePeerToPeer
         )
-        self.encoderConfig = encoderConfiguration
-        self.networkConfig = networkConfiguration
+        encoderConfig = encoderConfiguration
+        networkConfig = networkConfiguration
 
         windowController.hostService = self
         inputController.hostService = self
@@ -223,7 +229,8 @@ public final class MirageHostService {
     func resolvedDesktopInputBounds(
         physicalBounds: CGRect,
         virtualResolution: CGSize?
-    ) -> CGRect {
+    )
+    -> CGRect {
         guard desktopUsesVirtualDisplay,
               let virtualResolution,
               virtualResolution.width > 0,
@@ -264,20 +271,20 @@ public final class MirageHostService {
         return bounds
     }
 
-    /// Start hosting and advertising
+    // Start hosting and advertising
 
-    /// Refresh session state on demand and apply any changes immediately.
+    // Refresh session state on demand and apply any changes immediately.
 
-    /// Send session state to a specific client
+    // Send session state to a specific client
 
-    /// Send window list to a specific client
+    // Send window list to a specific client
 
-    /// Stop hosting
+    // Stop hosting
 
-    /// End streaming for a specific app
-    /// - Parameter bundleIdentifier: The bundle identifier of the app to stop streaming
+    // End streaming for a specific app
+    // - Parameter bundleIdentifier: The bundle identifier of the app to stop streaming
 
-    /// Refresh available windows list
+    // Refresh available windows list
 
     /// Start streaming a window
     /// - Parameters:
@@ -299,40 +306,37 @@ public final class MirageHostService {
     // TODO: HDR support - requires proper virtual display EDR configuration
     // ///   - hdr: Whether to enable HDR streaming (Rec. 2020 with PQ transfer function)
 
-    /// Stop a stream
-    /// - Parameters:
-    ///   - session: The stream session to stop
-    ///   - minimizeWindow: Whether to minimize the source window after stopping (default: false)
+    // Stop a stream
+    // - Parameters:
+    //   - session: The stream session to stop
+    //   - minimizeWindow: Whether to minimize the source window after stopping (default: false)
 
-    /// Notify that a window has been resized - updates the stream to match new dimensions
-    /// Always encodes at host's native resolution for maximum quality
-    /// - Parameters:
-    ///   - window: The window that was resized (contains the new frame)
+    // Notify that a window has been resized - updates the stream to match new dimensions
+    // Always encodes at host's native resolution for maximum quality
+    // - Parameters:
+    //   - window: The window that was resized (contains the new frame)
 
-    /// Notify that a window has been resized (convenience overload that ignores preferredPixelSize)
-    /// Always encodes at host's native resolution for maximum quality
-    /// - Parameters:
-    ///   - window: The window that was resized (contains the new frame)
-    ///   - preferredPixelSize: Ignored - kept for API compatibility
+    // Notify that a window has been resized (convenience overload that ignores preferredPixelSize)
+    // Always encodes at host's native resolution for maximum quality
+    // - Parameters:
+    //   - window: The window that was resized (contains the new frame)
+    //   - preferredPixelSize: Ignored - kept for API compatibility
 
-    /// Update capture resolution to match client's exact pixel dimensions
-    /// This allows encoding at the client's native resolution regardless of host window size
-    /// - Parameters:
-    ///   - windowID: The window whose stream should be updated
-    ///   - width: Target pixel width (client's drawable width)
-    ///   - height: Target pixel height (client's drawable height)
+    // Update capture resolution to match client's exact pixel dimensions
+    // This allows encoding at the client's native resolution regardless of host window size
+    // - Parameters:
+    //   - windowID: The window whose stream should be updated
+    //   - width: Target pixel width (client's drawable width)
+    //   - height: Target pixel height (client's drawable height)
 
-    /// Disconnect a client
+    // Disconnect a client
 
+    // Activate the application and raise the window being streamed.
+    // Uses robust multi-method activation that works on headless Macs.
 
-    /// Activate the application and raise the window being streamed.
-    /// Uses robust multi-method activation that works on headless Macs.
-
-    /// Find the AXUIElement for a specific window using its known ID
-
+    // Find the AXUIElement for a specific window using its known ID
 
     // MARK: - Private
-
 }
 
 #endif

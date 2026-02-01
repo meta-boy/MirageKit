@@ -7,8 +7,8 @@
 //  Fetches host information from CloudKit.
 //
 
-import Foundation
 import CloudKit
+import Foundation
 import Observation
 
 /// Fetches host information from CloudKit for display in the client.
@@ -29,7 +29,7 @@ import Observation
 /// ```
 @Observable
 @MainActor
-public final class MirageCloudKitHostProvider: Sendable {
+public final class MirageCloudKitHostProvider {
     // MARK: - Properties
 
     /// Hosts from the user's own iCloud account.
@@ -57,7 +57,7 @@ public final class MirageCloudKitHostProvider: Sendable {
     /// - Parameter cloudKitManager: The CloudKit manager providing container access.
     public init(cloudKitManager: MirageCloudKitManager) {
         self.cloudKitManager = cloudKitManager
-        self.hostZoneID = CKRecordZone.ID(
+        hostZoneID = CKRecordZone.ID(
             zoneName: cloudKitManager.configuration.hostZoneName,
             ownerName: CKCurrentUserDefaultName
         )
@@ -102,16 +102,13 @@ public final class MirageCloudKitHostProvider: Sendable {
 
             var hosts: [MirageCloudKitHostInfo] = []
             for (_, result) in results {
-                if case .success(let record) = result {
-                    if let hostInfo = parseHostRecord(record, isShared: false, ownerUserID: nil) {
-                        hosts.append(hostInfo)
-                    }
+                if case let .success(record) = result {
+                    if let hostInfo = parseHostRecord(record, isShared: false, ownerUserID: nil) { hosts.append(hostInfo) }
                 }
             }
 
             ownHosts = hosts.sorted { $0.name < $1.name }
             MirageLogger.appState("Fetched \(hosts.count) own hosts from CloudKit")
-
         } catch {
             MirageLogger.error(.appState, "Failed to fetch own hosts: \(error)")
             lastError = error
@@ -141,12 +138,10 @@ public final class MirageCloudKitHostProvider: Sendable {
                     let (results, _) = try await sharedDatabase.records(matching: query, inZoneWith: zone.zoneID)
 
                     for (_, result) in results {
-                        if case .success(let record) = result {
+                        if case let .success(record) = result {
                             // Get owner user ID from the zone
                             let ownerUserID = zone.zoneID.ownerName
-                            if let hostInfo = parseHostRecord(record, isShared: true, ownerUserID: ownerUserID) {
-                                hosts.append(hostInfo)
-                            }
+                            if let hostInfo = parseHostRecord(record, isShared: true, ownerUserID: ownerUserID) { hosts.append(hostInfo) }
                         }
                     }
                 } catch {
@@ -156,7 +151,6 @@ public final class MirageCloudKitHostProvider: Sendable {
 
             sharedHosts = hosts.sorted { $0.name < $1.name }
             MirageLogger.appState("Fetched \(hosts.count) shared hosts from CloudKit")
-
         } catch {
             MirageLogger.error(.appState, "Failed to enumerate shared zones: \(error)")
             lastError = error
@@ -170,7 +164,8 @@ public final class MirageCloudKitHostProvider: Sendable {
         _ record: CKRecord,
         isShared: Bool,
         ownerUserID: String?
-    ) -> MirageCloudKitHostInfo? {
+    )
+    -> MirageCloudKitHostInfo? {
         // Required: deviceID
         guard let deviceIDString = record[MirageCloudKitHostInfo.RecordKey.deviceID.rawValue] as? String,
               let deviceID = UUID(uuidString: deviceIDString) else {
@@ -190,18 +185,21 @@ public final class MirageCloudKitHostProvider: Sendable {
         deviceID: UUID,
         isShared: Bool,
         ownerUserID: String?
-    ) -> MirageCloudKitHostInfo {
+    )
+    -> MirageCloudKitHostInfo {
         let name = record[MirageCloudKitHostInfo.RecordKey.name.rawValue] as? String ?? "Unknown Host"
 
         let deviceTypeString = record[MirageCloudKitHostInfo.RecordKey.deviceType.rawValue] as? String ?? "mac"
         let deviceType = DeviceType(rawValue: deviceTypeString) ?? .mac
 
         // Parse capabilities
-        let maxFrameRate = (record[MirageCloudKitHostInfo.RecordKey.maxFrameRate.rawValue] as? Int64).map(Int.init) ?? 120
+        let maxFrameRate = (record[MirageCloudKitHostInfo.RecordKey.maxFrameRate.rawValue] as? Int64)
+            .map(Int.init) ?? 120
         let supportsHEVC = (record[MirageCloudKitHostInfo.RecordKey.supportsHEVC.rawValue] as? Int64 ?? 1) != 0
         let supportsP3 = (record[MirageCloudKitHostInfo.RecordKey.supportsP3.rawValue] as? Int64 ?? 1) != 0
         let maxStreams = (record[MirageCloudKitHostInfo.RecordKey.maxStreams.rawValue] as? Int64).map(Int.init) ?? 4
-        let protocolVersion = (record[MirageCloudKitHostInfo.RecordKey.protocolVersion.rawValue] as? Int64).map(Int.init) ?? Int(MirageKit.protocolVersion)
+        let protocolVersion = (record[MirageCloudKitHostInfo.RecordKey.protocolVersion.rawValue] as? Int64)
+            .map(Int.init) ?? Int(MirageKit.protocolVersion)
 
         let capabilities = MirageHostCapabilities(
             maxStreams: maxStreams,
@@ -211,7 +209,8 @@ public final class MirageCloudKitHostProvider: Sendable {
             protocolVersion: protocolVersion
         )
 
-        let lastSeen = record[MirageCloudKitHostInfo.RecordKey.lastSeen.rawValue] as? Date ?? record.modificationDate ?? Date.distantPast
+        let lastSeen = record[MirageCloudKitHostInfo.RecordKey.lastSeen.rawValue] as? Date ?? record
+            .modificationDate ?? Date.distantPast
 
         return MirageCloudKitHostInfo(
             id: deviceID,

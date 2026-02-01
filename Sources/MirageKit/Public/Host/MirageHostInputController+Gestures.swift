@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -20,7 +20,7 @@ extension MirageHostInputController {
     /// Threshold for magnify gesture before triggering a zoom keystroke
     private static let magnifyKeyThreshold: CGFloat = 0.08
 
-    func handleMagnifyGesture(_ event: MirageMagnifyEvent, windowFrame: CGRect) {
+    func handleMagnifyGesture(_ event: MirageMagnifyEvent, windowFrame _: CGRect) {
         switch event.phase {
         case .began:
             magnifyAccumulator = 0
@@ -37,11 +37,10 @@ extension MirageHostInputController {
                 injectKeyboardShortcut(keyCode: 0x1B, modifiers: .maskCommand)
                 magnifyAccumulator = 0
             }
-        case .ended, .cancelled:
+        case .cancelled,
+             .ended:
             // Trigger final zoom if accumulated enough
-            if magnifyAccumulator >= Self.magnifyKeyThreshold * 0.5 {
-                injectKeyboardShortcut(keyCode: 0x18, modifiers: .maskCommand)
-            } else if magnifyAccumulator <= -Self.magnifyKeyThreshold * 0.5 {
+            if magnifyAccumulator >= Self.magnifyKeyThreshold * 0.5 { injectKeyboardShortcut(keyCode: 0x18, modifiers: .maskCommand) } else if magnifyAccumulator <= -Self.magnifyKeyThreshold * 0.5 {
                 injectKeyboardShortcut(keyCode: 0x1B, modifiers: .maskCommand)
             }
             magnifyAccumulator = 0
@@ -79,7 +78,8 @@ extension MirageHostInputController {
                 )
                 rotationAccumulator = 0
             }
-        case .ended, .cancelled:
+        case .cancelled,
+             .ended:
             if abs(rotationAccumulator) > 0.5 {
                 let scrollDelta = Int32(rotationAccumulator * 2)
                 injectScrollWithModifier(
@@ -109,13 +109,14 @@ extension MirageHostInputController {
             wheel1: deltaY,
             wheel2: deltaX,
             wheel3: 0
-        ) else { return }
+        ) else {
+            return
+        }
 
         cgEvent.location = scrollPoint
         cgEvent.flags = modifier
         postEvent(cgEvent)
     }
-
 }
 
 #endif

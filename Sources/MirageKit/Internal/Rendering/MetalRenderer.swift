@@ -5,19 +5,19 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
+import CoreVideo
 import Foundation
-import simd
 import Metal
 import MetalKit
-import CoreVideo
+import simd
 
 /// Uniforms structure matching Metal shader (must be 16-byte aligned)
 struct RenderUniforms {
     var frameCount: UInt32
-    var padding: UInt32 = 0  // Padding for alignment
+    var padding: UInt32 = 0 // Padding for alignment
     var padding2: UInt32 = 0
     var padding3: UInt32 = 0
-    var contentRect: SIMD4<Float>  // x, y, width, height (normalized 0-1)
+    var contentRect: SIMD4<Float> // x, y, width, height (normalized 0-1)
     var colorMatrix: simd_float4x4
     var colorOffset: SIMD4<Float>
 }
@@ -51,15 +51,11 @@ final class MetalRenderer {
     )
 
     init(device: MTLDevice? = nil) throws {
-        guard let mtlDevice = device ?? MTLCreateSystemDefaultDevice() else {
-            throw MirageError.protocolError("Metal not available")
-        }
+        guard let mtlDevice = device ?? MTLCreateSystemDefaultDevice() else { throw MirageError.protocolError("Metal not available") }
         self.device = mtlDevice
 
-        guard let queue = mtlDevice.makeCommandQueue() else {
-            throw MirageError.protocolError("Failed to create command queue")
-        }
-        self.commandQueue = queue
+        guard let queue = mtlDevice.makeCommandQueue() else { throw MirageError.protocolError("Failed to create command queue") }
+        commandQueue = queue
 
         // Create texture cache for zero-copy CVPixelBuffer -> MTLTexture
         var cache: CVMetalTextureCache?
@@ -71,19 +67,20 @@ final class MetalRenderer {
             &cache
         )
 
-        if cacheStatus == kCVReturnSuccess {
-            textureCache = cache
-        }
+        if cacheStatus == kCVReturnSuccess { textureCache = cache }
 
         // Create a small ring of uniforms buffers to allow multiple in-flight draws.
         var buffers: [MTLBuffer] = []
         buffers.reserveCapacity(uniformsBufferCount)
-        for _ in 0..<uniformsBufferCount {
-            if let buffer = mtlDevice.makeBuffer(length: MemoryLayout<RenderUniforms>.stride, options: .storageModeShared) {
+        for _ in 0 ..< uniformsBufferCount {
+            if let buffer = mtlDevice.makeBuffer(
+                length: MemoryLayout<RenderUniforms>.stride,
+                options: .storageModeShared
+            ) {
                 buffers.append(buffer)
             }
         }
-        self.uniformsBuffers = buffers
+        uniformsBuffers = buffers
 
         // Create render pipelines (dithered and non-dithered)
         let library = try Self.makeLibrary(device: mtlDevice)
@@ -270,7 +267,8 @@ final class MetalRenderer {
         library: MTLLibrary,
         fragmentFunctionName: String,
         colorPixelFormat: MTLPixelFormat
-    ) throws -> MTLRenderPipelineState {
+    )
+    throws -> MTLRenderPipelineState {
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "videoVertex")
         descriptor.fragmentFunction = library.makeFunction(name: fragmentFunctionName)
@@ -286,14 +284,13 @@ final class MetalRenderer {
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         let pixelFormatType = CVPixelBufferGetPixelFormatType(pixelBuffer)
-        let metalPixelFormat: MTLPixelFormat
-        switch pixelFormatType {
+        let metalPixelFormat: MTLPixelFormat = switch pixelFormatType {
         case kCVPixelFormatType_32BGRA:
-            metalPixelFormat = .bgra8Unorm
+            .bgra8Unorm
         case kCVPixelFormatType_ARGB2101010LEPacked:
-            metalPixelFormat = .bgr10a2Unorm
+            .bgr10a2Unorm
         default:
-            metalPixelFormat = .bgr10a2Unorm
+            .bgr10a2Unorm
         }
 
         var metalTexture: CVMetalTexture?
@@ -309,9 +306,7 @@ final class MetalRenderer {
             &metalTexture
         )
 
-        guard status == kCVReturnSuccess, let metalTexture else {
-            return nil
-        }
+        guard status == kCVReturnSuccess, let metalTexture else { return nil }
 
         return CVMetalTextureGetTexture(metalTexture)
     }
@@ -514,7 +509,10 @@ final class MetalRenderer {
             )
 
             if frameCount % 120 == 1 {
-                MirageLogger.renderer("contentRect: \(rect) -> normalized: (\(normalizedRect.x), \(normalizedRect.y), \(normalizedRect.z), \(normalizedRect.w)) texture: \(Int(textureWidth))x\(Int(textureHeight))")
+                MirageLogger
+                    .renderer(
+                        "contentRect: \(rect) -> normalized: (\(normalizedRect.x), \(normalizedRect.y), \(normalizedRect.z), \(normalizedRect.w)) texture: \(Int(textureWidth))x\(Int(textureHeight))"
+                    )
             }
         } else {
             normalizedRect = SIMD4<Float>(0, 0, 1, 1)
@@ -568,9 +566,7 @@ final class MetalRenderer {
                 func fire() {
                     lock.lock()
                     let shouldFire = !fired
-                    if shouldFire {
-                        fired = true
-                    }
+                    if shouldFire { fired = true }
                     lock.unlock()
                     guard shouldFire else { return }
                     DispatchQueue.main.async { self.completion() }
@@ -609,11 +605,12 @@ final class MetalRenderer {
                 let textureW = ycbcrTextures.luma.width
                 let textureH = ycbcrTextures.luma.height
                 if drawableW != textureW || drawableH != textureH {
-                    MirageLogger.renderer("Dimension mismatch - Drawable: \(drawableW)x\(drawableH), Texture: \(textureW)x\(textureH)")
+                    MirageLogger
+                        .renderer(
+                            "Dimension mismatch - Drawable: \(drawableW)x\(drawableH), Texture: \(textureW)x\(textureH)"
+                        )
                 }
-                if let rect = contentRect, !rect.isEmpty {
-                    MirageLogger.renderer("contentRect: \(rect) (texture: \(textureW)x\(textureH))")
-                }
+                if let rect = contentRect, !rect.isEmpty { MirageLogger.renderer("contentRect: \(rect) (texture: \(textureW)x\(textureH))") }
             }
 
             render(
@@ -640,11 +637,12 @@ final class MetalRenderer {
             let textureW = texture.width
             let textureH = texture.height
             if drawableW != textureW || drawableH != textureH {
-                MirageLogger.renderer("Dimension mismatch - Drawable: \(drawableW)x\(drawableH), Texture: \(textureW)x\(textureH)")
+                MirageLogger
+                    .renderer(
+                        "Dimension mismatch - Drawable: \(drawableW)x\(drawableH), Texture: \(textureW)x\(textureH)"
+                    )
             }
-            if let rect = contentRect, !rect.isEmpty {
-                MirageLogger.renderer("contentRect: \(rect) (texture: \(textureW)x\(textureH))")
-            }
+            if let rect = contentRect, !rect.isEmpty { MirageLogger.renderer("contentRect: \(rect) (texture: \(textureW)x\(textureH))") }
         }
 
         render(
@@ -659,9 +657,7 @@ final class MetalRenderer {
 
     /// Flush the texture cache
     func flushCache() {
-        if let cache = textureCache {
-            CVMetalTextureCacheFlush(cache, 0)
-        }
+        if let cache = textureCache { CVMetalTextureCacheFlush(cache, 0) }
     }
 
     func setTemporalDitheringEnabled(_ enabled: Bool) {

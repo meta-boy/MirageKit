@@ -14,35 +14,30 @@ import Network
 extension MirageClientService {
     /// Start UDP connection to host's data port for receiving video.
     func startVideoConnection() async throws {
-        guard hostDataPort > 0 else {
-            throw MirageError.protocolError("Host data port not set")
-        }
+        guard hostDataPort > 0 else { throw MirageError.protocolError("Host data port not set") }
 
-        guard let connection = self.connection else {
-            throw MirageError.protocolError("No TCP connection")
-        }
+        guard let connection else { throw MirageError.protocolError("No TCP connection") }
 
         let host: NWEndpoint.Host
-        if case .hostPort(let h, _) = connection.endpoint {
-            host = h
-        } else if let remoteEndpoint = connection.currentPath?.remoteEndpoint,
-                  case .hostPort(let h, _) = remoteEndpoint {
+        if case let .hostPort(h, _) = connection.endpoint { host = h } else if let remoteEndpoint = connection.currentPath?.remoteEndpoint,
+                                                                               case let .hostPort(h, _) = remoteEndpoint {
             host = h
         } else {
             MirageLogger.client("Using Bonjour endpoint for UDP")
-            if case .service(_, _, _, _) = connection.endpoint {
-                if let connectedHost = connectedHost {
+            if case .service = connection.endpoint {
+                if let connectedHost {
                     let dataEndpoint = NWEndpoint.hostPort(
                         host: NWEndpoint.Host(connectedHost.name),
                         port: NWEndpoint.Port(rawValue: hostDataPort)!
                     )
-                    MirageLogger.client("Connecting to host data port via hostname \(connectedHost.name):\(hostDataPort)")
+                    MirageLogger
+                        .client("Connecting to host data port via hostname \(connectedHost.name):\(hostDataPort)")
                     let params = NWParameters.udp
                     params.serviceClass = .interactiveVideo
                     params.includePeerToPeer = networkConfig.enablePeerToPeer
 
                     let udpConn = NWConnection(to: dataEndpoint, using: params)
-                    self.udpConnection = udpConn
+                    udpConnection = udpConn
 
                     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                         let box = ContinuationBox<Void>(continuation)
@@ -50,7 +45,7 @@ extension MirageClientService {
                             switch state {
                             case .ready:
                                 box.resume()
-                            case .failed(let error):
+                            case let .failed(error):
                                 box.resume(throwing: error)
                             case .cancelled:
                                 box.resume(throwing: MirageError.protocolError("UDP connection cancelled"))
@@ -76,7 +71,7 @@ extension MirageClientService {
         params.includePeerToPeer = networkConfig.enablePeerToPeer
 
         let udpConn = NWConnection(to: dataEndpoint, using: params)
-        self.udpConnection = udpConn
+        udpConnection = udpConn
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let box = ContinuationBox<Void>(continuation)
@@ -85,7 +80,7 @@ extension MirageClientService {
                 switch state {
                 case .ready:
                     box.resume()
-                case .failed(let error):
+                case let .failed(error):
                     box.resume(throwing: error)
                 case .cancelled:
                     box.resume(throwing: MirageError.protocolError("UDP connection cancelled"))
@@ -112,45 +107,50 @@ extension MirageClientService {
         udpConnection: NWConnection,
         service: MirageClientService
     ) {
-        @Sendable func receiveNext() {
-            udpConnection.receive(minimumIncompleteLength: MirageHeaderSize, maximumLength: 65536) { data, _, isComplete, error in
-                if let data, data.count >= MirageHeaderSize {
-                    if let header = FrameHeader.deserialize(from: data) {
-                        let streamID = header.streamID
+        @Sendable
+        func receiveNext() {
+            udpConnection
+                .receive(minimumIncompleteLength: mirageHeaderSize, maximumLength: 65536) { data, _, _, error in
+                    if let data, data.count >= mirageHeaderSize {
+                        if let header = FrameHeader.deserialize(from: data) {
+                            let streamID = header.streamID
 
-                        guard service.activeStreamIDsForFiltering.contains(streamID) else {
-                            receiveNext()
-                            return
-                        }
-
-                        if service.takeStartupPacketPending(streamID) {
-                            Task { @MainActor in
-                                service.logStartupFirstPacketIfNeeded(streamID: streamID)
+                            guard service.activeStreamIDsForFiltering.contains(streamID) else {
+                                receiveNext()
+                                return
                             }
-                        }
 
-                        guard let reassembler = service.reassemblerForStream(streamID) else {
-                            receiveNext()
-                            return
-                        }
+                            if service.takeStartupPacketPending(streamID) {
+                                Task { @MainActor in
+                                    service.logStartupFirstPacketIfNeeded(streamID: streamID)
+                                }
+                            }
 
-                        let payload = data.dropFirst(MirageHeaderSize)
-                        if payload.count != Int(header.payloadLength) {
-                            MirageLogger.client("UDP payload length mismatch for stream \(streamID): header=\(header.payloadLength), actual=\(payload.count)")
-                            receiveNext()
-                            return
+                            guard let reassembler = service.reassemblerForStream(streamID) else {
+                                receiveNext()
+                                return
+                            }
+
+                            let payload = data.dropFirst(mirageHeaderSize)
+                            if payload.count != Int(header.payloadLength) {
+                                MirageLogger
+                                    .client(
+                                        "UDP payload length mismatch for stream \(streamID): header=\(header.payloadLength), actual=\(payload.count)"
+                                    )
+                                receiveNext()
+                                return
+                            }
+                            reassembler.processPacket(payload, header: header)
                         }
-                        reassembler.processPacket(payload, header: header)
                     }
-                }
 
-                if let error {
-                    MirageLogger.error(.client, "UDP receive error: \(error)")
-                    return
-                }
+                    if let error {
+                        MirageLogger.error(.client, "UDP receive error: \(error)")
+                        return
+                    }
 
-                receiveNext()
-            }
+                    receiveNext()
+                }
         }
 
         receiveNext()
@@ -158,9 +158,7 @@ extension MirageClientService {
 
     /// Send stream registration to host via UDP.
     func sendStreamRegistration(streamID: StreamID) async throws {
-        guard let udpConn = udpConnection else {
-            throw MirageError.protocolError("No UDP connection")
-        }
+        guard let udpConn = udpConnection else { throw MirageError.protocolError("No UDP connection") }
 
         var data = Data()
         data.append(contentsOf: [0x4D, 0x49, 0x52, 0x47])
@@ -171,9 +169,7 @@ extension MirageClientService {
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             udpConn.send(content: data, completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
+                if let error { continuation.resume(throwing: error) } else {
                     continuation.resume()
                 }
             })
@@ -248,9 +244,7 @@ extension MirageClientService {
             await controllersByStream[streamID]?.requestRecovery()
 
             do {
-                if udpConnection == nil {
-                    try await startVideoConnection()
-                }
+                if udpConnection == nil { try await startVideoConnection() }
                 try await sendStreamRegistration(streamID: streamID)
             } catch {
                 MirageLogger.error(.client, "Stream recovery registration failed: \(error)")

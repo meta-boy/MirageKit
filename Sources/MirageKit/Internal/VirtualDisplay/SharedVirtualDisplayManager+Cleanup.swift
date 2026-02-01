@@ -8,8 +8,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import CoreGraphics
+import Foundation
 
 extension SharedVirtualDisplayManager {
     // MARK: - Cleanup
@@ -24,7 +24,7 @@ extension SharedVirtualDisplayManager {
 
     /// Get statistics about the shared display
     func getStatistics() -> (hasDisplay: Bool, consumerCount: Int, resolution: CGSize?) {
-        return (
+        (
             hasDisplay: sharedDisplay != nil,
             consumerCount: activeConsumers.count,
             resolution: sharedDisplay?.resolution

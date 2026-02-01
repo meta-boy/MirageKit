@@ -14,7 +14,12 @@ import Network
 
 extension MirageHostService {
     /// Handle a menu action request from a client
-    func handleMenuActionRequest(_ message: ControlMessage, from client: MirageConnectedClient, connection: NWConnection) async {
+    func handleMenuActionRequest(
+        _ message: ControlMessage,
+        from client: MirageConnectedClient,
+        connection: NWConnection
+    )
+    async {
         do {
             let request = try message.decode(MenuActionRequestMessage.self)
             MirageLogger.log(.menuBar, "Client \(client.name) requested menu action: \(request.actionPath)")
@@ -22,7 +27,11 @@ extension MirageHostService {
             // Find the session and its application
             guard let session = activeStreams.first(where: { $0.id == request.streamID }),
                   let app = session.window.application else {
-                let result = MenuActionResultMessage(streamID: request.streamID, success: false, errorMessage: "Stream not found")
+                let result = MenuActionResultMessage(
+                    streamID: request.streamID,
+                    success: false,
+                    errorMessage: "Stream not found"
+                )
                 let response = try ControlMessage(type: .menuActionResult, content: result)
                 connection.send(content: response.serialize(), completion: .idempotent)
                 return
@@ -39,7 +48,6 @@ extension MirageHostService {
             )
             let response = try ControlMessage(type: .menuActionResult, content: result)
             connection.send(content: response.serialize(), completion: .idempotent)
-
         } catch {
             MirageLogger.error(.menuBar, "Failed to handle menu action request: \(error)")
         }
@@ -65,9 +73,7 @@ extension MirageHostService {
     /// Send menu bar update to a client
     func sendMenuBarUpdate(streamID: StreamID, menuBar: MirageMenuBar, to connection: NWConnection) async {
         let update = MenuBarUpdateMessage(streamID: streamID, menuBar: menuBar)
-        if let message = try? ControlMessage(type: .menuBarUpdate, content: update) {
-            connection.send(content: message.serialize(), completion: .idempotent)
-        }
+        if let message = try? ControlMessage(type: .menuBarUpdate, content: update) { connection.send(content: message.serialize(), completion: .idempotent) }
     }
 
     /// Stop menu bar monitoring for a stream
@@ -78,10 +84,18 @@ extension MirageHostService {
     // MARK: - Desktop Streaming Handlers
 
     /// Handle a request to start desktop streaming
-    func handleStartDesktopStream(_ message: ControlMessage, from client: MirageConnectedClient, connection: NWConnection) async {
+    func handleStartDesktopStream(
+        _ message: ControlMessage,
+        from client: MirageConnectedClient,
+        connection: NWConnection
+    )
+    async {
         do {
             let request = try message.decode(StartDesktopStreamMessage.self)
-            MirageLogger.host("Client \(client.name) requested desktop stream: \(request.displayWidth)x\(request.displayHeight)")
+            MirageLogger
+                .host(
+                    "Client \(client.name) requested desktop stream: \(request.displayWidth)x\(request.displayHeight)"
+                )
 
             guard let clientContext = clientsByConnection[ObjectIdentifier(connection)] else {
                 MirageLogger.error(.host, "No client context for desktop stream request")
@@ -91,7 +105,10 @@ extension MirageHostService {
             // Determine target frame rate based on client capability
             let clientMaxRefreshRate = request.maxRefreshRate
             let targetFrameRate = resolvedTargetFrameRate(clientMaxRefreshRate)
-            MirageLogger.host("Desktop stream frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)")
+            MirageLogger
+                .host(
+                    "Desktop stream frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)"
+                )
             let latencyMode = request.latencyMode ?? .smoothest
 
             try await startDesktopStream(

@@ -21,14 +21,13 @@ public enum ActivationResult {
 /// Robust window activation utility that works on headless Macs.
 /// Tries multiple activation methods in sequence until one succeeds.
 public final class WindowActivator {
-
     /// Activation methods in priority order
     public enum ActivationMethod: CaseIterable, Sendable {
-        case nsRunningApplication      // Standard AppKit activation
-        case axFrontmostAttribute      // Set AXFrontmost on app element
-        case axRaiseAndFocus           // Raise window + set focused window
-        case appleScript               // AppleScript activation (most reliable on headless)
-        case nsWorkspaceOpen           // NSWorkspace.open with activation config
+        case nsRunningApplication // Standard AppKit activation
+        case axFrontmostAttribute // Set AXFrontmost on app element
+        case axRaiseAndFocus // Raise window + set focused window
+        case appleScript // AppleScript activation (most reliable on headless)
+        case nsWorkspaceOpen // NSWorkspace.open with activation config
     }
 
     /// Configuration for activation attempts
@@ -88,12 +87,10 @@ public final class WindowActivator {
         app: MirageApplication,
         window: MirageWindow? = nil,
         axWindow: AXUIElement? = nil
-    ) -> ActivationResult {
-
+    )
+    -> ActivationResult {
         // Validate process exists
-        guard let runningApp = NSRunningApplication(processIdentifier: app.id) else {
-            return .failure(method: "validation", error: "Process \(app.id) not running")
-        }
+        guard let runningApp = NSRunningApplication(processIdentifier: app.id) else { return .failure(method: "validation", error: "Process \(app.id) not running") }
 
         var lastPartialSuccess: ActivationResult?
 
@@ -103,28 +100,20 @@ public final class WindowActivator {
 
             switch result {
             case .success:
-                if configuration.verbose {
-                    MirageLogger.log(.windowActivator, "\(method) succeeded for \(app.name)")
-                }
+                if configuration.verbose { MirageLogger.log(.windowActivator, "\(method) succeeded for \(app.name)") }
                 return result
             case .partialSuccess:
-                if configuration.verbose {
-                    MirageLogger.log(.windowActivator, "\(method) partial success for \(app.name)")
-                }
+                if configuration.verbose { MirageLogger.log(.windowActivator, "\(method) partial success for \(app.name)") }
                 lastPartialSuccess = result
                 continue
-            case .failure(_, let error):
-                if configuration.verbose {
-                    MirageLogger.log(.windowActivator, "\(method) failed: \(error)")
-                }
+            case let .failure(_, error):
+                if configuration.verbose { MirageLogger.log(.windowActivator, "\(method) failed: \(error)") }
                 continue
             }
         }
 
         // Return partial success if we had one, otherwise failure
-        if let partial = lastPartialSuccess {
-            return partial
-        }
+        if let partial = lastPartialSuccess { return partial }
 
         return .failure(method: "all", error: "All activation methods failed")
     }
@@ -135,24 +124,25 @@ public final class WindowActivator {
         _ method: ActivationMethod,
         app: MirageApplication,
         runningApp: NSRunningApplication,
-        window: MirageWindow?,
+        window _: MirageWindow?,
         axWindow: AXUIElement?
-    ) -> ActivationResult {
+    )
+    -> ActivationResult {
         switch method {
         case .nsRunningApplication:
-            return tryNSRunningApplicationActivation(runningApp: runningApp, axWindow: axWindow)
+            tryNSRunningApplicationActivation(runningApp: runningApp, axWindow: axWindow)
 
         case .axFrontmostAttribute:
-            return tryAXFrontmostActivation(app: app, axWindow: axWindow)
+            tryAXFrontmostActivation(app: app, axWindow: axWindow)
 
         case .axRaiseAndFocus:
-            return tryAXRaiseAndFocus(app: app, axWindow: axWindow)
+            tryAXRaiseAndFocus(app: app, axWindow: axWindow)
 
         case .appleScript:
-            return tryAppleScriptActivation(app: app)
+            tryAppleScriptActivation(app: app)
 
         case .nsWorkspaceOpen:
-            return tryNSWorkspaceActivation(app: app)
+            tryNSWorkspaceActivation(app: app)
         }
     }
 
@@ -160,21 +150,18 @@ public final class WindowActivator {
     private func tryNSRunningApplicationActivation(
         runningApp: NSRunningApplication,
         axWindow: AXUIElement?
-    ) -> ActivationResult {
+    )
+    -> ActivationResult {
         let success = runningApp.activate(options: [.activateIgnoringOtherApps])
 
-        if !success {
-            return .failure(method: "NSRunningApplication", error: "activate() returned false")
-        }
+        if !success { return .failure(method: "NSRunningApplication", error: "activate() returned false") }
 
         // Brief wait then verify
         Thread.sleep(forTimeInterval: configuration.verificationTimeout)
 
         if runningApp.isActive {
             // Also raise the window if we have it
-            if let axWindow = axWindow {
-                AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-            }
+            if let axWindow { AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString) }
             return .success(method: "NSRunningApplication")
         }
 
@@ -185,7 +172,8 @@ public final class WindowActivator {
     private func tryAXFrontmostActivation(
         app: MirageApplication,
         axWindow: AXUIElement?
-    ) -> ActivationResult {
+    )
+    -> ActivationResult {
         let appElement = AXUIElementCreateApplication(app.id)
 
         // Set the application as frontmost
@@ -195,12 +183,10 @@ public final class WindowActivator {
             kCFBooleanTrue
         )
 
-        if result != .success {
-            return .failure(method: "AXFrontmost", error: "AXError \(result.rawValue)")
-        }
+        if result != .success { return .failure(method: "AXFrontmost", error: "AXError \(result.rawValue)") }
 
         // Raise specific window if provided
-        if let axWindow = axWindow {
+        if let axWindow {
             AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
             AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
         }
@@ -211,9 +197,7 @@ public final class WindowActivator {
         var frontmostRef: CFTypeRef?
         AXUIElementCopyAttributeValue(appElement, kAXFrontmostAttribute as CFString, &frontmostRef)
 
-        if let isFrontmost = frontmostRef as? Bool, isFrontmost {
-            return .success(method: "AXFrontmost")
-        }
+        if let isFrontmost = frontmostRef as? Bool, isFrontmost { return .success(method: "AXFrontmost") }
 
         // AX succeeded but verification uncertain - common on headless
         return .partialSuccess(method: "AXFrontmost", message: "Set succeeded but verification uncertain")
@@ -223,10 +207,9 @@ public final class WindowActivator {
     private func tryAXRaiseAndFocus(
         app: MirageApplication,
         axWindow: AXUIElement?
-    ) -> ActivationResult {
-        guard let axWindow = axWindow else {
-            return .failure(method: "AXRaiseAndFocus", error: "No AXWindow provided")
-        }
+    )
+    -> ActivationResult {
+        guard let axWindow else { return .failure(method: "AXRaiseAndFocus", error: "No AXWindow provided") }
 
         let appElement = AXUIElementCreateApplication(app.id)
 
@@ -247,15 +230,14 @@ public final class WindowActivator {
             kCFBooleanTrue
         )
 
-        if raiseResult == .success && (focusResult == .success || mainResult == .success) {
-            return .success(method: "AXRaiseAndFocus")
-        }
+        if raiseResult == .success, focusResult == .success || mainResult == .success { return .success(method: "AXRaiseAndFocus") }
 
-        if raiseResult == .success {
-            return .partialSuccess(method: "AXRaiseAndFocus", message: "Raise succeeded, focus failed")
-        }
+        if raiseResult == .success { return .partialSuccess(method: "AXRaiseAndFocus", message: "Raise succeeded, focus failed") }
 
-        return .failure(method: "AXRaiseAndFocus", error: "Raise: \(raiseResult.rawValue), Focus: \(focusResult.rawValue)")
+        return .failure(
+            method: "AXRaiseAndFocus",
+            error: "Raise: \(raiseResult.rawValue), Focus: \(focusResult.rawValue)"
+        )
     }
 
     /// Method 4: AppleScript activation (most reliable on headless)
@@ -269,9 +251,7 @@ public final class WindowActivator {
                 activate
             end tell
             """
-            guard let s = NSAppleScript(source: source) else {
-                return .failure(method: "AppleScript", error: "Failed to create script")
-            }
+            guard let s = NSAppleScript(source: source) else { return .failure(method: "AppleScript", error: "Failed to create script") }
             script = s
         } else {
             // Fall back to name
@@ -281,9 +261,7 @@ public final class WindowActivator {
                 activate
             end tell
             """
-            guard let s = NSAppleScript(source: source) else {
-                return .failure(method: "AppleScript", error: "Failed to create script")
-            }
+            guard let s = NSAppleScript(source: source) else { return .failure(method: "AppleScript", error: "Failed to create script") }
             script = s
         }
 
@@ -298,9 +276,7 @@ public final class WindowActivator {
         // Verify activation
         Thread.sleep(forTimeInterval: configuration.verificationTimeout)
 
-        if let runningApp = NSRunningApplication(processIdentifier: app.id), runningApp.isActive {
-            return .success(method: "AppleScript")
-        }
+        if let runningApp = NSRunningApplication(processIdentifier: app.id), runningApp.isActive { return .success(method: "AppleScript") }
 
         // AppleScript doesn't always reflect in isActive on headless, consider partial success
         return .partialSuccess(method: "AppleScript", message: "Executed without error")
@@ -326,13 +302,9 @@ public final class WindowActivator {
         }
 
         let timeout = DispatchTime.now() + .milliseconds(500)
-        if semaphore.wait(timeout: timeout) == .timedOut {
-            return .failure(method: "NSWorkspace", error: "Timed out")
-        }
+        if semaphore.wait(timeout: timeout) == .timedOut { return .failure(method: "NSWorkspace", error: "Timed out") }
 
-        if let error = openError {
-            return .failure(method: "NSWorkspace", error: error.localizedDescription)
-        }
+        if let error = openError { return .failure(method: "NSWorkspace", error: error.localizedDescription) }
 
         return .success(method: "NSWorkspace")
     }
@@ -342,9 +314,7 @@ public final class WindowActivator {
 
 public extension WindowActivator {
     /// Returns true if running without any connected displays
-    static var isHeadless: Bool {
-        NSScreen.screens.isEmpty
-    }
+    static var isHeadless: Bool { NSScreen.screens.isEmpty }
 
     /// Creates a WindowActivator with configuration appropriate for the current display state
     static func forCurrentEnvironment() -> WindowActivator {

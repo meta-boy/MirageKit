@@ -26,7 +26,7 @@ func streamTargetDimensions(windowFrame: CGRect) -> StreamTargetDimensions {
 /// Calculate host window dimensions with explicit scale factor
 /// Use this when scale factor is known (e.g., virtual displays on headless Macs where NSScreen detection fails)
 func streamTargetDimensions(windowFrame: CGRect, scaleFactor: CGFloat) -> StreamTargetDimensions {
-    return StreamTargetDimensions(
+    StreamTargetDimensions(
         width: alignedEvenPixel(windowFrame.width * scaleFactor),
         height: alignedEvenPixel(windowFrame.height * scaleFactor),
         hostScaleFactor: scaleFactor
@@ -40,7 +40,7 @@ func streamTargetDimensions(windowFrame: CGRect, scaleFactor: CGFloat) -> Stream
 ///   - frame: The bounding frame to fit within
 /// - Returns: Constrained size with preserved aspect ratio
 func constrainSizeToFrame(_ size: CGSize, frame: CGRect) -> CGSize {
-    guard size.width > 0 && size.height > 0 else { return size }
+    guard size.width > 0, size.height > 0 else { return size }
 
     let aspectRatio = size.width / size.height
     var width = size.width
@@ -73,7 +73,8 @@ func calculateHostWindowSize(
     relativeScale: CGFloat,
     visibleFrame: CGRect,
     minSize: CGSize = CGSize(width: 400, height: 300)
-) -> CGSize {
+)
+-> CGSize {
     // Calculate target area based on visible screen area
     let screenArea = visibleFrame.width * visibleFrame.height
     let targetArea = screenArea * relativeScale
@@ -123,7 +124,7 @@ private let maxDesktopStreamHeight: CGFloat = 2880
 /// - Parameter requestedResolution: The resolution the client requested
 /// - Returns: Resolution capped at 5K with preserved aspect ratio, with even dimensions
 func capDesktopStreamResolution(_ requestedResolution: CGSize) -> CGSize {
-    guard requestedResolution.width > 0 && requestedResolution.height > 0 else {
+    guard requestedResolution.width > 0, requestedResolution.height > 0 else {
         // Fallback to default if invalid input
         return CGSize(width: 2880, height: 1800)
     }
@@ -158,9 +159,7 @@ private func alignedEvenPixel(_ value: CGFloat) -> Int {
 
 private func screenScaleFactor(for frame: CGRect) -> CGFloat {
     let windowCenter = CGPoint(x: frame.midX, y: frame.midY)
-    if let screen = NSScreen.screens.first(where: { $0.frame.contains(windowCenter) }) {
-        return screen.backingScaleFactor
-    }
+    if let screen = NSScreen.screens.first(where: { $0.frame.contains(windowCenter) }) { return screen.backingScaleFactor }
     return NSScreen.main?.backingScaleFactor ?? 2.0
 }
 #endif

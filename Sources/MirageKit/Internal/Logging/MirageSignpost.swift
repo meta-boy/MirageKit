@@ -14,9 +14,7 @@ enum MirageSignpost {
     private static let subsystem = "com.mirage"
     private static let log = OSLog(subsystem: subsystem, category: "performance")
     private static let signposter = OSSignposter(logHandle: log)
-    private static let enabled: Bool = {
-        ProcessInfo.processInfo.environment["MIRAGE_SIGNPOST"] == "1"
-    }()
+    private static let enabled: Bool = ProcessInfo.processInfo.environment["MIRAGE_SIGNPOST"] == "1"
 
     static func beginInterval(_ name: StaticString) -> IntervalState? {
         guard enabled else { return nil }

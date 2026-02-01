@@ -7,11 +7,19 @@
 //  HEVC decoder extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 extension FrameReassembler {
-    func setFrameHandler(_ handler: @escaping @Sendable (StreamID, Data, Bool, UInt64, CGRect, @escaping @Sendable () -> Void) -> Void) {
+    func setFrameHandler(_ handler: @escaping @Sendable (
+        StreamID,
+        Data,
+        Bool,
+        UInt64,
+        CGRect,
+        @escaping @Sendable () -> Void
+    )
+        -> Void) {
         lock.lock()
         onFrameComplete = handler
         lock.unlock()
@@ -33,7 +41,8 @@ extension FrameReassembler {
 
     func processPacket(_ data: Data, header: FrameHeader) {
         var completedFrame: CompletedFrame?
-        var completionHandler: (@Sendable (StreamID, Data, Bool, UInt64, CGRect, @escaping @Sendable () -> Void) -> Void)?
+        var completionHandler: (@Sendable (StreamID, Data, Bool, UInt64, CGRect, @escaping @Sendable () -> Void)
+            -> Void)?
 
         let frameNumber = header.frameNumber
         let isKeyframePacket = header.flags.contains(.keyframe)
@@ -43,16 +52,17 @@ extension FrameReassembler {
         // Log stats every 1000 packets
         if totalPacketsReceived - lastStatsLog >= 1000 {
             lastStatsLog = totalPacketsReceived
-            MirageLogger.log(.frameAssembly, "STATS: packets=\(totalPacketsReceived), framesDelivered=\(framesDelivered), pending=\(pendingFrames.count), discarded(old=\(packetsDiscardedOld), crc=\(packetsDiscardedCRC), token=\(packetsDiscardedToken), epoch=\(packetsDiscardedEpoch), awaitKeyframe=\(packetsDiscardedAwaitingKeyframe))")
+            MirageLogger.log(
+                .frameAssembly,
+                "STATS: packets=\(totalPacketsReceived), framesDelivered=\(framesDelivered), pending=\(pendingFrames.count), discarded(old=\(packetsDiscardedOld), crc=\(packetsDiscardedCRC), token=\(packetsDiscardedToken), epoch=\(packetsDiscardedEpoch), awaitKeyframe=\(packetsDiscardedAwaitingKeyframe))"
+            )
         }
 
         let epochIsNewer = isEpochNewer(header.epoch, than: currentEpoch)
         let epochIsCurrentOrNewer = header.epoch == currentEpoch || epochIsNewer
 
         if header.epoch != currentEpoch {
-            if isKeyframePacket && epochIsNewer {
-                resetForEpoch(header.epoch, reason: "epoch mismatch")
-            } else {
+            if isKeyframePacket, epochIsNewer { resetForEpoch(header.epoch, reason: "epoch mismatch") } else {
                 packetsDiscardedEpoch += 1
                 beginAwaitingKeyframe()
                 lock.unlock()
@@ -61,9 +71,7 @@ extension FrameReassembler {
         }
 
         if header.flags.contains(.discontinuity) {
-            if isKeyframePacket && epochIsCurrentOrNewer {
-                resetForEpoch(header.epoch, reason: "discontinuity")
-            } else {
+            if isKeyframePacket, epochIsCurrentOrNewer { resetForEpoch(header.epoch, reason: "discontinuity") } else {
                 packetsDiscardedEpoch += 1
                 beginAwaitingKeyframe()
                 lock.unlock()
@@ -78,7 +86,10 @@ extension FrameReassembler {
             if isKeyframePacket {
                 // Keyframes update the expected token - they carry new VPS/SPS/PPS
                 if header.dimensionToken != expectedDimensionToken {
-                    MirageLogger.log(.frameAssembly, "Keyframe updated dimension token from \(expectedDimensionToken) to \(header.dimensionToken)")
+                    MirageLogger.log(
+                        .frameAssembly,
+                        "Keyframe updated dimension token from \(expectedDimensionToken) to \(header.dimensionToken)"
+                    )
                     expectedDimensionToken = header.dimensionToken
                 }
             } else if header.dimensionToken != expectedDimensionToken {
@@ -99,7 +110,10 @@ extension FrameReassembler {
         let calculatedCRC = CRC32.calculate(data)
         if calculatedCRC != header.checksum {
             packetsDiscardedCRC += 1
-            MirageLogger.log(.frameAssembly, "CRC mismatch for frame \(frameNumber) fragment \(header.fragmentIndex) - discarding (expected \(header.checksum), got \(calculatedCRC))")
+            MirageLogger.log(
+                .frameAssembly,
+                "CRC mismatch for frame \(frameNumber) fragment \(header.fragmentIndex) - discarding (expected \(header.checksum), got \(calculatedCRC))"
+            )
             lock.unlock()
             return
         }
@@ -123,9 +137,7 @@ extension FrameReassembler {
         )
         let usesHeaderByteCount = frameByteCount > 0
         let frame: PendingFrame
-        if let existingFrame = pendingFrames[frameNumber] {
-            frame = existingFrame
-        } else {
+        if let existingFrame = pendingFrames[frameNumber] { frame = existingFrame } else {
             let capacity = max(1, dataFragmentCount) * maxPayloadSize
             let buffer = bufferPool.acquire(capacity: capacity)
             frame = PendingFrame(
@@ -144,9 +156,7 @@ extension FrameReassembler {
         }
 
         // Update keyframe flag if this packet has it (in case fragments arrive out of order)
-        if isKeyframePacket && !frame.isKeyframe {
-            frame.isKeyframe = true
-        }
+        if isKeyframePacket && !frame.isKeyframe { frame.isKeyframe = true }
 
         // NOTE: We intentionally do NOT discard older incomplete keyframes when a newer one starts.
         // During network congestion, multiple keyframes may arrive simultaneously. Discarding
@@ -168,7 +178,7 @@ extension FrameReassembler {
                     frameByteCount: frameByteCount
                 )
             }
-        } else if fragmentIndex >= 0 && fragmentIndex < frame.receivedMap.count {
+        } else if fragmentIndex >= 0, fragmentIndex < frame.receivedMap.count {
             if !frame.receivedMap[fragmentIndex] {
                 let offset = fragmentIndex * maxPayloadSize
                 frame.buffer.write(data, at: offset)
@@ -197,8 +207,11 @@ extension FrameReassembler {
             let totalCount = frame.dataFragmentCount
             // Log at key milestones: first packet, 25%, 50%, 75%, and when nearly complete
             if receivedCount == 1 || receivedCount == totalCount / 4 || receivedCount == totalCount / 2 ||
-               receivedCount == (totalCount * 3) / 4 || receivedCount == totalCount - 1 {
-                MirageLogger.log(.frameAssembly, "Keyframe \(frameNumber): \(receivedCount)/\(totalCount) fragments received")
+                receivedCount == (totalCount * 3) / 4 || receivedCount == totalCount - 1 {
+                MirageLogger.log(
+                    .frameAssembly,
+                    "Keyframe \(frameNumber): \(receivedCount)/\(totalCount) fragments received"
+                )
             }
         }
 
@@ -214,9 +227,7 @@ extension FrameReassembler {
 
         if didTimeout {
             beginAwaitingKeyframe()
-            if let onFrameLoss {
-                onFrameLoss(streamID)
-            }
+            if let onFrameLoss { onFrameLoss(streamID) }
         }
 
         if let completedFrame, let completionHandler {
@@ -236,7 +247,7 @@ extension FrameReassembler {
         let isKeyframe: Bool
         let timestamp: UInt64
         let contentRect: CGRect
-        let releaseBuffer: (@Sendable () -> Void)
+        let releaseBuffer: @Sendable () -> Void
     }
 
     private func completeFrameLocked(frameNumber: UInt32, frame: PendingFrame) -> CompletedFrame? {
@@ -246,9 +257,7 @@ extension FrameReassembler {
         if frame.isKeyframe {
             // Always deliver keyframes unless a newer keyframe was already delivered
             shouldDeliver = frameNumber > lastDeliveredKeyframe || lastDeliveredKeyframe == 0
-            if shouldDeliver {
-                lastDeliveredKeyframe = frameNumber
-            }
+            if shouldDeliver { lastDeliveredKeyframe = frameNumber }
         } else {
             // For P-frames: only deliver if newer than last completed frame
             // and after the last keyframe (decoder needs the reference)
@@ -264,7 +273,10 @@ extension FrameReassembler {
 
             framesDelivered += 1
             if frame.isKeyframe {
-                MirageLogger.log(.frameAssembly, "Delivering keyframe \(frameNumber) (\(frame.expectedTotalBytes) bytes)")
+                MirageLogger.log(
+                    .frameAssembly,
+                    "Delivering keyframe \(frameNumber) (\(frame.expectedTotalBytes) bytes)"
+                )
                 clearAwaitingKeyframe()
             }
             let output = frame.buffer.finalize(length: frame.expectedTotalBytes)
@@ -280,7 +292,10 @@ extension FrameReassembler {
         } else {
             // This frame arrived too late - a newer frame was already delivered
             if frame.isKeyframe {
-                MirageLogger.log(.frameAssembly, "WARNING: Keyframe \(frameNumber) NOT delivered (lastDeliveredKeyframe=\(lastDeliveredKeyframe))")
+                MirageLogger.log(
+                    .frameAssembly,
+                    "WARNING: Keyframe \(frameNumber) NOT delivered (lastDeliveredKeyframe=\(lastDeliveredKeyframe))"
+                )
             }
             pendingFrames.removeValue(forKey: frameNumber)
             frame.buffer.release()
@@ -293,15 +308,11 @@ extension FrameReassembler {
         let framesToDiscard = pendingFrames.keys.filter { pendingFrameNumber in
             // Discard P-frames older than the one we're about to deliver
             // Handle wrap-around: if difference is huge, it's probably wrap-around
-            guard pendingFrameNumber < frameNumber && frameNumber - pendingFrameNumber < 1000 else {
-                return false
-            }
+            guard pendingFrameNumber < frameNumber, frameNumber - pendingFrameNumber < 1000 else { return false }
             // NEVER discard pending keyframes - they're critical for decoder recovery
             // Keyframes are large (500+ packets) and take longer to arrive than P-frames
             // If we discard an incomplete keyframe, the decoder will be stuck
-            if let frame = pendingFrames[pendingFrameNumber], frame.isKeyframe {
-                return false
-            }
+            if let frame = pendingFrames[pendingFrameNumber], frame.isKeyframe { return false }
             return true
         }
 
@@ -352,21 +363,19 @@ extension FrameReassembler {
                 let receivedCount = frame.receivedCount
                 let totalCount = frame.dataFragmentCount
                 let isKeyframe = frame.isKeyframe
-                MirageLogger.log(.frameAssembly, "Frame \(frameNumber) timed out: \(receivedCount)/\(totalCount) fragments\(isKeyframe ? " (KEYFRAME)" : "")")
+                MirageLogger.log(
+                    .frameAssembly,
+                    "Frame \(frameNumber) timed out: \(receivedCount)/\(totalCount) fragments\(isKeyframe ? " (KEYFRAME)" : "")"
+                )
                 timedOutCount += 1
             }
-            if !shouldKeep {
-                framesToRemove.append(frameNumber)
-            }
+            if !shouldKeep { framesToRemove.append(frameNumber) }
         }
         for frameNumber in framesToRemove {
-            if let frame = pendingFrames.removeValue(forKey: frameNumber) {
-                frame.buffer.release()
-            }
+            if let frame = pendingFrames.removeValue(forKey: frameNumber) { frame.buffer.release() }
         }
         droppedFrameCount += timedOutCount
-        let shouldSignalLoss = timedOutCount > 0 && !awaitingKeyframe
-        return shouldSignalLoss
+        return timedOutCount > 0 && !awaitingKeyframe
     }
 
     func shouldRequestKeyframe() -> Bool {
@@ -390,18 +399,17 @@ extension FrameReassembler {
         for frame in framesToRelease.values {
             frame.buffer.release()
         }
-        pendingFrames = pendingFrames.filter { $0.value.isKeyframe }
+        pendingFrames = pendingFrames.filter(\.value.isKeyframe)
         lock.unlock()
         MirageLogger.log(.frameAssembly, "Entering keyframe-only mode for stream \(streamID)")
     }
 
     func awaitingKeyframeDuration(now: CFAbsoluteTime) -> CFAbsoluteTime? {
         lock.lock()
-        let duration: CFAbsoluteTime?
-        if awaitingKeyframe, awaitingKeyframeSince > 0 {
-            duration = now - awaitingKeyframeSince
+        let duration: CFAbsoluteTime? = if awaitingKeyframe, awaitingKeyframeSince > 0 {
+            now - awaitingKeyframeSince
         } else {
-            duration = nil
+            nil
         }
         lock.unlock()
         return duration
@@ -439,9 +447,7 @@ extension FrameReassembler {
 
     private func resolvedFrameByteCount(header: FrameHeader, maxPayloadSize: Int) -> Int {
         let byteCount = Int(header.frameByteCount)
-        if byteCount > 0 {
-            return byteCount
-        }
+        if byteCount > 0 { return byteCount }
         let fragments = Int(header.fragmentCount)
         return max(0, fragments * maxPayloadSize)
     }
@@ -450,11 +456,10 @@ extension FrameReassembler {
         header: FrameHeader,
         frameByteCount: Int,
         maxPayloadSize: Int
-    ) -> Int {
+    )
+    -> Int {
         guard maxPayloadSize > 0 else { return Int(header.fragmentCount) }
-        if frameByteCount > 0 {
-            return (frameByteCount + maxPayloadSize - 1) / maxPayloadSize
-        }
+        if frameByteCount > 0 { return (frameByteCount + maxPayloadSize - 1) / maxPayloadSize }
         return Int(header.fragmentCount)
     }
 
@@ -472,7 +477,8 @@ extension FrameReassembler {
         for fragmentIndex: Int,
         frameByteCount: Int,
         maxPayloadSize: Int
-    ) -> Int {
+    )
+    -> Int {
         guard maxPayloadSize > 0 else { return 0 }
         let start = fragmentIndex * maxPayloadSize
         let remaining = max(0, frameByteCount - start)
@@ -493,11 +499,9 @@ extension FrameReassembler {
         guard blockStart < blockEnd else { return }
 
         var missingIndex: Int?
-        for index in blockStart..<blockEnd {
+        for index in blockStart ..< blockEnd {
             if !frame.receivedMap[index] {
-                if missingIndex != nil {
-                    return
-                }
+                if missingIndex != nil { return }
                 missingIndex = index
             }
         }
@@ -524,7 +528,7 @@ extension FrameReassembler {
             frame.buffer.withUnsafeBytes { buffer in
                 guard let bufferBase = buffer.baseAddress else { return }
                 let bufferPtr = bufferBase.assumingMemoryBound(to: UInt8.self)
-                for index in blockStart..<blockEnd where index != recoverIndex && frame.receivedMap[index] {
+                for index in blockStart ..< blockEnd where index != recoverIndex && frame.receivedMap[index] {
                     let fragmentLength = payloadLength(
                         for: index,
                         frameByteCount: effectiveFrameByteCount,
@@ -534,7 +538,7 @@ extension FrameReassembler {
                     let offset = index * maxPayloadSize
                     let source = bufferPtr.advanced(by: offset)
                     let bytesToXor = min(fragmentLength, expectedLength)
-                    for i in 0..<bytesToXor {
+                    for i in 0 ..< bytesToXor {
                         recoveredBase[i] ^= source[i]
                     }
                 }

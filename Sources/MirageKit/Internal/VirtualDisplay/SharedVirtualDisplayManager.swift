@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/6/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import ScreenCaptureKit
@@ -14,7 +14,6 @@ import ScreenCaptureKit
 /// Manages a single shared virtual display for all Mirage streams
 /// Uses reference counting to create on first client and destroy when last client releases
 actor SharedVirtualDisplayManager {
-
     // MARK: - Singleton
 
     static let shared = SharedVirtualDisplayManager()
@@ -55,6 +54,7 @@ actor SharedVirtualDisplayManager {
             self.value = value
             MirageLogger.host("UncheckedSendableBox created for display reference")
         }
+
         deinit {
             MirageLogger.host("UncheckedSendableBox DEALLOCATED - display reference released")
         }
@@ -88,17 +88,17 @@ actor SharedVirtualDisplayManager {
         var errorDescription: String? {
             switch self {
             case .apiNotAvailable:
-                return "CGVirtualDisplay APIs are not available"
-            case .creationFailed(let reason):
-                return "Failed to create virtual display: \(reason)"
+                "CGVirtualDisplay APIs are not available"
+            case let .creationFailed(reason):
+                "Failed to create virtual display: \(reason)"
             case .noActiveDisplay:
-                return "No active shared virtual display"
-            case .clientNotFound(let streamID):
-                return "No client found for stream \(streamID)"
-            case .spaceNotFound(let displayID):
-                return "No space found for display \(displayID)"
-            case .scDisplayNotFound(let displayID):
-                return "SCDisplay not found for virtual display \(displayID)"
+                "No active shared virtual display"
+            case let .clientNotFound(streamID):
+                "No client found for stream \(streamID)"
+            case let .spaceNotFound(displayID):
+                "No space found for display \(displayID)"
+            case let .scDisplayNotFound(displayID):
+                "SCDisplay not found for virtual display \(displayID)"
             }
         }
     }
@@ -122,13 +122,12 @@ actor SharedVirtualDisplayManager {
 
     static let preferredStreamRefreshRate: Int = 120
 
-    static func streamRefreshRate(for targetFrameRate: Int) -> Int {
+    static func streamRefreshRate(for _: Int) -> Int {
         preferredStreamRefreshRate
     }
+
     func resolvedRefreshRate(_ requested: Int) -> Int {
-        if requested >= 120 {
-            return 120
-        }
+        if requested >= 120 { return 120 }
         return 60
     }
 }

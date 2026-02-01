@@ -8,8 +8,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import CoreServices
+import Foundation
 
 // MARK: - Directory Scanning
 
@@ -26,16 +26,12 @@ extension ApplicationScanner {
             guard self != other else { return false }
 
             // Higher domain priority wins
-            if domainPriority != other.domainPriority {
-                return domainPriority > other.domainPriority
-            }
+            if domainPriority != other.domainPriority { return domainPriority > other.domainPriority }
 
             // Compare versions
             if let v1 = version, let v2 = other.version {
                 let comparison = v1.compare(v2, options: .numeric)
-                if comparison != .orderedSame {
-                    return comparison == .orderedDescending
-                }
+                if comparison != .orderedSame { return comparison == .orderedDescending }
             }
 
             // Fallback to path comparison
@@ -46,7 +42,7 @@ extension ApplicationScanner {
     func scanAllDirectories() async -> [AppCandidate] {
         await Task.detached(priority: .utility) { [weak self] in
             guard let self else { return [] }
-            return await self.performDirectoryScan()
+            return await performDirectoryScan()
         }.value
     }
 
@@ -104,29 +100,22 @@ extension ApplicationScanner {
         allowBundleContents: Bool,
         seenPaths: inout Set<String>,
         byBundle: inout [String: AppCandidate],
-        byPath: inout [String: AppCandidate]
-    ) -> URL? {
-        guard shouldConsiderApp(at: url, allowBundleContents: allowBundleContents) else {
-            return nil
-        }
+        byPath _: inout [String: AppCandidate]
+    )
+    -> URL? {
+        guard shouldConsiderApp(at: url, allowBundleContents: allowBundleContents) else { return nil }
 
         let canonicalURL = canonicalURL(forPath: url.path)
         guard seenPaths.insert(canonicalURL.path).inserted else { return nil }
 
-        guard let candidate = candidateFromBundle(at: canonicalURL) else {
-            return canonicalURL
-        }
+        guard let candidate = candidateFromBundle(at: canonicalURL) else { return canonicalURL }
 
         // Skip apps without bundle identifiers (can't stream them reliably)
-        guard let identifier = candidate.bundleIdentifier?.lowercased(), !identifier.isEmpty else {
-            return canonicalURL
-        }
+        guard let identifier = candidate.bundleIdentifier?.lowercased(), !identifier.isEmpty else { return canonicalURL }
 
         // Deduplicate by bundle identifier
         if let existing = byBundle[identifier] {
-            if candidate.isPreferred(over: existing) {
-                byBundle[identifier] = candidate
-            }
+            if candidate.isPreferred(over: existing) { byBundle[identifier] = candidate }
         } else {
             byBundle[identifier] = candidate
         }
@@ -190,17 +179,11 @@ extension ApplicationScanner {
                 continue
             }
 
-            guard let resourceValues = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else {
-                continue
-            }
+            guard let resourceValues = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { continue }
 
-            guard resourceValues.isDirectory == true, resourceValues.isSymbolicLink != true else {
-                continue
-            }
+            guard resourceValues.isDirectory == true, resourceValues.isSymbolicLink != true else { continue }
 
-            if shouldIgnoreNestedDirectory(named: entry.lastPathComponent) {
-                continue
-            }
+            if shouldIgnoreNestedDirectory(named: entry.lastPathComponent) { continue }
 
             // Check for Applications/Utilities subdirectories
             if lowercasedName.contains("applications") || lowercasedName.contains("utilities") {
@@ -284,17 +267,11 @@ extension ApplicationScanner {
                 continue
             }
 
-            guard let resourceValues = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else {
-                continue
-            }
+            guard let resourceValues = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { continue }
 
-            guard resourceValues.isDirectory == true, resourceValues.isSymbolicLink != true else {
-                continue
-            }
+            guard resourceValues.isDirectory == true, resourceValues.isSymbolicLink != true else { continue }
 
-            if shouldIgnoreNestedDirectory(named: entry.lastPathComponent) {
-                continue
-            }
+            if shouldIgnoreNestedDirectory(named: entry.lastPathComponent) { continue }
 
             // Continue collecting in subdirectories
             collectApplications(
@@ -321,47 +298,37 @@ extension ApplicationScanner {
         }
 
         // Skip Mirage itself
-        if bundle.bundleIdentifier == "com.ethanlipnik.Mirage" {
-            return nil
-        }
+        if bundle.bundleIdentifier == "com.ethanlipnik.Mirage" { return nil }
 
-        let bundleId = bundle.bundleIdentifier ?? ""
+        let bundleID = bundle.bundleIdentifier ?? ""
         let isCoreServices = url.path.hasPrefix("/System/Library/CoreServices")
 
         // For CoreServices apps, use allowlist/blocklist filtering
         if isCoreServices {
-            let lowercasedId = bundleId.lowercased()
+            let lowercasedID = bundleID.lowercased()
 
             // Always include apps on the allowlist
-            let isAllowlisted = coreServicesAllowlist.contains(lowercasedId)
+            let isAllowlisted = coreServicesAllowlist.contains(lowercasedID)
 
             // Exclude apps matching system service patterns
             let matchesExclusionPattern = excludedBundlePatterns.contains { pattern in
-                bundleId.contains(pattern)
+                bundleID.contains(pattern)
             }
 
             // Skip if not allowlisted and matches exclusion pattern
-            if !isAllowlisted && matchesExclusionPattern {
-                return nil
-            }
+            if !isAllowlisted, matchesExclusionPattern { return nil }
 
             // Also skip apps with no UI (background-only apps)
             if !isAllowlisted {
                 let isBackgroundOnly = bundle.object(forInfoDictionaryKey: "LSUIElement") as? Bool == true
                     || bundle.object(forInfoDictionaryKey: "LSBackgroundOnly") as? Bool == true
-                if isBackgroundOnly {
-                    return nil
-                }
+                if isBackgroundOnly { return nil }
             }
         }
 
         var displayName = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-        if displayName?.isEmpty ?? true {
-            displayName = bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
-        }
-        if displayName?.isEmpty ?? true {
-            displayName = url.deletingPathExtension().lastPathComponent
-        }
+        if displayName?.isEmpty ?? true { displayName = bundle.object(forInfoDictionaryKey: "CFBundleName") as? String }
+        if displayName?.isEmpty ?? true { displayName = url.deletingPathExtension().lastPathComponent }
 
         let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
 
@@ -377,9 +344,7 @@ extension ApplicationScanner {
 
     /// Compares two version strings using system version comparison
     func compareVersions(_ version1: String?, _ version2: String?) -> ComparisonResult? {
-        guard let v1 = version1, let v2 = version2 else {
-            return nil
-        }
+        guard let v1 = version1, let v2 = version2 else { return nil }
         return v1.compare(v2, options: .numeric)
     }
 }

@@ -9,9 +9,9 @@
 //  Unlock manager extensions.
 //
 
-import Foundation
 import AppKit
 import CoreGraphics
+import Foundation
 
 extension UnlockManager {
     // MARK: - Unlock API
@@ -28,12 +28,11 @@ extension UnlockManager {
         password: String,
         requiresUsername: Bool,
         clientID: UUID
-    ) async -> (result: UnlockResult, retriesRemaining: Int?, retryAfterSeconds: Int?) {
+    )
+    async -> (result: UnlockResult, retriesRemaining: Int?, retryAfterSeconds: Int?) {
         // Check rate limit
         let limit = checkRateLimit(clientID: clientID)
-        if limit.isLimited {
-            return (.failure(.rateLimited, "Too many attempts. Try again later."), limit.remaining, limit.retryAfter)
-        }
+        if limit.isLimited { return (.failure(.rateLimited, "Too many attempts. Try again later."), limit.remaining, limit.retryAfter) }
 
         // Record this attempt
         recordAttempt(clientID: clientID)
@@ -67,7 +66,7 @@ extension UnlockManager {
         case .timedOut:
             MirageLogger.error(.host, "Password verification timed out for user \(resolvedUsername)")
             return (.failure(.timeout, "Credential verification timed out. Try again."), remaining, nil)
-        case .failedToRun(let reason):
+        case let .failedToRun(reason):
             MirageLogger.error(.host, "Password verification failed to run: \(reason)")
             return (.failure(.internalError, "Unable to verify credentials on the host."), remaining, nil)
         }
@@ -86,9 +85,7 @@ extension UnlockManager {
         // Loginwindow can appear after the display wakes on headless Macs.
         // A second readiness check reduces queued HID events.
         let loginReadyAfterWake = await waitForLoginWindowReady(timeout: 6.0)
-        if !loginReadyAfterWake {
-            MirageLogger.host("Login window not detected after wake; continuing unlock attempt")
-        }
+        if !loginReadyAfterWake { MirageLogger.host("Login window not detected after wake; continuing unlock attempt") }
 
         // Step 4: Try multiple unlock methods
         var unlocked = false
@@ -98,9 +95,7 @@ extension UnlockManager {
         let skylightResult = trySkyLightUnlock(username: resolvedUsername)
         if skylightResult {
             try? await Task.sleep(for: .milliseconds(300))
-            if await sessionMonitor.refreshState() == .active {
-                unlocked = true
-            }
+            if await sessionMonitor.refreshState() == .active { unlocked = true }
         }
 
         // Method 2: HID-level typing (login screen or lock screen)
@@ -127,7 +122,6 @@ extension UnlockManager {
             return (.failure(.invalidCredentials, "Password verified but unlock failed. Try again."), remaining, nil)
         }
     }
-
 }
 
 #endif

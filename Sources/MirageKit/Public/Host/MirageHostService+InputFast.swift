@@ -29,13 +29,13 @@ extension MirageHostService {
             if cacheEntry.window.id == 0 {
                 let streamID = inputMessage.streamID
                 switch inputMessage.event {
-                case .relativeResize(let resizeEvent):
+                case let .relativeResize(resizeEvent):
                     let newResolution = CGSize(width: resizeEvent.pixelWidth, height: resizeEvent.pixelHeight)
                     Task { @MainActor in
                         await self.handleDisplayResolutionChange(streamID: streamID, newResolution: newResolution)
                     }
                     return
-                case .pixelResize(let resizeEvent):
+                case let .pixelResize(resizeEvent):
                     let newResolution = CGSize(width: resizeEvent.pixelWidth, height: resizeEvent.pixelHeight)
                     Task { @MainActor in
                         await self.handleDisplayResolutionChange(streamID: streamID, newResolution: newResolution)
@@ -46,9 +46,7 @@ extension MirageHostService {
                 }
             }
 
-            if let handler = _onInputEvent {
-                handler(inputMessage.event, cacheEntry.window, client)
-            } else {
+            if let handler = onInputEventStorage { handler(inputMessage.event, cacheEntry.window, client) } else {
                 inputController.handleInputEvent(inputMessage.event, window: cacheEntry.window)
             }
         } catch {

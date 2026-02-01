@@ -15,14 +15,16 @@ extension MirageClientService {
     func handleDesktopStreamStarted(_ message: ControlMessage) {
         do {
             let started = try message.decode(DesktopStreamStartedMessage.self)
-            MirageLogger.client("Desktop stream started: stream=\(started.streamID), \(started.width)x\(started.height)")
+            MirageLogger
+                .client("Desktop stream started: stream=\(started.streamID), \(started.width)x\(started.height)")
             let streamID = started.streamID
             desktopStreamID = streamID
             desktopStreamResolution = CGSize(width: started.width, height: started.height)
             refreshRateOverridesByStream[streamID] = getScreenMaxRefreshRate()
             if desktopStreamRequestStartTime > 0 {
                 let deltaMs = Int((CFAbsoluteTimeGetCurrent() - desktopStreamRequestStartTime) * 1000)
-                MirageLogger.client("Desktop start: desktopStreamStarted received for stream \(streamID) (+\(deltaMs)ms)")
+                MirageLogger
+                    .client("Desktop start: desktopStreamStarted received for stream \(streamID) (+\(deltaMs)ms)")
                 streamStartupBaseTimes[streamID] = desktopStreamRequestStartTime
                 streamStartupFirstRegistrationSent.remove(streamID)
                 streamStartupFirstPacketReceived.remove(streamID)
@@ -44,9 +46,7 @@ extension MirageClientService {
                 if !self.registeredStreamIDs.contains(streamID) {
                     self.registeredStreamIDs.insert(streamID)
                     do {
-                        if self.udpConnection == nil {
-                            try await self.startVideoConnection()
-                        }
+                        if self.udpConnection == nil { try await self.startVideoConnection() }
                         try await self.sendStreamRegistration(streamID: streamID)
                         MirageLogger.client("Registered for desktop stream video \(streamID)")
                     } catch {
@@ -56,7 +56,11 @@ extension MirageClientService {
                 }
             }
 
-            onDesktopStreamStarted?(streamID, CGSize(width: started.width, height: started.height), started.displayCount)
+            onDesktopStreamStarted?(
+                streamID,
+                CGSize(width: started.width, height: started.height),
+                started.displayCount
+            )
 
             let desktopMinSize = CGSize(width: started.width, height: started.height)
             sessionStore.updateMinimumSize(for: streamID, minSize: desktopMinSize)

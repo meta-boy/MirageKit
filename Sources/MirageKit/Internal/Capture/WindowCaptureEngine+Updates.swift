@@ -7,14 +7,14 @@
 //  Capture engine extensions.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 import os
 
 #if os(macOS)
-import ScreenCaptureKit
 import AppKit
+import ScreenCaptureKit
 
 extension WindowCaptureEngine {
     func updateDimensions(windowFrame: CGRect, outputScale: CGFloat? = nil) async throws {
@@ -47,16 +47,17 @@ extension WindowCaptureEngine {
         // Clear cached fallback frame to prevent stale data during resize
         streamOutput?.clearCache()
 
-        MirageLogger.capture("Updating dimensions from \(currentWidth)x\(currentHeight) to \(newWidth)x\(newHeight) (scale: \(currentScaleFactor), outputScale: \(scale))")
+        MirageLogger
+            .capture(
+                "Updating dimensions from \(currentWidth)x\(currentHeight) to \(newWidth)x\(newHeight) (scale: \(currentScaleFactor), outputScale: \(scale))"
+            )
 
         currentWidth = newWidth
         currentHeight = newHeight
 
         // Create new stream configuration with updated dimensions
         let streamConfig = SCStreamConfiguration()
-        if useBestCaptureResolution {
-            streamConfig.captureResolution = .best
-        }
+        if useBestCaptureResolution { streamConfig.captureResolution = .best }
         useExplicitCaptureDimensions = true
         if useExplicitCaptureDimensions {
             streamConfig.width = newWidth
@@ -77,6 +78,7 @@ extension WindowCaptureEngine {
         try await stream.updateConfiguration(streamConfig)
         MirageLogger.capture("Stream configuration updated to \(newWidth)x\(newHeight)")
     }
+
     func updateResolution(width: Int, height: Int) async throws {
         guard isCapturing, let stream else { return }
 
@@ -87,7 +89,10 @@ extension WindowCaptureEngine {
         // This avoids sending old-resolution frames during SCK pause after config update
         streamOutput?.clearCache()
 
-        MirageLogger.capture("Updating resolution to client-requested \(width)x\(height) (was \(currentWidth)x\(currentHeight))")
+        MirageLogger
+            .capture(
+                "Updating resolution to client-requested \(width)x\(height) (was \(currentWidth)x\(currentHeight))"
+            )
 
         currentWidth = width
         currentHeight = height
@@ -126,6 +131,7 @@ extension WindowCaptureEngine {
         try await stream.updateConfiguration(streamConfig)
         MirageLogger.capture("Resolution updated to client dimensions: \(width)x\(height)")
     }
+
     func updateCaptureDisplay(_ newDisplay: SCDisplay, resolution: CGSize) async throws {
         guard isCapturing, let stream else { return }
 
@@ -159,13 +165,11 @@ extension WindowCaptureEngine {
 
         // Create new filter for the new display
         let newFilter = SCContentFilter(display: newDisplay, excludingWindows: [])
-        self.contentFilter = newFilter
+        contentFilter = newFilter
 
         // Create configuration for the new display
         let streamConfig = SCStreamConfiguration()
-        if useBestCaptureResolution {
-            streamConfig.captureResolution = .best
-        }
+        if useBestCaptureResolution { streamConfig.captureResolution = .best }
         useExplicitCaptureDimensions = true
         streamConfig.width = newWidth
         streamConfig.height = newHeight
@@ -193,6 +197,7 @@ extension WindowCaptureEngine {
 
         MirageLogger.capture("Capture switched to display \(newDisplay.displayID) at \(newWidth)x\(newHeight)")
     }
+
     func updateFrameRate(_ fps: Int) async throws {
         guard isCapturing, let stream else { return }
 
@@ -201,9 +206,7 @@ extension WindowCaptureEngine {
 
         // Create new stream configuration with updated frame rate
         let streamConfig = SCStreamConfiguration()
-        if useBestCaptureResolution {
-            streamConfig.captureResolution = .best
-        }
+        if useBestCaptureResolution { streamConfig.captureResolution = .best }
         if useExplicitCaptureDimensions {
             streamConfig.width = currentWidth
             streamConfig.height = currentHeight
@@ -228,10 +231,12 @@ extension WindowCaptureEngine {
         )
         MirageLogger.capture("Frame rate updated to \(fps) fps")
     }
+
     func getCurrentDimensions() -> (width: Int, height: Int) {
         (currentWidth, currentHeight)
     }
-    func updateConfiguration(_ newConfig: MirageEncoderConfiguration) async throws {
+
+    func updateConfiguration(_: MirageEncoderConfiguration) async throws {
         // Would need to restart capture with new config
     }
 }

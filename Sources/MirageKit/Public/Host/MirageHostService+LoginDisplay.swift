@@ -122,9 +122,7 @@ extension MirageHostService {
 
             let sharedConsumerActive = loginDisplaySharedDisplayConsumerActive
             loginDisplaySharedDisplayConsumerActive = false
-            if sharedConsumerActive {
-                await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.loginDisplay)
-            }
+            if sharedConsumerActive { await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.loginDisplay) }
 
             if disablePowerAssertion, loginDisplayPowerAssertionEnabled {
                 await PowerAssertionManager.shared.disable()
@@ -217,16 +215,12 @@ extension MirageHostService {
             loginDisplayIsBorrowedStream = false
             loginDisplayPowerAssertionEnabled = false
             loginDisplayInputState.clear()
-            if sharedConsumerActive {
-                await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.loginDisplay)
-            }
+            if sharedConsumerActive { await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.loginDisplay) }
             return
         }
 
         let isBorrowed = loginDisplayIsBorrowedStream
-        if !isBorrowed, let context = loginDisplayContext {
-            await context.stop()
-        }
+        if !isBorrowed, let context = loginDisplayContext { await context.stop() }
 
         loginDisplayContext = nil
         loginDisplayStreamID = nil
@@ -244,9 +238,7 @@ extension MirageHostService {
             loginDisplayPowerAssertionEnabled = false
         }
 
-        if sharedConsumerActive {
-            await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.loginDisplay)
-        }
+        if sharedConsumerActive { await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.loginDisplay) }
 
         await broadcastLoginDisplayStopped(streamID: streamID, newState: newState)
     }
@@ -261,7 +253,7 @@ extension MirageHostService {
             while !Task.isCancelled {
                 try? await Task.sleep(for: loginDisplayWatchdogInterval)
                 if Task.isCancelled { return }
-                await self.checkLoginDisplayHealth(generation: generation, streamID: streamID, context: context)
+                await checkLoginDisplayHealth(generation: generation, streamID: streamID, context: context)
             }
         }
     }
@@ -288,11 +280,10 @@ extension MirageHostService {
         guard startAge >= loginDisplayWatchdogStartGraceSeconds else { return }
 
         let lastCaptureTime = await context.getLastCapturedFrameTime()
-        let captureGapSeconds: CFAbsoluteTime
-        if lastCaptureTime > 0 {
-            captureGapSeconds = now - lastCaptureTime
+        let captureGapSeconds: CFAbsoluteTime = if lastCaptureTime > 0 {
+            now - lastCaptureTime
         } else {
-            captureGapSeconds = startAge
+            startAge
         }
 
         guard captureGapSeconds >= loginDisplayWatchdogStaleThresholdSeconds else { return }
@@ -300,13 +291,17 @@ extension MirageHostService {
         let cooldownRemaining = loginDisplayRestartCooldownSeconds - (now - lastLoginDisplayRestartTime)
         if cooldownRemaining > 0 {
             let remainingText = max(0, cooldownRemaining).formatted(.number.precision(.fractionLength(1)))
-            MirageLogger.host("Login display watchdog: stale capture but restart cooldown active (\(remainingText)s remaining)")
+            MirageLogger
+                .host("Login display watchdog: stale capture but restart cooldown active (\(remainingText)s remaining)")
             return
         }
 
         lastLoginDisplayRestartTime = now
         let gapText = max(0, captureGapSeconds).formatted(.number.precision(.fractionLength(1)))
-        MirageLogger.error(.host, "Login display watchdog: no recent frames for \(gapText)s, restarting login display stream")
+        MirageLogger.error(
+            .host,
+            "Login display watchdog: no recent frames for \(gapText)s, restarting login display stream"
+        )
         await restartLoginDisplayStream(reason: "watchdog detected stale capture gap of \(gapText)s")
     }
 
@@ -333,7 +328,9 @@ extension MirageHostService {
     /// Broadcast login display ready to all connected clients
     func broadcastLoginDisplayReady() async {
         guard let streamID = loginDisplayStreamID,
-              let resolution = loginDisplayResolution else { return }
+              let resolution = loginDisplayResolution else {
+            return
+        }
 
         // Get dimension token from login display stream context
         let dimensionToken = await loginDisplayContext?.getDimensionToken() ?? 0
@@ -370,7 +367,10 @@ extension MirageHostService {
         guard !clientsByConnection.isEmpty else { return }
         guard loginDisplayContext == nil else { return }
         guard loginDisplayRetryAttempts < loginDisplayRetryLimit else {
-            MirageLogger.error(.host, "Login display retry limit reached (\(loginDisplayRetryLimit)); last reason: \(reason)")
+            MirageLogger.error(
+                .host,
+                "Login display retry limit reached (\(loginDisplayRetryLimit)); last reason: \(reason)"
+            )
             return
         }
 
@@ -383,40 +383,43 @@ extension MirageHostService {
         loginDisplayRetryTask = Task { @MainActor [weak self] in
             guard let self else { return }
             try? await Task.sleep(for: delay)
-            self.loginDisplayRetryTask = nil
+            loginDisplayRetryTask = nil
 
-            guard self.sessionState != .active else { return }
-            guard !self.clientsByConnection.isEmpty else { return }
-            guard self.loginDisplayContext == nil else { return }
+            guard sessionState != .active else { return }
+            guard !clientsByConnection.isEmpty else { return }
+            guard loginDisplayContext == nil else { return }
 
-            await self.startLoginDisplayStreamIfNeeded()
+            await startLoginDisplayStreamIfNeeded()
         }
     }
 
     func provisionalMainDisplayBounds() -> CGRect {
         let mainDisplayID = CGMainDisplayID()
         let bounds = CGDisplayBounds(mainDisplayID)
-        if bounds.width > 0, bounds.height > 0 {
-            return bounds
-        }
+        if bounds.width > 0, bounds.height > 0 { return bounds }
         return CGRect(origin: .zero, size: CGSize(width: 1920, height: 1080))
     }
 
     func resolvedMainDisplayBounds(displayID: CGDirectDisplayID, fallbackResolution: CGSize) -> CGRect {
         let bounds = CGDisplayBounds(displayID)
-        if bounds.width > 0, bounds.height > 0 {
-            return bounds
-        }
+        if bounds.width > 0, bounds.height > 0 { return bounds }
         return CGRect(origin: .zero, size: fallbackResolution)
     }
 
     /// Resolve the login display for streaming from the main display without creating a separate display
-    func resolveLoginDisplayMainDisplay() async throws -> (displayWrapper: SCDisplayWrapper, displayID: CGDirectDisplayID, resolution: CGSize, bounds: CGRect) {
+    func resolveLoginDisplayMainDisplay() async throws
+    -> (displayWrapper: SCDisplayWrapper, displayID: CGDirectDisplayID, resolution: CGSize, bounds: CGRect) {
         do {
             let scDisplay = try await findMainSCDisplayWithRetry(maxAttempts: 8, delayMs: 120)
             let resolution = CGSize(width: scDisplay.display.width, height: scDisplay.display.height)
-            let bounds = resolvedMainDisplayBounds(displayID: scDisplay.display.displayID, fallbackResolution: resolution)
-            MirageLogger.host("Login display using main display \(scDisplay.display.displayID) at \(Int(resolution.width))x\(Int(resolution.height))")
+            let bounds = resolvedMainDisplayBounds(
+                displayID: scDisplay.display.displayID,
+                fallbackResolution: resolution
+            )
+            MirageLogger
+                .host(
+                    "Login display using main display \(scDisplay.display.displayID) at \(Int(resolution.width))x\(Int(resolution.height))"
+                )
             return (
                 displayWrapper: scDisplay,
                 displayID: scDisplay.display.displayID,
@@ -436,7 +439,10 @@ extension MirageHostService {
             let resolution = sharedContext.resolution
             let bounds = await SharedVirtualDisplayManager.shared.getDisplayBounds()
                 ?? CGRect(origin: .zero, size: resolution)
-            MirageLogger.host("Login display using shared display \(scDisplay.display.displayID) at \(Int(resolution.width))x\(Int(resolution.height))")
+            MirageLogger
+                .host(
+                    "Login display using shared display \(scDisplay.display.displayID) at \(Int(resolution.width))x\(Int(resolution.height))"
+                )
             return (
                 displayWrapper: scDisplay,
                 displayID: sharedContext.displayID,

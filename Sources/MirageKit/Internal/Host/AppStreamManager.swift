@@ -28,26 +28,26 @@ public actor AppStreamManager {
     public var disconnectReservationDuration: TimeInterval = 30.0
 
     /// Callbacks for notifying the host service of events
-    var _onNewWindowDetected: (@Sendable (String, SCWindow) async -> Void)?
-    var _onWindowClosed: (@Sendable (String, WindowID) async -> Void)?
-    var _onAppTerminated: (@Sendable (String) async -> Void)?
-    var _onCooldownExpired: (@Sendable (String, WindowID) async -> Void)?
+    var onNewWindowDetected: (@Sendable (String, SCWindow) async -> Void)?
+    var onWindowClosed: (@Sendable (String, WindowID) async -> Void)?
+    var onAppTerminated: (@Sendable (String) async -> Void)?
+    var onCooldownExpired: (@Sendable (String, WindowID) async -> Void)?
 
     /// Setters for callbacks (allows setting from outside the actor)
     public func setOnNewWindowDetected(_ callback: @escaping @Sendable (String, SCWindow) async -> Void) {
-        _onNewWindowDetected = callback
+        onNewWindowDetected = callback
     }
 
     public func setOnWindowClosed(_ callback: @escaping @Sendable (String, WindowID) async -> Void) {
-        _onWindowClosed = callback
+        onWindowClosed = callback
     }
 
     public func setOnAppTerminated(_ callback: @escaping @Sendable (String) async -> Void) {
-        _onAppTerminated = callback
+        onAppTerminated = callback
     }
 
     public func setOnCooldownExpired(_ callback: @escaping @Sendable (String, WindowID) async -> Void) {
-        _onCooldownExpired = callback
+        onCooldownExpired = callback
     }
 
     /// Application scanner for getting installed apps
@@ -66,7 +66,7 @@ public actor AppStreamManager {
     var isMonitoring = false
 
     public init() {
-        self.applicationScanner = ApplicationScanner()
+        applicationScanner = ApplicationScanner()
     }
 }
 

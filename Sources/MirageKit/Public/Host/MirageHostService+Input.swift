@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/11/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 
@@ -29,10 +29,16 @@ extension MirageHostService {
 
         func warpCursorIfNeeded(to point: CGPoint, type: CGEventType) {
             switch type {
-            case .leftMouseDown, .leftMouseUp,
-                 .rightMouseDown, .rightMouseUp,
-                 .otherMouseDown, .otherMouseUp,
-                 .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
+            case .leftMouseDown,
+                 .leftMouseDragged,
+                 .leftMouseUp,
+                 .mouseMoved,
+                 .otherMouseDown,
+                 .otherMouseDragged,
+                 .otherMouseUp,
+                 .rightMouseDown,
+                 .rightMouseDragged,
+                 .rightMouseUp:
                 CGWarpMouseCursorPosition(point)
             default:
                 break
@@ -40,74 +46,79 @@ extension MirageHostService {
         }
 
         switch event {
-        case .mouseDown(let e):
+        case let .mouseDown(e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
             loginDisplayInputState.markFocusReceived()
             warpCursorIfNeeded(to: point, type: .leftMouseDown)
             postHIDMouseEvent(.leftMouseDown, event: e, location: point)
-        case .mouseUp(let e):
+        case let .mouseUp(e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
             warpCursorIfNeeded(to: point, type: .leftMouseUp)
             postHIDMouseEvent(.leftMouseUp, event: e, location: point)
-        case .mouseMoved(let e):
+        case let .mouseMoved(e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
             warpCursorIfNeeded(to: point, type: .mouseMoved)
             postHIDMouseEvent(.mouseMoved, event: e, location: point)
-        case .mouseDragged(let e):
+        case let .mouseDragged(e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
             warpCursorIfNeeded(to: point, type: .leftMouseDragged)
             postHIDMouseEvent(.leftMouseDragged, event: e, location: point)
-        case .rightMouseDown(let e):
+        case let .rightMouseDown(e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
             warpCursorIfNeeded(to: point, type: .rightMouseDown)
             postHIDMouseEvent(.rightMouseDown, event: e, location: point)
-        case .rightMouseUp(let e):
+        case let .rightMouseUp(e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
             warpCursorIfNeeded(to: point, type: .rightMouseUp)
             postHIDMouseEvent(.rightMouseUp, event: e, location: point)
-        case .rightMouseDragged(let e):
+        case let .rightMouseDragged(e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
             warpCursorIfNeeded(to: point, type: .rightMouseDragged)
             postHIDMouseEvent(.rightMouseDragged, event: e, location: point)
-        case .otherMouseDown(let e):
+        case let .otherMouseDown(e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
             warpCursorIfNeeded(to: point, type: .otherMouseDown)
             postHIDMouseEvent(.otherMouseDown, event: e, location: point)
-        case .otherMouseUp(let e):
+        case let .otherMouseUp(e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
             warpCursorIfNeeded(to: point, type: .otherMouseUp)
             postHIDMouseEvent(.otherMouseUp, event: e, location: point)
-        case .otherMouseDragged(let e):
+        case let .otherMouseDragged(e):
             let point = loginDisplayPoint(e.location)
             loginDisplayInputState.updateCursorPosition(point)
             warpCursorIfNeeded(to: point, type: .otherMouseDragged)
             postHIDMouseEvent(.otherMouseDragged, event: e, location: point)
-        case .scrollWheel(let e):
+        case let .scrollWheel(e):
             let location = loginInfo.hasCursorPosition
                 ? loginInfo.lastCursorPosition
                 : CGPoint(x: bounds.midX, y: bounds.midY)
             postHIDScrollEvent(e, location: location)
-        case .keyDown(let e):
+        case let .keyDown(e):
             // If first keyboard event without a prior mouse click, click to focus the login field
             if !loginInfo.hasReceivedFocusEvent {
                 let centerPoint = CGPoint(x: bounds.midX, y: bounds.midY)
                 clickToFocusLoginField(at: centerPoint)
             }
             postHIDKeyEvent(isKeyDown: true, event: e)
-        case .keyUp(let e):
+        case let .keyUp(e):
             postHIDKeyEvent(isKeyDown: false, event: e)
-        case .flagsChanged(let modifiers):
+        case let .flagsChanged(modifiers):
             postHIDFlagsChanged(modifiers)
-        case .magnify, .rotate, .windowResize, .relativeResize, .pixelResize, .windowFocus:
+        case .magnify,
+             .pixelResize,
+             .relativeResize,
+             .rotate,
+             .windowFocus,
+             .windowResize:
             break
         }
     }
@@ -119,7 +130,9 @@ extension MirageHostService {
             mouseType: type,
             mouseCursorPosition: location,
             mouseButton: event.button.cgMouseButton
-        ) else { return }
+        ) else {
+            return
+        }
 
         cgEvent.setIntegerValueField(.mouseEventClickState, value: Int64(event.clickCount))
         cgEvent.flags = event.modifiers.cgEventFlags
@@ -135,7 +148,9 @@ extension MirageHostService {
             wheel1: Int32(event.deltaY),
             wheel2: Int32(event.deltaX),
             wheel3: 0
-        ) else { return }
+        ) else {
+            return
+        }
 
         cgEvent.location = location
         cgEvent.flags = event.modifiers.cgEventFlags
@@ -148,7 +163,9 @@ extension MirageHostService {
             keyboardEventSource: nil,
             virtualKey: CGKeyCode(event.keyCode),
             keyDown: isKeyDown
-        ) else { return }
+        ) else {
+            return
+        }
 
         cgEvent.flags = event.modifiers.cgEventFlags
         cgEvent.post(tap: .cghidEventTap)
@@ -160,7 +177,9 @@ extension MirageHostService {
             keyboardEventSource: nil,
             virtualKey: 0,
             keyDown: true
-        ) else { return }
+        ) else {
+            return
+        }
 
         cgEvent.type = .flagsChanged
         cgEvent.flags = modifiers.cgEventFlags
@@ -178,7 +197,9 @@ extension MirageHostService {
             mouseType: .leftMouseDown,
             mouseCursorPosition: point,
             mouseButton: .left
-        ) else { return }
+        ) else {
+            return
+        }
         downEvent.post(tap: .cghidEventTap)
 
         guard let upEvent = CGEvent(
@@ -186,7 +207,9 @@ extension MirageHostService {
             mouseType: .leftMouseUp,
             mouseCursorPosition: point,
             mouseButton: .left
-        ) else { return }
+        ) else {
+            return
+        }
         upEvent.post(tap: .cghidEventTap)
     }
 }

@@ -9,9 +9,9 @@
 //  Unlock manager extensions.
 //
 
-import Foundation
 import AppKit
 import CoreGraphics
+import Foundation
 
 extension UnlockManager {
     // MARK: - Display Wake
@@ -34,9 +34,7 @@ extension UnlockManager {
                 &powerAssertionID
             )
 
-            if result == kIOReturnSuccess {
-                MirageLogger.host("Created power assertion for unlock")
-            }
+            if result == kIOReturnSuccess { MirageLogger.host("Created power assertion for unlock") }
         }
     }
 
@@ -48,7 +46,6 @@ extension UnlockManager {
             MirageLogger.host("Released power assertion")
         }
     }
-
 }
 
 #endif

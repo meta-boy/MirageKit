@@ -37,19 +37,19 @@ public actor ApplicationScanner {
         "Launcher",
         "Listener",
         "Daemon",
-        "XPCService"
+        "XPCService",
     ]
 
     /// Specific bundle identifiers to always include from CoreServices
     let coreServicesAllowlist: Set<String> = [
         "com.apple.finder",
         "com.apple.archiveutility",
-        "com.apple.ScriptEditor2",  // Script Editor
+        "com.apple.ScriptEditor2", // Script Editor
         "com.apple.grapher",
         "com.apple.ScreenSharing",
-        "com.apple.SystemProfiler",  // System Information
+        "com.apple.SystemProfiler", // System Information
         "com.apple.dt.CommandLineTools.installondemand",
-        "com.apple.DiskImageMounter"
+        "com.apple.DiskImageMounter",
     ]
 
     /// Excluded directory names when scanning nested bundles
@@ -79,12 +79,12 @@ public actor ApplicationScanner {
         "runtime",
         "usr",
         "bin",
-        "sbin"
+        "sbin",
     ]
 
     /// Bundle identifiers that allow nested app scanning (e.g., Xcode contains many apps)
     let nestedBundleAllowedIdentifiers: Set<String> = [
-        "com.apple.dt.xcode"
+        "com.apple.dt.xcode",
     ]
 
     /// Maximum depth for nested bundle scanning
@@ -95,7 +95,7 @@ public actor ApplicationScanner {
             URL(fileURLWithPath: "/Applications", isDirectory: true),
             URL(fileURLWithPath: "/System/Applications", isDirectory: true),
             URL(fileURLWithPath: "/System/Cryptexes/App/System/Applications", isDirectory: true),
-            URL(fileURLWithPath: "/System/Library/CoreServices", isDirectory: true)
+            URL(fileURLWithPath: "/System/Library/CoreServices", isDirectory: true),
         ]
 
         let userApplications = fileManager
@@ -116,7 +116,8 @@ public actor ApplicationScanner {
         includeIcons: Bool = true,
         runningApps: Set<String> = [],
         streamingApps: Set<String> = []
-    ) async -> [MirageInstalledApp] {
+    )
+    async -> [MirageInstalledApp] {
         logger.debug("Starting application scan")
         let startTime = Date()
 
@@ -154,7 +155,8 @@ public actor ApplicationScanner {
         for apps: [MirageInstalledApp],
         runningApps: Set<String>,
         streamingApps: Set<String>
-    ) -> [MirageInstalledApp] {
+    )
+    -> [MirageInstalledApp] {
         apps.map { app in
             var updated = app
             updated.isRunning = runningApps.contains(app.bundleIdentifier.lowercased())

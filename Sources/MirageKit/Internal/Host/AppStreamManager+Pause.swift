@@ -8,14 +8,14 @@
 //
 
 #if os(macOS)
-import Foundation
 import AppKit
+import Foundation
 
-extension AppStreamManager {
+public extension AppStreamManager {
     // MARK: - Stream Pause/Resume
 
     /// Pause a stream (client window lost focus)
-    public func pauseStream(bundleIdentifier: String, streamID: StreamID) {
+    func pauseStream(bundleIdentifier: String, streamID: StreamID) {
         let key = bundleIdentifier.lowercased()
         guard sessions[key] != nil else { return }
 
@@ -30,7 +30,7 @@ extension AppStreamManager {
     }
 
     /// Resume a stream (client window regained focus)
-    public func resumeStream(bundleIdentifier: String, streamID: StreamID) {
+    func resumeStream(bundleIdentifier: String, streamID: StreamID) {
         let key = bundleIdentifier.lowercased()
         guard sessions[key] != nil else { return }
 
@@ -43,7 +43,6 @@ extension AppStreamManager {
             }
         }
     }
-
 }
 
 #endif

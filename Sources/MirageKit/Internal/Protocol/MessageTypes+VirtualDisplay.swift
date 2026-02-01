@@ -7,8 +7,8 @@
 //  Message type definitions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 // MARK: - Virtual Display Messages
 
@@ -25,15 +25,13 @@ struct ContentBoundsUpdateMessage: Codable {
 
     init(streamID: StreamID, bounds: CGRect) {
         self.streamID = streamID
-        self.boundsX = bounds.origin.x
-        self.boundsY = bounds.origin.y
-        self.boundsWidth = bounds.width
-        self.boundsHeight = bounds.height
+        boundsX = bounds.origin.x
+        boundsY = bounds.origin.y
+        boundsWidth = bounds.width
+        boundsHeight = bounds.height
     }
 
-    var bounds: CGRect {
-        CGRect(x: boundsX, y: boundsY, width: boundsWidth, height: boundsHeight)
-    }
+    var bounds: CGRect { CGRect(x: boundsX, y: boundsY, width: boundsWidth, height: boundsHeight) }
 }
 
 /// Display resolution change request sent from client to host
@@ -54,7 +52,7 @@ struct StreamScaleChangeMessage: Codable {
     /// Stream scale factor (0.1-1.0)
     let streamScale: CGFloat
     /// Optional adaptive scale toggle
-    var adaptiveScaleEnabled: Bool? = nil
+    var adaptiveScaleEnabled: Bool?
 }
 
 /// Stream refresh rate override sent from client to host
@@ -65,5 +63,5 @@ struct StreamRefreshRateChangeMessage: Codable {
     /// Maximum refresh rate in Hz (60/120 based on client capability)
     let maxRefreshRate: Int
     /// Force a display refresh reconfiguration on the host (fallback path)
-    var forceDisplayRefresh: Bool? = nil
+    var forceDisplayRefresh: Bool?
 }

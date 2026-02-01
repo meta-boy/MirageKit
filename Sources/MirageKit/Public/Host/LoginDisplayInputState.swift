@@ -22,9 +22,9 @@ final class LoginDisplayInputState: @unchecked Sendable {
         lock.lock()
         self.streamID = streamID
         self.bounds = bounds
-        self.lastCursorPosition = CGPoint(x: bounds.midX, y: bounds.midY)
-        self.hasCursorPosition = false
-        self.hasReceivedFocusEvent = false
+        lastCursorPosition = CGPoint(x: bounds.midX, y: bounds.midY)
+        hasCursorPosition = false
+        hasReceivedFocusEvent = false
         lock.unlock()
         MirageLogger.host("LoginDisplayInputState registered: streamID=\(streamID), bounds=\(bounds)")
     }
@@ -37,17 +37,14 @@ final class LoginDisplayInputState: @unchecked Sendable {
         hasCursorPosition = false
         hasReceivedFocusEvent = false
         lock.unlock()
-        if let previousID {
-            MirageLogger.host("LoginDisplayInputState cleared: was streamID=\(previousID)")
-        }
+        if let previousID { MirageLogger.host("LoginDisplayInputState cleared: was streamID=\(previousID)") }
     }
 
-    func getInfo(for streamID: StreamID) -> (bounds: CGRect, lastCursorPosition: CGPoint, hasCursorPosition: Bool, hasReceivedFocusEvent: Bool)? {
+    func getInfo(for streamID: StreamID)
+    -> (bounds: CGRect, lastCursorPosition: CGPoint, hasCursorPosition: Bool, hasReceivedFocusEvent: Bool)? {
         lock.lock()
         defer { lock.unlock() }
-        guard let storedID = self.streamID, storedID == streamID else {
-            return nil
-        }
+        guard let storedID = self.streamID, storedID == streamID else { return nil }
         return (bounds, lastCursorPosition, hasCursorPosition, hasReceivedFocusEvent)
     }
 

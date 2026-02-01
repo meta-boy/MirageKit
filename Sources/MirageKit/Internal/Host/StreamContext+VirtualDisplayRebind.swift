@@ -26,11 +26,12 @@ extension StreamContext {
         label: String,
         maxAttempts: Int = 8,
         initialDelayMs: Int = 80
-    ) async throws -> VirtualDisplayTargets {
+    )
+    async throws -> VirtualDisplayTargets {
         let attempts = max(1, maxAttempts)
         var delayMs = max(40, initialDelayMs)
 
-        for attempt in 1...attempts {
+        for attempt in 1 ... attempts {
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
 
@@ -39,9 +40,7 @@ extension StreamContext {
                 let scApplication = content.applications.first(where: { $0.processID == applicationPID })
 
                 if let scDisplay, let scWindow, let scApplication {
-                    if attempt > 1 {
-                        MirageLogger.stream("Resolved virtual display targets on attempt \(attempt) (\(label))")
-                    }
+                    if attempt > 1 { MirageLogger.stream("Resolved virtual display targets on attempt \(attempt) (\(label))") }
                     return VirtualDisplayTargets(
                         window: SCWindowWrapper(window: scWindow),
                         application: SCApplicationWrapper(application: scApplication),
@@ -54,19 +53,23 @@ extension StreamContext {
                         scDisplay == nil ? "display" : nil,
                         scWindow == nil ? "window" : nil,
                         scApplication == nil ? "application" : nil,
-                    ].compactMap { $0 }
+                    ].compactMap(\.self)
                     let missingLabel = missingParts.joined(separator: ", ")
-                    MirageLogger.stream("Virtual display targets missing (\(missingLabel)) on attempt \(attempt)/\(attempts) (\(label)); retrying in \(delayMs)ms")
+                    MirageLogger
+                        .stream(
+                            "Virtual display targets missing (\(missingLabel)) on attempt \(attempt)/\(attempts) (\(label)); retrying in \(delayMs)ms"
+                        )
                     try? await Task.sleep(for: .milliseconds(Int64(delayMs)))
-                    delayMs = min(1_000, Int(Double(delayMs) * 1.6))
+                    delayMs = min(1000, Int(Double(delayMs) * 1.6))
                 }
             } catch {
-                if attempt >= attempts {
-                    throw error
-                }
-                MirageLogger.error(.stream, "Failed to query SCShareableContent (\(label)) attempt \(attempt)/\(attempts): \(error)")
+                if attempt >= attempts { throw error }
+                MirageLogger.error(
+                    .stream,
+                    "Failed to query SCShareableContent (\(label)) attempt \(attempt)/\(attempts): \(error)"
+                )
                 try? await Task.sleep(for: .milliseconds(Int64(delayMs)))
-                delayMs = min(1_000, Int(Double(delayMs) * 1.6))
+                delayMs = min(1000, Int(Double(delayMs) * 1.6))
             }
         }
 
@@ -76,7 +79,8 @@ extension StreamContext {
     func rebindToSharedDisplay(
         newContext: SharedVirtualDisplayManager.DisplaySnapshot,
         reason: String
-    ) async throws {
+    )
+    async throws {
         guard isRunning, useVirtualDisplay else { return }
         guard let currentContext = virtualDisplayContext else { return }
         guard currentContext.generation != newContext.generation else { return }
@@ -98,7 +102,8 @@ extension StreamContext {
 
         currentContentRect = .zero
         dimensionToken &+= 1
-        MirageLogger.stream("Rebinding stream \(streamID) to shared display generation \(newContext.generation) (\(reason))")
+        MirageLogger
+            .stream("Rebinding stream \(streamID) to shared display generation \(newContext.generation) (\(reason))")
         await packetSender?.bumpGeneration(reason: "shared display rebind")
         resetPipelineStateForReconfiguration(reason: "shared display rebind")
 
@@ -107,7 +112,10 @@ extension StreamContext {
         virtualDisplayContext = newContext
         sharedDisplayGeneration = newContext.generation
 
-        let displayBounds = CGVirtualDisplayBridge.getDisplayBounds(newContext.displayID, knownResolution: newContext.resolution)
+        let displayBounds = CGVirtualDisplayBridge.getDisplayBounds(
+            newContext.displayID,
+            knownResolution: newContext.resolution
+        )
         try await WindowSpaceManager.shared.moveWindow(
             windowID,
             toSpaceID: newContext.spaceID,

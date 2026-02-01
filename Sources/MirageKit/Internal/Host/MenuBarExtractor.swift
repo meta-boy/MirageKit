@@ -6,8 +6,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import ApplicationServices
+import Foundation
 
 /// Extracts menu bar structure from running applications using Accessibility APIs.
 ///
@@ -15,7 +15,6 @@ import ApplicationServices
 /// Menu structures are extracted by traversing the Accessibility element tree starting
 /// from the application's menu bar attribute.
 actor MenuBarExtractor {
-
     // MARK: - Menu Bar Extraction
 
     /// Extracts the complete menu bar structure from an application.
@@ -58,9 +57,7 @@ actor MenuBarExtractor {
 
         var menus: [MirageMenu] = []
         for (index, menuBarItem) in children.enumerated() where index >= menuStartIndex {
-            if let menu = extractMenu(from: menuBarItem, menuIndex: index) {
-                menus.append(menu)
-            }
+            if let menu = extractMenu(from: menuBarItem, menuIndex: index) { menus.append(menu) }
         }
 
         return MirageMenuBar(
@@ -117,16 +114,12 @@ actor MenuBarExtractor {
         var menuItemsRef: CFTypeRef?
         AXUIElementCopyAttributeValue(menuElement, kAXChildrenAttribute as CFString, &menuItemsRef)
 
-        guard let menuItemElements = menuItemsRef as? [AXUIElement] else {
-            return MirageMenu(title: title, items: [], menuIndex: menuIndex)
-        }
+        guard let menuItemElements = menuItemsRef as? [AXUIElement] else { return MirageMenu(title: title, items: [], menuIndex: menuIndex) }
 
         var items: [MirageMenuItem] = []
         for (itemIndex, itemElement) in menuItemElements.enumerated() {
             let actionPath = [menuIndex, itemIndex]
-            if let item = extractMenuItem(from: itemElement, actionPath: actionPath) {
-                items.append(item)
-            }
+            if let item = extractMenuItem(from: itemElement, actionPath: actionPath) { items.append(item) }
         }
 
         return MirageMenu(title: title, items: items, menuIndex: menuIndex)
@@ -153,9 +146,7 @@ actor MenuBarExtractor {
                 AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subroleRef)
                 let subrole = subroleRef as? String
 
-                if subrole == "AXSeparatorMenuItemSubrole" || title == nil {
-                    return .separator(actionPath: actionPath)
-                }
+                if subrole == "AXSeparatorMenuItemSubrole" || title == nil { return .separator(actionPath: actionPath) }
             }
         }
 
@@ -165,9 +156,7 @@ actor MenuBarExtractor {
         let title = (titleRef as? String) ?? ""
 
         // Empty titles that aren't separators - skip them
-        if title.isEmpty {
-            return nil
-        }
+        if title.isEmpty { return nil }
 
         // Get enabled state
         var enabledRef: CFTypeRef?
@@ -186,7 +175,7 @@ actor MenuBarExtractor {
         let isMixed = markChar == "-" || markChar == "\u{2212}" || markChar == "–"
 
         // Check for submenu
-        var submenuItems: [MirageMenuItem]? = nil
+        var submenuItems: [MirageMenuItem]?
         var childrenRef: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef)
 
@@ -201,9 +190,7 @@ actor MenuBarExtractor {
                     submenuItems = []
                     for (subIndex, subElement) in submenuChildElements.enumerated() {
                         let subPath = actionPath + [subIndex]
-                        if let subItem = extractMenuItem(from: subElement, actionPath: subPath) {
-                            submenuItems?.append(subItem)
-                        }
+                        if let subItem = extractMenuItem(from: subElement, actionPath: subPath) { submenuItems?.append(subItem) }
                     }
                 }
             }
@@ -233,9 +220,7 @@ actor MenuBarExtractor {
 
         // If no command character, check for virtual key
         var keyChar: String?
-        if charResult == .success, let char = cmdCharRef as? String, !char.isEmpty {
-            keyChar = char
-        } else {
+        if charResult == .success, let char = cmdCharRef as? String, !char.isEmpty { keyChar = char } else {
             // Try virtual key for function keys, etc.
             var virtualKeyRef: CFTypeRef?
             let vkResult = AXUIElementCopyAttributeValue(
@@ -244,9 +229,7 @@ actor MenuBarExtractor {
                 &virtualKeyRef
             )
 
-            if vkResult == .success, let vk = virtualKeyRef as? Int {
-                keyChar = virtualKeyCodeToString(UInt16(vk))
-            }
+            if vkResult == .success, let vk = virtualKeyRef as? Int { keyChar = virtualKeyCodeToString(UInt16(vk)) }
         }
 
         guard let key = keyChar else { return nil }
@@ -268,7 +251,7 @@ actor MenuBarExtractor {
         // 1 << 2 = Control
         // 1 << 3 = (unused, was Caps Lock in some docs)
         // Command is implicit in menu shortcuts
-        var modifiers = MirageModifierFlags.command  // Always has command for menu shortcuts
+        var modifiers = MirageModifierFlags.command // Always has command for menu shortcuts
 
         if axModifiers & (1 << 0) != 0 { modifiers.insert(.shift) }
         if axModifiers & (1 << 1) != 0 { modifiers.insert(.option) }
@@ -281,44 +264,42 @@ actor MenuBarExtractor {
     private func virtualKeyCodeToString(_ keyCode: UInt16) -> String? {
         // Function keys
         switch keyCode {
-        case 0x7A: return "F1"
-        case 0x78: return "F2"
-        case 0x63: return "F3"
-        case 0x76: return "F4"
-        case 0x60: return "F5"
-        case 0x61: return "F6"
-        case 0x62: return "F7"
-        case 0x64: return "F8"
-        case 0x65: return "F9"
-        case 0x6D: return "F10"
-        case 0x67: return "F11"
-        case 0x6F: return "F12"
-        case 0x69: return "F13"
-        case 0x6B: return "F14"
-        case 0x71: return "F15"
-        case 0x6A: return "F16"
-        case 0x40: return "F17"
-        case 0x4F: return "F18"
-        case 0x50: return "F19"
-        case 0x5A: return "F20"
-
+        case 0x7A: "F1"
+        case 0x78: "F2"
+        case 0x63: "F3"
+        case 0x76: "F4"
+        case 0x60: "F5"
+        case 0x61: "F6"
+        case 0x62: "F7"
+        case 0x64: "F8"
+        case 0x65: "F9"
+        case 0x6D: "F10"
+        case 0x67: "F11"
+        case 0x6F: "F12"
+        case 0x69: "F13"
+        case 0x6B: "F14"
+        case 0x71: "F15"
+        case 0x6A: "F16"
+        case 0x40: "F17"
+        case 0x4F: "F18"
+        case 0x50: "F19"
+        case 0x5A: "F20"
         // Special keys
-        case 0x24: return "↩"  // Return
-        case 0x30: return "⇥"  // Tab
-        case 0x31: return "Space"
-        case 0x33: return "⌫"  // Delete
-        case 0x35: return "⎋"  // Escape
-        case 0x7B: return "←"  // Left Arrow
-        case 0x7C: return "→"  // Right Arrow
-        case 0x7D: return "↓"  // Down Arrow
-        case 0x7E: return "↑"  // Up Arrow
-        case 0x73: return "↖"  // Home
-        case 0x77: return "↘"  // End
-        case 0x74: return "⇞"  // Page Up
-        case 0x79: return "⇟"  // Page Down
-        case 0x75: return "⌦"  // Forward Delete
-
-        default: return nil
+        case 0x24: "↩" // Return
+        case 0x30: "⇥" // Tab
+        case 0x31: "Space"
+        case 0x33: "⌫" // Delete
+        case 0x35: "⎋" // Escape
+        case 0x7B: "←" // Left Arrow
+        case 0x7C: "→" // Right Arrow
+        case 0x7D: "↓" // Down Arrow
+        case 0x7E: "↑" // Up Arrow
+        case 0x73: "↖" // Home
+        case 0x77: "↘" // End
+        case 0x74: "⇞" // Page Up
+        case 0x79: "⇟" // Page Down
+        case 0x75: "⌦" // Forward Delete
+        default: nil
         }
     }
 
@@ -373,17 +354,19 @@ actor MenuBarExtractor {
             } else {
                 // Need to navigate into this element's children (submenu)
                 var childrenRef: CFTypeRef?
-                guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef) == .success,
-                      let children = childrenRef as? [AXUIElement],
-                      !children.isEmpty else {
+                guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef) ==
+                    .success,
+                    let children = childrenRef as? [AXUIElement],
+                    !children.isEmpty else {
                     MirageLogger.log(.menuBar, "Failed to get children at depth \(depth)")
                     return false
                 }
 
                 // The first child is the submenu element, get its children
                 var submenuItemsRef: CFTypeRef?
-                guard AXUIElementCopyAttributeValue(children[0], kAXChildrenAttribute as CFString, &submenuItemsRef) == .success,
-                      let submenuItems = submenuItemsRef as? [AXUIElement] else {
+                guard AXUIElementCopyAttributeValue(children[0], kAXChildrenAttribute as CFString, &submenuItemsRef) ==
+                    .success,
+                    let submenuItems = submenuItemsRef as? [AXUIElement] else {
                     MirageLogger.log(.menuBar, "Failed to get submenu items at depth \(depth)")
                     return false
                 }

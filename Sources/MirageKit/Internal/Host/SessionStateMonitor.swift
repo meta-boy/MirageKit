@@ -5,22 +5,28 @@
 //  Created by Ethan Lipnik on 1/7/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import IOKit
 import IOKit.pwr_mgt
 
-// Darwin notification functions
-// These are declared in notify.h but not exposed to Swift
+/// Darwin notification functions
+/// These are declared in notify.h but not exposed to Swift
 @_silgen_name("notify_register_dispatch")
-func notify_register_dispatch(_ name: UnsafePointer<CChar>, _ out_token: UnsafeMutablePointer<Int32>, _ queue: DispatchQueue, _ handler: @convention(block) @Sendable (Int32) -> Void) -> UInt32
+func notify_register_dispatch(
+    _ name: UnsafePointer<CChar>,
+    _ outToken: UnsafeMutablePointer<Int32>,
+    _ queue: DispatchQueue,
+    _ handler: @convention(block) @Sendable (Int32) -> Void
+)
+    -> UInt32
 
 @_silgen_name("notify_cancel")
 func notify_cancel(_ token: Int32) -> UInt32
 
-private let NOTIFY_STATUS_OK: UInt32 = 0
+private let notifyStatusOK: UInt32 = 0
 
 /// Monitors the Mac's session state (locked, unlocked, sleeping, at login screen)
 /// Uses CGSession APIs, Darwin notifications, and IOKit for comprehensive detection
@@ -82,9 +88,7 @@ actor SessionStateMonitor {
         let newState = detectCurrentState()
         if newState != currentState {
             currentState = newState
-            if notify {
-                onStateChange?(newState)
-            }
+            if notify { onStateChange?(newState) }
         }
         return currentState
     }
@@ -94,14 +98,10 @@ actor SessionStateMonitor {
     /// Detect current session state using multiple sources
     private func detectCurrentState() -> HostSessionState {
         // Check if system is sleeping via IOKit
-        if isSystemSleeping() {
-            return .sleeping
-        }
+        if isSystemSleeping() { return .sleeping }
 
         let loginWindowVisible = isLoginWindowVisible()
-        if loginWindowVisible {
-            MirageLogger.log(.host, "Login window visible (lock/login screen detected)")
-        }
+        if loginWindowVisible { MirageLogger.log(.host, "Login window visible (lock/login screen detected)") }
 
         if let consoleUsers = getConsoleUserSessions(), !consoleUsers.isEmpty {
             let summary = consoleUsers.enumerated().map { index, info in
@@ -125,17 +125,11 @@ actor SessionStateMonitor {
             let anyLoginDoneFalse = consoleUsers.contains { $0.loginDone == false }
             let anyOffConsole = loggedInUsers.contains { $0.onConsole == false }
 
-            if loginWindowVisible || hasLoginWindowUser {
-                return hasLoggedInUser ? .screenLocked : .loginScreen
-            }
+            if loginWindowVisible || hasLoginWindowUser { return hasLoggedInUser ? .screenLocked : .loginScreen }
 
-            if anyLoginDoneFalse && !hasLoggedInUser {
-                return .loginScreen
-            }
+            if anyLoginDoneFalse, !hasLoggedInUser { return .loginScreen }
 
-            if anyLocked {
-                return .screenLocked
-            }
+            if anyLocked { return .screenLocked }
 
             if anyOffConsole {
                 let fallbackLocked = isScreenLocked()
@@ -143,13 +137,14 @@ actor SessionStateMonitor {
                     MirageLogger.log(.host, "User session not on console and lock detected - treating as screenLocked")
                     return .screenLocked
                 }
-                MirageLogger.log(.host, "User session not on console but no lock detected - treating as active (headless console session)")
+                MirageLogger.log(
+                    .host,
+                    "User session not on console but no lock detected - treating as active (headless console session)"
+                )
                 return .active
             }
 
-            if hasLoggedInUser {
-                return .active
-            }
+            if hasLoggedInUser { return .active }
         }
 
         // Use CGSession to check login and lock state
@@ -159,10 +154,16 @@ actor SessionStateMonitor {
             if let consoleUser = getConsoleUser(), !consoleUser.isEmpty, consoleUser != "loginwindow" {
                 let locked = isScreenLocked()
                 if locked {
-                    MirageLogger.log(.host, "No CGSession dict but console user '\(consoleUser)' exists and lock detected - assuming screenLocked")
+                    MirageLogger.log(
+                        .host,
+                        "No CGSession dict but console user '\(consoleUser)' exists and lock detected - assuming screenLocked"
+                    )
                     return .screenLocked
                 }
-                MirageLogger.log(.host, "No CGSession dict but console user '\(consoleUser)' exists without lock - assuming active (headless console session)")
+                MirageLogger.log(
+                    .host,
+                    "No CGSession dict but console user '\(consoleUser)' exists without lock - assuming active (headless console session)"
+                )
                 return .active
             }
             return .loginScreen
@@ -188,21 +189,25 @@ actor SessionStateMonitor {
         let fallbackLocked = lockedFlag ? false : isScreenLocked()
         let isLocked = lockedFlag || fallbackLocked
 
-        MirageLogger.log(.host, "Session: loginCompleted=\(loginCompleted), onConsole=\(onConsole), user=\(userName ?? "nil"), locked=\(isLocked)")
+        MirageLogger.log(
+            .host,
+            "Session: loginCompleted=\(loginCompleted), onConsole=\(onConsole), user=\(userName ?? "nil"), locked=\(isLocked)"
+        )
 
         // Alternative check: if we have a username, user is logged in
         if let user = userName, !user.isEmpty {
             // User is logged in - check if screen is locked
-            if isLocked {
-                return .screenLocked
-            }
+            if isLocked { return .screenLocked }
 
             if !onConsole {
                 if isLocked {
                     MirageLogger.log(.host, "User session not on console and lock detected - treating as screenLocked")
                     return .screenLocked
                 }
-                MirageLogger.log(.host, "User session not on console but not locked - treating as active (headless console session)")
+                MirageLogger.log(
+                    .host,
+                    "User session not on console but not locked - treating as active (headless console session)"
+                )
                 return .active
             }
 
@@ -210,24 +215,18 @@ actor SessionStateMonitor {
             // where the display session hasn't fully initialized
             if !loginCompleted {
                 MirageLogger.log(.host, "loginCompleted=false but user '\(user)' exists - treating as headless session")
-                return .active  // User logged in, not locked
+                return .active // User logged in, not locked
             }
 
             return .active
         }
 
-        if loginWindowVisible {
-            return loginCompleted ? .screenLocked : .loginScreen
-        }
+        if loginWindowVisible { return loginCompleted ? .screenLocked : .loginScreen }
 
-        if !loginCompleted {
-            return .loginScreen
-        }
+        if !loginCompleted { return .loginScreen }
 
         // Check if screen is locked
-        if isLocked {
-            return .screenLocked
-        }
+        if isLocked { return .screenLocked }
 
         // User is logged in and screen is unlocked
         return .active
@@ -243,9 +242,7 @@ actor SessionStateMonitor {
 
     private func getConsoleUserSessions() -> [ConsoleUserSession]? {
         let entry = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/IOResources/IOConsoleUsers")
-        guard entry != MACH_PORT_NULL else {
-            return nil
-        }
+        guard entry != MACH_PORT_NULL else { return nil }
         defer { IOObjectRelease(entry) }
 
         guard let usersRef = IORegistryEntryCreateCFProperty(
@@ -254,8 +251,8 @@ actor SessionStateMonitor {
             kCFAllocatorDefault,
             0
         )?.takeRetainedValue(),
-        let users = usersRef as? [[String: Any]],
-        !users.isEmpty else {
+            let users = usersRef as? [[String: Any]],
+            !users.isEmpty else {
             return nil
         }
 
@@ -294,9 +291,7 @@ actor SessionStateMonitor {
             task.waitUntilExit()
 
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let user = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
-                return user
-            }
+            if let user = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) { return user }
         } catch {
             // Ignore
         }
@@ -308,9 +303,7 @@ actor SessionStateMonitor {
     /// Check if screen is locked via alternative method (screensaver/lock process)
     private func isScreenLocked() -> Bool {
         // Fast path: look for loginwindow/screen saver shielding windows
-        if isLoginWindowVisible() {
-            return true
-        }
+        if isLoginWindowVisible() { return true }
 
         // Check via ioreg for screen lock state
         let task = Process()
@@ -327,9 +320,7 @@ actor SessionStateMonitor {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             if let output = String(data: data, encoding: .utf8) {
                 // If DeviceDesiresPower is 0, display is off/locked
-                if output.contains("\"DevicePowerState\" = 0") {
-                    return true
-                }
+                if output.contains("\"DevicePowerState\" = 0") { return true }
             }
         } catch {
             // Ignore errors
@@ -352,14 +343,10 @@ actor SessionStateMonitor {
                 let layer = window[kCGWindowLayer as String] as? Int ?? 0
 
                 if ownerName == "loginwindow" || ownerName == "LoginWindow" {
-                    if layer >= shieldingLevel {
-                        return true
-                    }
+                    if layer >= shieldingLevel { return true }
                 }
 
-                if ownerName == "ScreenSaverEngine", layer >= screenSaverLevel {
-                    return true
-                }
+                if ownerName == "ScreenSaverEngine", layer >= screenSaverLevel { return true }
             }
 
             return false
@@ -387,9 +374,7 @@ actor SessionStateMonitor {
             "IOPower:/IOPowerConnection/IOPMrootDomain"
         )
 
-        guard rootDomainEntry != MACH_PORT_NULL else {
-            return false
-        }
+        guard rootDomainEntry != MACH_PORT_NULL else { return false }
 
         defer { IOObjectRelease(rootDomainEntry) }
 
@@ -456,9 +441,7 @@ actor SessionStateMonitor {
             block
         )
 
-        if status == NOTIFY_STATUS_OK {
-            notifyTokens.append(token)
-        } else {
+        if status == notifyStatusOK { notifyTokens.append(token) } else {
             MirageLogger.error(.host, "Failed to register notification: \(name), status: \(status)")
         }
     }

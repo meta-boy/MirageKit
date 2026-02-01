@@ -5,9 +5,9 @@
 //  Created by Ethan Lipnik on 1/9/26.
 //
 
+import CoreVideo
 import Foundation
 import Metal
-import CoreVideo
 
 #if os(macOS)
 
@@ -101,9 +101,7 @@ final class MetalFrameDiffer: @unchecked Sendable {
             uint startY = blockY * blockSize;
 
             // Check if this block is within texture bounds
-            if (startX >= textureDims.x || startY >= textureDims.y) {
-                return;
-            }
+            if (startX >= textureDims.x || startY >= textureDims.y) { return; }
 
             uint endX = min(startX + blockSize, textureDims.x);
             uint endY = min(startY + blockSize, textureDims.y);
@@ -121,9 +119,7 @@ final class MetalFrameDiffer: @unchecked Sendable {
 
                     // Check if pixels differ (threshold 0.03 ignores HEVC compression artifacts)
                     half4 diff = abs(current - previous);
-                    if (diff.r > 0.03h || diff.g > 0.03h || diff.b > 0.03h) {
-                        isDirty = true;
-                    }
+                    if (diff.r > 0.03h || diff.g > 0.03h || diff.b > 0.03h) { isDirty = true; }
                 }
             }
 
@@ -132,9 +128,7 @@ final class MetalFrameDiffer: @unchecked Sendable {
             uint blockIndex = blockY * blocksPerRow + blockX;
 
             // Write dirty flag
-            if (isDirty) {
-                atomic_store_explicit(&dirtyFlags[blockIndex], 1u, memory_order_relaxed);
-            }
+            if (isDirty) { atomic_store_explicit(&dirtyFlags[blockIndex], 1u, memory_order_relaxed); }
         }
         """
 
@@ -144,7 +138,7 @@ final class MetalFrameDiffer: @unchecked Sendable {
                 MirageLogger.error(.capture, "Failed to find compareFrames kernel")
                 return nil
             }
-            self.computePipeline = try device.makeComputePipelineState(function: function)
+            computePipeline = try device.makeComputePipelineState(function: function)
         } catch {
             MirageLogger.error(.capture, "Failed to create Metal compute pipeline: \(error)")
             return nil
@@ -167,7 +161,7 @@ final class MetalFrameDiffer: @unchecked Sendable {
 
         // Round to multiple of 32 for GPU efficiency, clamp to reasonable range
         let rounded = ((blockSize + 16) / 32) * 32
-        return max(128, min(rounded, 384))  // Between 128 and 384 pixels
+        return max(128, min(rounded, 384)) // Between 128 and 384 pixels
     }
 
     /// Detect dirty regions using pipelined async GPU operations.
@@ -180,9 +174,7 @@ final class MetalFrameDiffer: @unchecked Sendable {
         let height = CVPixelBufferGetHeight(pixelBuffer)
 
         // Ensure textures exist and match dimensions
-        if textureWidth != width || textureHeight != height {
-            setupTextures(width: width, height: height)
-        }
+        if textureWidth != width || textureHeight != height { setupTextures(width: width, height: height) }
 
         guard textures.count == 3,
               dirtyFlagsBuffers.count == 2 else {
@@ -193,19 +185,17 @@ final class MetalFrameDiffer: @unchecked Sendable {
         let currentTexture = textures[currentTextureIndex]
 
         // Copy pixel buffer to current texture
-        guard copyPixelBufferToTexture(pixelBuffer, texture: currentTexture) else {
-            return nil
-        }
+        guard copyPixelBufferToTexture(pixelBuffer, texture: currentTexture) else { return nil }
 
         frameCount += 1
 
         // Check if previous GPU work completed and read results
-        var resultToReturn: DetectionResult? = nil
+        var resultToReturn: DetectionResult?
         if let pending = pendingCommandBuffer {
             if pending.status == .completed {
                 // GPU work done - read the results
                 resultToReturn = readDirtyFlagsResult(
-                    bufferIndex: 1 - currentBufferIndex,  // Read from OTHER buffer
+                    bufferIndex: 1 - currentBufferIndex, // Read from OTHER buffer
                     width: width,
                     height: height,
                     startTime: startTime
@@ -226,7 +216,7 @@ final class MetalFrameDiffer: @unchecked Sendable {
         }
 
         // Start GPU work for current frame comparison
-        let previousTextureIndex = (currentTextureIndex + 2) % 3  // Two frames ago
+        let previousTextureIndex = (currentTextureIndex + 2) % 3 // Two frames ago
         let previousTexture = textures[previousTextureIndex]
 
         // Clear dirty flags buffer for this frame
@@ -278,7 +268,13 @@ final class MetalFrameDiffer: @unchecked Sendable {
     }
 
     /// Read dirty flags from completed GPU work
-    private func readDirtyFlagsResult(bufferIndex: Int, width: Int, height: Int, startTime: CFAbsoluteTime) -> DetectionResult {
+    private func readDirtyFlagsResult(
+        bufferIndex: Int,
+        width: Int,
+        height: Int,
+        startTime: CFAbsoluteTime
+    )
+    -> DetectionResult {
         let blocksX = (width + blockSize - 1) / blockSize
         let blocksY = (height + blockSize - 1) / blockSize
         let totalBlocks = blocksX * blocksY
@@ -289,8 +285,8 @@ final class MetalFrameDiffer: @unchecked Sendable {
         var minX = width, maxX = 0, minY = height, maxY = 0
         var dirtyCount = 0
 
-        for blockY in 0..<blocksY {
-            for blockX in 0..<blocksX {
+        for blockY in 0 ..< blocksY {
+            for blockX in 0 ..< blocksX {
                 let index = blockY * blocksX + blockX
                 if flagsPointer[index] != 0 {
                     dirtyCount += 1
@@ -353,10 +349,8 @@ final class MetalFrameDiffer: @unchecked Sendable {
 
         // Create triple-buffered textures
         textures = []
-        for _ in 0..<3 {
-            if let texture = device.makeTexture(descriptor: descriptor) {
-                textures.append(texture)
-            }
+        for _ in 0 ..< 3 {
+            if let texture = device.makeTexture(descriptor: descriptor) { textures.append(texture) }
         }
         currentTextureIndex = 0
 
@@ -365,7 +359,7 @@ final class MetalFrameDiffer: @unchecked Sendable {
         let blocksY = (height + blockSize - 1) / blockSize
         let totalBlocks = blocksX * blocksY
         dirtyFlagsBuffers = []
-        for _ in 0..<2 {
+        for _ in 0 ..< 2 {
             if let buffer = device.makeBuffer(
                 length: totalBlocks * MemoryLayout<UInt32>.size,
                 options: .storageModeShared
@@ -380,22 +374,25 @@ final class MetalFrameDiffer: @unchecked Sendable {
         frameCount = 0
         pendingCommandBuffer = nil
 
-        MirageLogger.capture("Metal frame differ textures created: \(width)x\(height), \(totalBlocks) blocks (\(blockSize)px each)")
+        MirageLogger
+            .capture(
+                "Metal frame differ textures created: \(width)x\(height), \(totalBlocks) blocks (\(blockSize)px each)"
+            )
     }
 
     private func copyPixelBufferToTexture(_ pixelBuffer: CVPixelBuffer, texture: MTLTexture) -> Bool {
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
 
-        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-            return false
-        }
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else { return false }
 
         let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
 
         texture.replace(
-            region: MTLRegion(origin: MTLOrigin(x: 0, y: 0, z: 0),
-                              size: MTLSize(width: texture.width, height: texture.height, depth: 1)),
+            region: MTLRegion(
+                origin: MTLOrigin(x: 0, y: 0, z: 0),
+                size: MTLSize(width: texture.width, height: texture.height, depth: 1)
+            ),
             mipmapLevel: 0,
             withBytes: baseAddress,
             bytesPerRow: bytesPerRow

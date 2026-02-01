@@ -8,15 +8,14 @@
 //
 
 #if os(macOS)
-import Foundation
-import CoreGraphics
 import ColorSync
+import CoreGraphics
+import Foundation
 
 // MARK: - Window Space Management Bridge
 
 /// Bridge to private CGS window/space management APIs
-final class CGSWindowSpaceBridge {
-
+enum CGSWindowSpaceBridge {
     // MARK: - Private Type Aliases
 
     private typealias CGSConnectionID = UInt32
@@ -50,27 +49,31 @@ final class CGSWindowSpaceBridge {
         _ connection: CGSConnectionID,
         _ mask: UInt32,
         _ windows: CFArray
-    ) -> CFArray?
+    )
+        -> CFArray?
 
     @_silgen_name("CGSManagedDisplayGetCurrentSpace")
     private static func CGSManagedDisplayGetCurrentSpace(
         _ connection: CGSConnectionID,
         _ displayUUID: CFString
-    ) -> CGSSpaceID
+    )
+        -> CGSSpaceID
 
     @_silgen_name("CGSManagedDisplaySetCurrentSpace")
     private static func CGSManagedDisplaySetCurrentSpace(
         _ connection: CGSConnectionID,
         _ displayUUID: CFString,
         _ spaceID: CGSSpaceID
-    ) -> CGError
+    )
+        -> CGError
 
     @_silgen_name("CGSMoveWindow")
     private static func CGSMoveWindow(
         _ connection: CGSConnectionID,
         _ window: CGWindowID,
         _ point: UnsafePointer<CGPoint>
-    ) -> CGError
+    )
+        -> CGError
 
     /// Order window relative to other windows
     /// place: 1 = above, -1 = below, 0 = out (hide)
@@ -80,7 +83,8 @@ final class CGSWindowSpaceBridge {
         _ window: CGWindowID,
         _ place: Int32,
         _ relativeToWindow: CGWindowID
-    ) -> CGError
+    )
+        -> CGError
 
     /// Set window level (like always-on-top)
     @_silgen_name("CGSSetWindowLevel")
@@ -88,24 +92,23 @@ final class CGSWindowSpaceBridge {
         _ connection: CGSConnectionID,
         _ window: CGWindowID,
         _ level: Int32
-    ) -> CGError
+    )
+        -> CGError
 
     // MARK: - Public Interface
 
     static func getConnectionID() -> UInt32 {
-        return CGSMainConnectionID()
+        CGSMainConnectionID()
     }
 
     static func getSpacesForWindow(_ windowID: CGWindowID) -> [CGSSpaceID] {
         let connection = getConnectionID()
         let windowArray = [windowID] as CFArray
 
-        guard let spacesArray = CGSCopySpacesForWindows(connection, CGSSpaceMask.all.rawValue, windowArray) else {
-            return []
-        }
+        guard let spacesArray = CGSCopySpacesForWindows(connection, CGSSpaceMask.all.rawValue, windowArray) else { return [] }
 
         var spaces: [CGSSpaceID] = []
-        for i in 0..<CFArrayGetCount(spacesArray) {
+        for i in 0 ..< CFArrayGetCount(spacesArray) {
             if let spacePtr = CFArrayGetValueAtIndex(spacesArray, i) {
                 let spaceID = UInt64(bitPattern: Int64(Int(bitPattern: spacePtr)))
                 spaces.append(spaceID)
@@ -163,9 +166,7 @@ final class CGSWindowSpaceBridge {
     }
 
     private static func getDisplayUUID(_ displayID: CGDirectDisplayID) -> String {
-        if let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() {
-            return CFUUIDCreateString(nil, uuid) as String
-        }
+        if let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() { return CFUUIDCreateString(nil, uuid) as String }
         return String(displayID)
     }
 }

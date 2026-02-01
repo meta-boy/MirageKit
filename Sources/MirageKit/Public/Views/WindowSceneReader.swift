@@ -33,7 +33,7 @@ public struct WindowSceneReader: UIViewRepresentable {
         self.onUpdate = onUpdate
     }
 
-    public func makeUIView(context: Context) -> WindowSceneCallbackView {
+    public func makeUIView(context _: Context) -> WindowSceneCallbackView {
         let view = WindowSceneCallbackView()
         view.pollingInterval = pollingInterval
         view.onUpdate = { [weak view] in
@@ -42,9 +42,9 @@ public struct WindowSceneReader: UIViewRepresentable {
         return view
     }
 
-    public func updateUIView(_ uiView: WindowSceneCallbackView, context: Context) {
+    public func updateUIView(_ uiView: WindowSceneCallbackView, context _: Context) {
         Task { @MainActor in
-            self.onUpdate(uiView.window?.windowScene)
+            onUpdate(uiView.window?.windowScene)
         }
     }
 
@@ -61,9 +61,7 @@ public struct WindowSceneReader: UIViewRepresentable {
             updateLastKnownScreen()
             onUpdate?()
 
-            if window != nil {
-                startPolling()
-            } else {
+            if window != nil { startPolling() } else {
                 stopPolling()
             }
         }
@@ -92,7 +90,8 @@ public struct WindowSceneReader: UIViewRepresentable {
             displayLink = nil
         }
 
-        @objc private func checkForScreenChange(_ link: CADisplayLink) {
+        @objc
+        private func checkForScreenChange(_ link: CADisplayLink) {
             let currentTime = link.timestamp
 
             guard currentTime - lastCheckTime >= pollingInterval else { return }
@@ -131,14 +130,10 @@ public struct ScreenReaderModifier: ViewModifier {
         content
             .background(
                 WindowSceneReader { windowScene in
-                    if windowScene == nil {
-                        MirageLogger.debug(.client, "WindowSceneReader: windowScene is nil")
-                    }
+                    if windowScene == nil { MirageLogger.debug(.client, "WindowSceneReader: windowScene is nil") }
                     let screenFromScene = windowScene?.screen
                     let screen = screenFromScene ?? UIScreen.main
-                    if windowScene != nil && screenFromScene == nil {
-                        MirageLogger.debug(.client, "WindowSceneReader: windowScene exists but screen is nil")
-                    }
+                    if windowScene != nil, screenFromScene == nil { MirageLogger.debug(.client, "WindowSceneReader: windowScene exists but screen is nil") }
                     if screen !== currentScreen {
                         MirageLogger.debug(.client, "WindowSceneReader: screen changed to \(screen.bounds)")
                         Task { @MainActor in
@@ -173,7 +168,7 @@ public extension EnvironmentValues {
 public extension View {
     /// Adds screen reading capability to this view and its descendants.
     func readScreen(onChange: ((UIScreen) -> Void)? = nil) -> some View {
-        self.modifier(ScreenReaderModifier(onScreenChange: onChange))
+        modifier(ScreenReaderModifier(onScreenChange: onChange))
     }
 }
 #endif

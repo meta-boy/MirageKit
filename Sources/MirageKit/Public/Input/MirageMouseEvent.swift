@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 /// Represents a mouse event
 public struct MirageMouseEvent: Codable, Sendable, Hashable {
@@ -164,7 +164,7 @@ public struct MirageResizeEvent: Codable, Sendable, Hashable {
         self.windowID = windowID
         self.newSize = newSize
         self.scaleFactor = scaleFactor
-        self.pixelSize = CGSize(
+        pixelSize = CGSize(
             width: newSize.width * scaleFactor,
             height: newSize.height * scaleFactor
         )

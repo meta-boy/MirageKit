@@ -5,9 +5,9 @@
 //  Created by Ethan Lipnik on 1/15/26.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 
 /// Controls the lifecycle and state of a single stream.
 /// Owned by MirageClientService, not by views. This ensures:
@@ -138,7 +138,7 @@ actor StreamController {
     /// This callback notifies AppState that a frame was decoded for UI state tracking.
     /// Does NOT pass the pixel buffer (CVPixelBuffer isn't Sendable).
     /// The delegate should read from MirageFrameCache if it needs the actual frame.
-    private(set) var onFrameDecoded: (@MainActor @Sendable (ClientFrameMetrics) -> Void)? = nil
+    private(set) var onFrameDecoded: (@MainActor @Sendable (ClientFrameMetrics) -> Void)?
 
     /// Called when the first frame is decoded for a stream.
     private(set) var onFirstFrame: (@MainActor @Sendable () -> Void)?
@@ -172,8 +172,8 @@ actor StreamController {
     /// Create a new stream controller
     init(streamID: StreamID, maxPayloadSize: Int) {
         self.streamID = streamID
-        self.decoder = HEVCDecoder()
-        self.reassembler = FrameReassembler(streamID: streamID, maxPayloadSize: maxPayloadSize)
+        decoder = HEVCDecoder()
+        reassembler = FrameReassembler(streamID: streamID, maxPayloadSize: maxPayloadSize)
     }
 
     /// Start the controller - sets up decoder and reassembler callbacks
@@ -203,7 +203,7 @@ actor StreamController {
 
         // Set up frame handler
         let metricsTracker = metricsTracker
-        await decoder.startDecoding { [weak self] (pixelBuffer: CVPixelBuffer, presentationTime: CMTime, contentRect: CGRect) in
+        await decoder.startDecoding { [weak self] (pixelBuffer: CVPixelBuffer, _: CMTime, contentRect: CGRect) in
             // Also store in global cache for iOS gesture tracking compatibility
             MirageFrameCache.shared.store(pixelBuffer, contentRect: contentRect, for: capturedStreamID)
             MirageRenderScheduler.shared.signalFrame(for: capturedStreamID)
@@ -234,7 +234,7 @@ actor StreamController {
         frameProcessingTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                guard let frame = await self.dequeueFrame() else { break }
+                guard let frame = await dequeueFrame() else { break }
                 defer { frame.releaseBuffer() }
                 do {
                     try await capturedDecoder.decodeFrame(
@@ -254,26 +254,27 @@ actor StreamController {
         let recordReceivedFrame: @Sendable () -> Void = {
             metricsTracker.recordReceivedFrame()
         }
-        let reassemblerHandler: @Sendable (StreamID, Data, Bool, UInt64, CGRect, @escaping @Sendable () -> Void) -> Void = { [weak self] _, frameData, isKeyframe, timestamp, contentRect, releaseBuffer in
-            let presentationTime = CMTime(value: CMTimeValue(timestamp), timescale: 1_000_000_000)
-            recordReceivedFrame()
+        let reassemblerHandler: @Sendable (StreamID, Data, Bool, UInt64, CGRect, @escaping @Sendable () -> Void)
+            -> Void = { [weak self] _, frameData, isKeyframe, timestamp, contentRect, releaseBuffer in
+                let presentationTime = CMTime(value: CMTimeValue(timestamp), timescale: 1_000_000_000)
+                recordReceivedFrame()
 
-            let frame = FrameData(
-                data: frameData,
-                presentationTime: presentationTime,
-                isKeyframe: isKeyframe,
-                contentRect: contentRect,
-                releaseBuffer: releaseBuffer
-            )
+                let frame = FrameData(
+                    data: frameData,
+                    presentationTime: presentationTime,
+                    isKeyframe: isKeyframe,
+                    contentRect: contentRect,
+                    releaseBuffer: releaseBuffer
+                )
 
-            Task {
-                guard let self else {
-                    releaseBuffer()
-                    return
+                Task {
+                    guard let self else {
+                        releaseBuffer()
+                        return
+                    }
+                    await self.enqueueFrame(frame)
                 }
-                await self.enqueueFrame(frame)
             }
-        }
         reassembler.setFrameHandler(reassemblerHandler)
         reassembler.setFrameLossHandler { [weak self] _ in
             guard let self else { return }
@@ -322,9 +323,7 @@ actor StreamController {
     }
 
     private func dequeueFrame() async -> FrameData? {
-        if !queuedFrames.isEmpty {
-            return queuedFrames.removeFirst()
-        }
+        if !queuedFrames.isEmpty { return queuedFrames.removeFirst() }
         return await withCheckedContinuation { continuation in
             dequeueContinuation = continuation
         }
@@ -335,9 +334,7 @@ actor StreamController {
             dequeueContinuation = nil
             continuation.resume(returning: nil)
         }
-        if queuedFrames.isEmpty {
-            return
-        }
+        if queuedFrames.isEmpty { return }
         let frames = queuedFrames
         queuedFrames.removeAll(keepingCapacity: false)
         for frame in frames {
@@ -381,7 +378,7 @@ actor StreamController {
                 } catch {
                     break
                 }
-                await self.dispatchMetrics()
+                await dispatchMetrics()
             }
         }
     }
@@ -395,7 +392,11 @@ actor StreamController {
         let now = CFAbsoluteTimeGetCurrent()
         let snapshot = metricsTracker.snapshot(now: now)
         let droppedFrames = reassembler.getDroppedFrameCount() + snapshot.queueDroppedFrames
-        logMetricsIfNeeded(decodedFPS: snapshot.decodedFPS, receivedFPS: snapshot.receivedFPS, droppedFrames: droppedFrames)
+        logMetricsIfNeeded(
+            decodedFPS: snapshot.decodedFPS,
+            receivedFPS: snapshot.receivedFPS,
+            droppedFrames: droppedFrames
+        )
         let metrics = ClientFrameMetrics(
             decodedFPS: snapshot.decodedFPS,
             receivedFPS: snapshot.receivedFPS,

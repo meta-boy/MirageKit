@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 /// Represents a capturable window on the host system
 public struct MirageWindow: Identifiable, Hashable, Sendable, Codable {
@@ -64,9 +64,7 @@ public struct MirageWindow: Identifiable, Hashable, Sendable, Codable {
 
     /// Display name for the window (uses app name if title is empty)
     public var displayName: String {
-        if let title, !title.isEmpty {
-            return title
-        }
+        if let title, !title.isEmpty { return title }
         return application?.name ?? "Untitled Window"
     }
 }

@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 /// Represents any input event to forward from client to host
 public enum MirageInputEvent: Codable, Sendable {
@@ -36,18 +36,27 @@ public enum MirageInputEvent: Codable, Sendable {
     /// Timestamp when the event was created (for latency measurement)
     public var timestamp: TimeInterval {
         switch self {
-        case .keyDown(let e), .keyUp(let e): return e.timestamp
-        case .flagsChanged, .windowFocus: return Date.timeIntervalSinceReferenceDate
-        case .mouseDown(let e), .mouseUp(let e), .mouseMoved(let e), .mouseDragged(let e),
-             .rightMouseDown(let e), .rightMouseUp(let e), .rightMouseDragged(let e),
-             .otherMouseDown(let e), .otherMouseUp(let e), .otherMouseDragged(let e):
-            return e.timestamp
-        case .scrollWheel(let e): return e.timestamp
-        case .magnify(let e): return e.timestamp
-        case .rotate(let e): return e.timestamp
-        case .windowResize(let e): return e.timestamp
-        case .relativeResize(let e): return e.timestamp
-        case .pixelResize(let e): return e.timestamp
+        case let .keyDown(e),
+             let .keyUp(e): e.timestamp
+        case .flagsChanged,
+             .windowFocus: Date.timeIntervalSinceReferenceDate
+        case let .mouseDown(e),
+             let .mouseDragged(e),
+             let .mouseMoved(e),
+             let .mouseUp(e),
+             let .otherMouseDown(e),
+             let .otherMouseDragged(e),
+             let .otherMouseUp(e),
+             let .rightMouseDown(e),
+             let .rightMouseDragged(e),
+             let .rightMouseUp(e):
+            e.timestamp
+        case let .scrollWheel(e): e.timestamp
+        case let .magnify(e): e.timestamp
+        case let .rotate(e): e.timestamp
+        case let .windowResize(e): e.timestamp
+        case let .relativeResize(e): e.timestamp
+        case let .pixelResize(e): e.timestamp
         }
     }
 
@@ -55,15 +64,29 @@ public enum MirageInputEvent: Codable, Sendable {
     /// Used to track last cursor position for graceful input release during decode errors
     public var mouseLocation: CGPoint? {
         switch self {
-        case .mouseDown(let e), .mouseUp(let e), .mouseMoved(let e), .mouseDragged(let e),
-             .rightMouseDown(let e), .rightMouseUp(let e), .rightMouseDragged(let e),
-             .otherMouseDown(let e), .otherMouseUp(let e), .otherMouseDragged(let e):
-            return e.location
-        case .scrollWheel(let e):
-            return e.location
-        case .keyDown, .keyUp, .flagsChanged, .windowFocus, .magnify, .rotate,
-             .windowResize, .relativeResize, .pixelResize:
-            return nil
+        case let .mouseDown(e),
+             let .mouseDragged(e),
+             let .mouseMoved(e),
+             let .mouseUp(e),
+             let .otherMouseDown(e),
+             let .otherMouseDragged(e),
+             let .otherMouseUp(e),
+             let .rightMouseDown(e),
+             let .rightMouseDragged(e),
+             let .rightMouseUp(e):
+            e.location
+        case let .scrollWheel(e):
+            e.location
+        case .flagsChanged,
+             .keyDown,
+             .keyUp,
+             .magnify,
+             .pixelResize,
+             .relativeResize,
+             .rotate,
+             .windowFocus,
+             .windowResize:
+            nil
         }
     }
 }
@@ -120,20 +143,22 @@ public enum MirageScrollPhase: Int, Codable, Sendable {
 import AppKit
 import Carbon.HIToolbox
 
-extension MirageMouseButton {
+public extension MirageMouseButton {
     /// Convert to CGMouseButton for CGEvent creation
-    public var cgMouseButton: CGMouseButton {
+    var cgMouseButton: CGMouseButton {
         switch self {
-        case .left: return .left
-        case .right: return .right
-        case .middle, .button3, .button4: return .center
+        case .left: .left
+        case .right: .right
+        case .button3,
+             .button4,
+             .middle: .center
         }
     }
 }
 
-extension MirageModifierFlags {
+public extension MirageModifierFlags {
     /// Convert to CGEventFlags for CGEvent creation
-    public var cgEventFlags: CGEventFlags {
+    var cgEventFlags: CGEventFlags {
         var flags: CGEventFlags = []
         if contains(.capsLock) { flags.insert(.maskAlphaShift) }
         if contains(.shift) { flags.insert(.maskShift) }
@@ -146,7 +171,7 @@ extension MirageModifierFlags {
     }
 
     /// Create from NSEvent modifier flags
-    public init(nsEventFlags: NSEvent.ModifierFlags) {
+    init(nsEventFlags: NSEvent.ModifierFlags) {
         var flags = MirageModifierFlags()
         if nsEventFlags.contains(.capsLock) { flags.insert(.capsLock) }
         if nsEventFlags.contains(.shift) { flags.insert(.shift) }
@@ -159,13 +184,13 @@ extension MirageModifierFlags {
     }
 }
 
-extension MirageScrollPhase {
+public extension MirageScrollPhase {
     /// Create from NSEvent.Phase for scroll wheel events
-    public init(from nsPhase: NSEvent.Phase) {
+    init(from nsPhase: NSEvent.Phase) {
         switch nsPhase {
         case .began: self = .began
         case .changed: self = .changed
-        case .stationary: self = .changed  // Stationary still means active scrolling
+        case .stationary: self = .changed // Stationary still means active scrolling
         case .ended: self = .ended
         case .cancelled: self = .cancelled
         case .mayBegin: self = .mayBegin
@@ -180,9 +205,9 @@ extension MirageScrollPhase {
 #if os(iOS) || os(visionOS)
 import UIKit
 
-extension MirageModifierFlags {
+public extension MirageModifierFlags {
     /// Create from UIKeyModifierFlags (external keyboard)
-    public init(uiKeyModifierFlags: UIKeyModifierFlags) {
+    init(uiKeyModifierFlags: UIKeyModifierFlags) {
         var flags = MirageModifierFlags()
         if uiKeyModifierFlags.contains(.alphaShift) { flags.insert(.capsLock) }
         if uiKeyModifierFlags.contains(.shift) { flags.insert(.shift) }
@@ -194,9 +219,9 @@ extension MirageModifierFlags {
     }
 }
 
-extension MirageKeyEvent {
+public extension MirageKeyEvent {
     /// Create from UIPress (external keyboard)
-    public init?(press: UIPress, isRepeat: Bool = false) {
+    init?(press: UIPress, isRepeat: Bool = false) {
         guard let key = press.key else { return nil }
 
         // Convert iOS HID usage code to macOS virtual key code
@@ -215,7 +240,7 @@ extension MirageKeyEvent {
     /// iOS UIPress.key.modifierFlags only reflects modifiers from the same press event,
     /// not modifiers held from previous key presses. Use this initializer with tracked
     /// modifier state for correct behavior.
-    public init?(press: UIPress, modifiers: MirageModifierFlags, isRepeat: Bool = false) {
+    init?(press: UIPress, modifiers: MirageModifierFlags, isRepeat: Bool = false) {
         guard let key = press.key else { return nil }
 
         let macKeyCode = Self.hidToMacKeyCode(key.keyCode)
@@ -230,142 +255,133 @@ extension MirageKeyEvent {
     }
 
     /// Convert iOS HID usage code to macOS virtual key code
-    private static func hidToMacKeyCode(_ hidCode: UIKeyboardHIDUsage) -> UInt16 {
-        // Map from USB HID Keyboard Usage Page (0x07) to macOS virtual key codes
-        switch hidCode {
+    private static let hidToMacKeyCodeMap: [UIKeyboardHIDUsage: UInt16] = [
         // Letters A-Z
-        case .keyboardA: return 0x00
-        case .keyboardB: return 0x0B
-        case .keyboardC: return 0x08
-        case .keyboardD: return 0x02
-        case .keyboardE: return 0x0E
-        case .keyboardF: return 0x03
-        case .keyboardG: return 0x05
-        case .keyboardH: return 0x04
-        case .keyboardI: return 0x22
-        case .keyboardJ: return 0x26
-        case .keyboardK: return 0x28
-        case .keyboardL: return 0x25
-        case .keyboardM: return 0x2E
-        case .keyboardN: return 0x2D
-        case .keyboardO: return 0x1F
-        case .keyboardP: return 0x23
-        case .keyboardQ: return 0x0C
-        case .keyboardR: return 0x0F
-        case .keyboardS: return 0x01
-        case .keyboardT: return 0x11
-        case .keyboardU: return 0x20
-        case .keyboardV: return 0x09
-        case .keyboardW: return 0x0D
-        case .keyboardX: return 0x07
-        case .keyboardY: return 0x10
-        case .keyboardZ: return 0x06
-
+        .keyboardA: 0x00,
+        .keyboardB: 0x0B,
+        .keyboardC: 0x08,
+        .keyboardD: 0x02,
+        .keyboardE: 0x0E,
+        .keyboardF: 0x03,
+        .keyboardG: 0x05,
+        .keyboardH: 0x04,
+        .keyboardI: 0x22,
+        .keyboardJ: 0x26,
+        .keyboardK: 0x28,
+        .keyboardL: 0x25,
+        .keyboardM: 0x2E,
+        .keyboardN: 0x2D,
+        .keyboardO: 0x1F,
+        .keyboardP: 0x23,
+        .keyboardQ: 0x0C,
+        .keyboardR: 0x0F,
+        .keyboardS: 0x01,
+        .keyboardT: 0x11,
+        .keyboardU: 0x20,
+        .keyboardV: 0x09,
+        .keyboardW: 0x0D,
+        .keyboardX: 0x07,
+        .keyboardY: 0x10,
+        .keyboardZ: 0x06,
         // Numbers 1-0
-        case .keyboard1: return 0x12
-        case .keyboard2: return 0x13
-        case .keyboard3: return 0x14
-        case .keyboard4: return 0x15
-        case .keyboard5: return 0x17
-        case .keyboard6: return 0x16
-        case .keyboard7: return 0x1A
-        case .keyboard8: return 0x1C
-        case .keyboard9: return 0x19
-        case .keyboard0: return 0x1D
-
+        .keyboard1: 0x12,
+        .keyboard2: 0x13,
+        .keyboard3: 0x14,
+        .keyboard4: 0x15,
+        .keyboard5: 0x17,
+        .keyboard6: 0x16,
+        .keyboard7: 0x1A,
+        .keyboard8: 0x1C,
+        .keyboard9: 0x19,
+        .keyboard0: 0x1D,
         // Control keys
-        case .keyboardReturnOrEnter: return 0x24
-        case .keyboardEscape: return 0x35
-        case .keyboardDeleteOrBackspace: return 0x33
-        case .keyboardTab: return 0x30
-        case .keyboardSpacebar: return 0x31
-        case .keyboardCapsLock: return 0x39
-
+        .keyboardReturnOrEnter: 0x24,
+        .keyboardEscape: 0x35,
+        .keyboardDeleteOrBackspace: 0x33,
+        .keyboardTab: 0x30,
+        .keyboardSpacebar: 0x31,
+        .keyboardCapsLock: 0x39,
         // Punctuation
-        case .keyboardHyphen: return 0x1B          // -
-        case .keyboardEqualSign: return 0x18       // =
-        case .keyboardOpenBracket: return 0x21     // [
-        case .keyboardCloseBracket: return 0x1E    // ]
-        case .keyboardBackslash: return 0x2A       // \
-        case .keyboardSemicolon: return 0x29       // ;
-        case .keyboardQuote: return 0x27           // '
-        case .keyboardGraveAccentAndTilde: return 0x32  // `
-        case .keyboardComma: return 0x2B           // ,
-        case .keyboardPeriod: return 0x2F          // .
-        case .keyboardSlash: return 0x2C           // /
-
+        .keyboardHyphen: 0x1B, // -
+        .keyboardEqualSign: 0x18, // =
+        .keyboardOpenBracket: 0x21, // [
+        .keyboardCloseBracket: 0x1E, // ]
+        .keyboardBackslash: 0x2A, // \
+        .keyboardSemicolon: 0x29, // ;
+        .keyboardQuote: 0x27, // '
+        .keyboardGraveAccentAndTilde: 0x32, // `
+        .keyboardComma: 0x2B, // ,
+        .keyboardPeriod: 0x2F, // .
+        .keyboardSlash: 0x2C, // /
         // Function keys
-        case .keyboardF1: return 0x7A
-        case .keyboardF2: return 0x78
-        case .keyboardF3: return 0x63
-        case .keyboardF4: return 0x76
-        case .keyboardF5: return 0x60
-        case .keyboardF6: return 0x61
-        case .keyboardF7: return 0x62
-        case .keyboardF8: return 0x64
-        case .keyboardF9: return 0x65
-        case .keyboardF10: return 0x6D
-        case .keyboardF11: return 0x67
-        case .keyboardF12: return 0x6F
-
+        .keyboardF1: 0x7A,
+        .keyboardF2: 0x78,
+        .keyboardF3: 0x63,
+        .keyboardF4: 0x76,
+        .keyboardF5: 0x60,
+        .keyboardF6: 0x61,
+        .keyboardF7: 0x62,
+        .keyboardF8: 0x64,
+        .keyboardF9: 0x65,
+        .keyboardF10: 0x6D,
+        .keyboardF11: 0x67,
+        .keyboardF12: 0x6F,
         // Navigation
-        case .keyboardDeleteForward: return 0x75
-        case .keyboardHome: return 0x73
-        case .keyboardEnd: return 0x77
-        case .keyboardPageUp: return 0x74
-        case .keyboardPageDown: return 0x79
-
+        .keyboardDeleteForward: 0x75,
+        .keyboardHome: 0x73,
+        .keyboardEnd: 0x77,
+        .keyboardPageUp: 0x74,
+        .keyboardPageDown: 0x79,
         // Arrow keys
-        case .keyboardRightArrow: return 0x7C
-        case .keyboardLeftArrow: return 0x7B
-        case .keyboardDownArrow: return 0x7D
-        case .keyboardUpArrow: return 0x7E
-
+        .keyboardRightArrow: 0x7C,
+        .keyboardLeftArrow: 0x7B,
+        .keyboardDownArrow: 0x7D,
+        .keyboardUpArrow: 0x7E,
         // Modifiers (usually handled separately, but include for completeness)
-        case .keyboardLeftControl: return 0x3B
-        case .keyboardLeftShift: return 0x38
-        case .keyboardLeftAlt: return 0x3A         // Option
-        case .keyboardLeftGUI: return 0x37         // Command
-        case .keyboardRightControl: return 0x3E
-        case .keyboardRightShift: return 0x3C
-        case .keyboardRightAlt: return 0x3D        // Right Option
-        case .keyboardRightGUI: return 0x36        // Right Command
-
+        .keyboardLeftControl: 0x3B,
+        .keyboardLeftShift: 0x38,
+        .keyboardLeftAlt: 0x3A, // Option
+        .keyboardLeftGUI: 0x37, // Command
+        .keyboardRightControl: 0x3E,
+        .keyboardRightShift: 0x3C,
+        .keyboardRightAlt: 0x3D, // Right Option
+        .keyboardRightGUI: 0x36, // Right Command
         // Keypad
-        case .keypadNumLock: return 0x47
-        case .keypadSlash: return 0x4B
-        case .keypadAsterisk: return 0x43
-        case .keypadHyphen: return 0x4E
-        case .keypadPlus: return 0x45
-        case .keypadEnter: return 0x4C
-        case .keypad1: return 0x53
-        case .keypad2: return 0x54
-        case .keypad3: return 0x55
-        case .keypad4: return 0x56
-        case .keypad5: return 0x57
-        case .keypad6: return 0x58
-        case .keypad7: return 0x59
-        case .keypad8: return 0x5B
-        case .keypad9: return 0x5C
-        case .keypad0: return 0x52
-        case .keypadPeriod: return 0x41
-        case .keypadEqualSign: return 0x51
+        .keypadNumLock: 0x47,
+        .keypadSlash: 0x4B,
+        .keypadAsterisk: 0x43,
+        .keypadHyphen: 0x4E,
+        .keypadPlus: 0x45,
+        .keypadEnter: 0x4C,
+        .keypad1: 0x53,
+        .keypad2: 0x54,
+        .keypad3: 0x55,
+        .keypad4: 0x56,
+        .keypad5: 0x57,
+        .keypad6: 0x58,
+        .keypad7: 0x59,
+        .keypad8: 0x5B,
+        .keypad9: 0x5C,
+        .keypad0: 0x52,
+        .keypadPeriod: 0x41,
+        .keypadEqualSign: 0x51,
+    ]
 
-        default:
-            // For unmapped keys, return raw value (may not work correctly)
-            return UInt16(hidCode.rawValue)
-        }
+    private static func hidToMacKeyCode(_ hidCode: UIKeyboardHIDUsage) -> UInt16 {
+        // For unmapped keys, return raw value (may not work correctly)
+        hidToMacKeyCodeMap[hidCode] ?? UInt16(hidCode.rawValue)
     }
 }
 
-extension MirageScrollPhase {
+public extension MirageScrollPhase {
     /// Create from UIGestureRecognizer.State
-    public init(gestureState: UIGestureRecognizer.State) {
+    init(gestureState: UIGestureRecognizer.State) {
         switch gestureState {
         case .began: self = .began
         case .changed: self = .changed
         case .ended: self = .ended
-        case .cancelled, .failed: self = .cancelled
+        case .cancelled,
+             .failed: self = .cancelled
         case .possible: self = .mayBegin
         @unknown default: self = .none
         }

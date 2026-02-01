@@ -95,7 +95,7 @@ public struct MirageAppStreamingSettings: Codable, Equatable {
 
     /// Whether to quit this app when its last window closes.
     /// nil = use global setting.
-    public var quitOnLastWindowClose: Bool? = nil
+    public var quitOnLastWindowClose: Bool?
 
     public init(allowStreaming: Bool = true, quitOnLastWindowClose: Bool? = nil) {
         self.allowStreaming = allowStreaming
@@ -121,8 +121,6 @@ public extension MirageStreamingSettings {
     /// Save settings to UserDefaults.
     /// - Note: Persisted immediately on the main actor.
     func save() {
-        if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
-        }
+        if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.userDefaultsKey) }
     }
 }

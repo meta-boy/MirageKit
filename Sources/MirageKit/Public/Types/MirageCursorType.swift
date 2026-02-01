@@ -10,29 +10,29 @@ import Foundation
 /// Standard cursor types that can be synchronized between host and client.
 /// These map to macOS NSCursor types and are rendered appropriately on each platform.
 public enum MirageCursorType: Int, Codable, Sendable, Hashable {
-    case arrow = 0              // Default pointer
-    case iBeam = 1              // Text selection cursor
-    case crosshair = 2          // Precision selection
-    case closedHand = 3         // Grabbed/dragging
-    case openHand = 4           // Ready to grab
-    case pointingHand = 5       // Link/clickable element
-    case resizeLeft = 6         // Left edge resize
-    case resizeRight = 7        // Right edge resize
-    case resizeLeftRight = 8    // Horizontal resize (both directions)
-    case resizeUp = 9           // Top edge resize
-    case resizeDown = 10        // Bottom edge resize
-    case resizeUpDown = 11      // Vertical resize (both directions)
-    case disappearingItem = 12  // Dragging item out of valid area
+    case arrow = 0 // Default pointer
+    case iBeam = 1 // Text selection cursor
+    case crosshair = 2 // Precision selection
+    case closedHand = 3 // Grabbed/dragging
+    case openHand = 4 // Ready to grab
+    case pointingHand = 5 // Link/clickable element
+    case resizeLeft = 6 // Left edge resize
+    case resizeRight = 7 // Right edge resize
+    case resizeLeftRight = 8 // Horizontal resize (both directions)
+    case resizeUp = 9 // Top edge resize
+    case resizeDown = 10 // Bottom edge resize
+    case resizeUpDown = 11 // Vertical resize (both directions)
+    case disappearingItem = 12 // Dragging item out of valid area
     case operationNotAllowed = 13 // Forbidden/not-allowed action
-    case dragLink = 14          // Dragging a link
-    case dragCopy = 15          // Dragging with copy modifier
-    case contextualMenu = 16    // Context menu available
-    case resizeNorthEast = 17   // NE corner resize
-    case resizeNorthWest = 18   // NW corner resize
-    case resizeSouthEast = 19   // SE corner resize
-    case resizeSouthWest = 20   // SW corner resize
-    case resizeNESW = 21        // NE/SW bidirectional diagonal
-    case resizeNWSE = 22        // NW/SE bidirectional diagonal
+    case dragLink = 14 // Dragging a link
+    case dragCopy = 15 // Dragging with copy modifier
+    case contextualMenu = 16 // Context menu available
+    case resizeNorthEast = 17 // NE corner resize
+    case resizeNorthWest = 18 // NW corner resize
+    case resizeSouthEast = 19 // SE corner resize
+    case resizeSouthWest = 20 // SW corner resize
+    case resizeNESW = 21 // NE/SW bidirectional diagonal
+    case resizeNWSE = 22 // NW/SE bidirectional diagonal
 }
 
 // MARK: - macOS NSCursor Conversion
@@ -40,21 +40,21 @@ public enum MirageCursorType: Int, Codable, Sendable, Hashable {
 #if os(macOS)
 import AppKit
 
-extension MirageCursorType {
+public extension MirageCursorType {
     /// Attempt to identify the cursor type from an NSCursor instance.
     /// Returns nil for custom or unrecognized cursors.
-    public init?(from cursor: NSCursor?) {
-        guard let cursor = cursor,
-              let cursorData = cursor.image.tiffRepresentation else { return nil }
+    init?(from cursor: NSCursor?) {
+        guard let cursor,
+              let cursorData = cursor.image.tiffRepresentation else {
+            return nil
+        }
 
         // Use tiffRepresentation for reliable pixel-data comparison.
         // NSCursor.currentSystem returns a different object reference each time,
         // so reference comparison and NSImage.isEqual(to:) don't work reliably.
         // Comparing TIFF data ensures we match based on actual image content.
 
-        if cursorData == NSCursor.arrow.image.tiffRepresentation {
-            self = .arrow
-        } else if cursorData == NSCursor.iBeam.image.tiffRepresentation {
+        if cursorData == NSCursor.arrow.image.tiffRepresentation { self = .arrow } else if cursorData == NSCursor.iBeam.image.tiffRepresentation {
             self = .iBeam
         } else if cursorData == NSCursor.crosshair.image.tiffRepresentation {
             self = .crosshair
@@ -87,22 +87,30 @@ extension MirageCursorType {
         } else if cursorData == NSCursor.contextualMenu.image.tiffRepresentation {
             self = .contextualMenu
         } else if cursorData == NSCursor.frameResize(position: .topRight, directions: .inward).image.tiffRepresentation
-                    || cursorData == NSCursor.frameResize(position: .topRight, directions: .outward).image.tiffRepresentation {
+            || cursorData == NSCursor.frameResize(position: .topRight, directions: .outward).image
+            .tiffRepresentation {
             self = .resizeNorthEast
         } else if cursorData == NSCursor.frameResize(position: .topLeft, directions: .inward).image.tiffRepresentation
-                    || cursorData == NSCursor.frameResize(position: .topLeft, directions: .outward).image.tiffRepresentation {
+            || cursorData == NSCursor.frameResize(position: .topLeft, directions: .outward).image
+            .tiffRepresentation {
             self = .resizeNorthWest
-        } else if cursorData == NSCursor.frameResize(position: .bottomRight, directions: .inward).image.tiffRepresentation
-                    || cursorData == NSCursor.frameResize(position: .bottomRight, directions: .outward).image.tiffRepresentation {
+        } else if cursorData == NSCursor.frameResize(position: .bottomRight, directions: .inward).image
+            .tiffRepresentation
+            || cursorData == NSCursor.frameResize(position: .bottomRight, directions: .outward).image
+            .tiffRepresentation {
             self = .resizeSouthEast
-        } else if cursorData == NSCursor.frameResize(position: .bottomLeft, directions: .inward).image.tiffRepresentation
-                    || cursorData == NSCursor.frameResize(position: .bottomLeft, directions: .outward).image.tiffRepresentation {
+        } else if cursorData == NSCursor.frameResize(position: .bottomLeft, directions: .inward).image
+            .tiffRepresentation
+            || cursorData == NSCursor.frameResize(position: .bottomLeft, directions: .outward).image
+            .tiffRepresentation {
             self = .resizeSouthWest
         } else if cursorData == NSCursor.frameResize(position: .topRight, directions: .all).image.tiffRepresentation
-                    || cursorData == NSCursor.frameResize(position: .bottomLeft, directions: .all).image.tiffRepresentation {
+            || cursorData == NSCursor.frameResize(position: .bottomLeft, directions: .all).image
+            .tiffRepresentation {
             self = .resizeNESW
         } else if cursorData == NSCursor.frameResize(position: .topLeft, directions: .all).image.tiffRepresentation
-                    || cursorData == NSCursor.frameResize(position: .bottomRight, directions: .all).image.tiffRepresentation {
+            || cursorData == NSCursor.frameResize(position: .bottomRight, directions: .all).image
+            .tiffRepresentation {
             self = .resizeNWSE
         } else {
             // Custom cursor or unrecognized system cursor
@@ -111,54 +119,54 @@ extension MirageCursorType {
     }
 
     /// Get the corresponding NSCursor for this cursor type.
-    public var nsCursor: NSCursor {
+    var nsCursor: NSCursor {
         switch self {
         case .arrow:
-            return .arrow
+            .arrow
         case .iBeam:
-            return .iBeam
+            .iBeam
         case .crosshair:
-            return .crosshair
+            .crosshair
         case .closedHand:
-            return .closedHand
+            .closedHand
         case .openHand:
-            return .openHand
+            .openHand
         case .pointingHand:
-            return .pointingHand
+            .pointingHand
         case .resizeLeft:
-            return .resizeLeft
+            .resizeLeft
         case .resizeRight:
-            return .resizeRight
+            .resizeRight
         case .resizeLeftRight:
-            return .resizeLeftRight
+            .resizeLeftRight
         case .resizeUp:
-            return .resizeUp
+            .resizeUp
         case .resizeDown:
-            return .resizeDown
+            .resizeDown
         case .resizeUpDown:
-            return .resizeUpDown
+            .resizeUpDown
         case .disappearingItem:
-            return .disappearingItem
+            .disappearingItem
         case .operationNotAllowed:
-            return .operationNotAllowed
+            .operationNotAllowed
         case .dragLink:
-            return .dragLink
+            .dragLink
         case .dragCopy:
-            return .dragCopy
+            .dragCopy
         case .contextualMenu:
-            return .contextualMenu
+            .contextualMenu
         case .resizeNorthEast:
-            return .frameResize(position: .topRight, directions: .all)
+            .frameResize(position: .topRight, directions: .all)
         case .resizeNorthWest:
-            return .frameResize(position: .topLeft, directions: .all)
+            .frameResize(position: .topLeft, directions: .all)
         case .resizeSouthEast:
-            return .frameResize(position: .bottomRight, directions: .all)
+            .frameResize(position: .bottomRight, directions: .all)
         case .resizeSouthWest:
-            return .frameResize(position: .bottomLeft, directions: .all)
+            .frameResize(position: .bottomLeft, directions: .all)
         case .resizeNESW:
-            return .frameResize(position: .topRight, directions: .all)
+            .frameResize(position: .topRight, directions: .all)
         case .resizeNWSE:
-            return .frameResize(position: .topLeft, directions: .all)
+            .frameResize(position: .topLeft, directions: .all)
         }
     }
 }
@@ -169,13 +177,15 @@ extension MirageCursorType {
 #if os(iOS) || os(visionOS)
 import UIKit
 
-extension MirageCursorType {
+public extension MirageCursorType {
     /// Get the appropriate UIPointerStyle for this cursor type.
     /// - Parameter region: The pointer region for context-aware styling
     /// - Returns: A UIPointerStyle that best represents this cursor type on iPadOS
-    public func pointerStyle(for region: UIPointerRegion) -> UIPointerStyle {
+    func pointerStyle(for _: UIPointerRegion) -> UIPointerStyle {
         switch self {
-        case .arrow, .operationNotAllowed, .contextualMenu:
+        case .arrow,
+             .contextualMenu,
+             .operationNotAllowed:
             // Default system pointer - use automatic behavior
             return UIPointerStyle.system()
 
@@ -188,29 +198,41 @@ extension MirageCursorType {
             // iPadOS doesn't have a native crosshair, so we use a small dot
             return UIPointerStyle(shape: .roundedRect(CGRect(x: 0, y: 0, width: 8, height: 8), radius: 4))
 
-        case .closedHand, .openHand, .pointingHand, .dragLink, .dragCopy:
+        case .closedHand,
+             .dragCopy,
+             .dragLink,
+             .openHand,
+             .pointingHand:
             // Drag-related cursors - rely on system pointer presentation
             return UIPointerStyle.system()
 
-        case .resizeLeft, .resizeRight, .resizeLeftRight:
+        case .resizeLeft,
+             .resizeLeftRight,
+             .resizeRight:
             // Horizontal resize - small shape with left/right arrows
             let style = UIPointerStyle(shape: .roundedRect(CGRect(x: 0, y: 0, width: 4, height: 4), radius: 2))
             style.accessories = [.arrow(.left), .arrow(.right)]
             return style
 
-        case .resizeUp, .resizeDown, .resizeUpDown:
+        case .resizeDown,
+             .resizeUp,
+             .resizeUpDown:
             // Vertical resize - small shape with top/bottom arrows
             let style = UIPointerStyle(shape: .roundedRect(CGRect(x: 0, y: 0, width: 4, height: 4), radius: 2))
             style.accessories = [.arrow(.top), .arrow(.bottom)]
             return style
 
-        case .resizeNorthEast, .resizeSouthWest, .resizeNESW:
+        case .resizeNESW,
+             .resizeNorthEast,
+             .resizeSouthWest:
             // NE/SW diagonal resize - arrows pointing topRight and bottomLeft
             let style = UIPointerStyle(shape: .roundedRect(CGRect(x: 0, y: 0, width: 4, height: 4), radius: 2))
             style.accessories = [.arrow(.topRight), .arrow(.bottomLeft)]
             return style
 
-        case .resizeNorthWest, .resizeSouthEast, .resizeNWSE:
+        case .resizeNorthWest,
+             .resizeNWSE,
+             .resizeSouthEast:
             // NW/SE diagonal resize - arrows pointing topLeft and bottomRight
             let style = UIPointerStyle(shape: .roundedRect(CGRect(x: 0, y: 0, width: 4, height: 4), radius: 2))
             style.accessories = [.arrow(.topLeft), .arrow(.bottomRight)]

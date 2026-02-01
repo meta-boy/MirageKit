@@ -48,9 +48,7 @@ final class CaptureFrameCopier: @unchecked Sendable {
         var durationTotalMs: Double = 0
         var durationMaxMs: Double = 0
 
-        var hasData: Bool {
-            copyAttempts > 0 || inFlightLimitDrops > 0 || poolFailures > 0 || bufferFailures > 0
-        }
+        var hasData: Bool { copyAttempts > 0 || inFlightLimitDrops > 0 || poolFailures > 0 || bufferFailures > 0 }
     }
 
     private struct CopyContext: @unchecked Sendable {
@@ -86,7 +84,8 @@ final class CaptureFrameCopier: @unchecked Sendable {
         minimumBufferCount: Int,
         inFlightLimit: Int,
         completion: @escaping @Sendable (CopyResult) -> Void
-    ) -> ScheduleResult {
+    )
+    -> ScheduleResult {
         let width = CVPixelBufferGetWidth(source)
         let height = CVPixelBufferGetHeight(source)
         let pixelFormat = CVPixelBufferGetPixelFormatType(source)
@@ -103,7 +102,7 @@ final class CaptureFrameCopier: @unchecked Sendable {
         }
 
         poolLock.lock()
-        let pool = self.pool
+        let pool = pool
         poolLock.unlock()
         guard let pool else {
             recordPoolFailure()
@@ -140,9 +139,7 @@ final class CaptureFrameCopier: @unchecked Sendable {
                 let durationMs = (CFAbsoluteTimeGetCurrent() - copyStartTime) * 1000
                 self.recordCopyCompletion(durationMs: durationMs, success: didCopy, usedMetal: false)
                 self.releaseCopySlot()
-                if didCopy {
-                    completion(.copied(context.destination))
-                } else {
+                if didCopy { completion(.copied(context.destination)) } else {
                     completion(.unsupported)
                 }
             }
@@ -153,26 +150,27 @@ final class CaptureFrameCopier: @unchecked Sendable {
     private func ensurePool(config: PoolConfig) -> Bool {
         poolLock.lock()
         defer { poolLock.unlock() }
-        if poolConfig == config, pool != nil {
-            return true
-        }
+        if poolConfig == config, pool != nil { return true }
 
         let poolAttributes: [CFString: Any] = [
-            kCVPixelBufferPoolMinimumBufferCountKey: config.minimumBufferCount
+            kCVPixelBufferPoolMinimumBufferCountKey: config.minimumBufferCount,
         ]
         let pixelAttributes: [CFString: Any] = [
             kCVPixelBufferPixelFormatTypeKey: config.pixelFormat,
             kCVPixelBufferWidthKey: config.width,
             kCVPixelBufferHeightKey: config.height,
             kCVPixelBufferMetalCompatibilityKey: true,
-            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
         ]
 
         var newPool: CVPixelBufferPool?
-        let status = CVPixelBufferPoolCreate(nil, poolAttributes as CFDictionary, pixelAttributes as CFDictionary, &newPool)
-        guard status == kCVReturnSuccess, let newPool else {
-            return false
-        }
+        let status = CVPixelBufferPoolCreate(
+            nil,
+            poolAttributes as CFDictionary,
+            pixelAttributes as CFDictionary,
+            &newPool
+        )
+        guard status == kCVReturnSuccess, let newPool else { return false }
 
         pool = newPool
         poolConfig = config
@@ -202,7 +200,8 @@ final class CaptureFrameCopier: @unchecked Sendable {
         destination: CVPixelBuffer,
         startTime: CFAbsoluteTime,
         completion: @escaping @Sendable (CopyResult) -> Void
-    ) -> Bool {
+    )
+    -> Bool {
         guard ensureMetal() else { return false }
         guard let format = metalFormat(for: CVPixelBufferGetPixelFormatType(source)) else { return false }
         guard let commandQueue = metalQueue, let textureCache = metalTextureCache else { return false }
@@ -211,25 +210,50 @@ final class CaptureFrameCopier: @unchecked Sendable {
         let blits: [(source: MTLTexture, destination: MTLTexture)]
 
         switch format {
-        case .single(let pixelFormat):
+        case let .single(pixelFormat):
             guard planeCount == 0 else { return false }
-            guard let srcTexture = makeTexture(from: source, pixelFormat: pixelFormat, planeIndex: 0, cache: textureCache),
-                  let dstTexture = makeTexture(from: destination, pixelFormat: pixelFormat, planeIndex: 0, cache: textureCache) else {
+            guard let srcTexture = makeTexture(
+                from: source,
+                pixelFormat: pixelFormat,
+                planeIndex: 0,
+                cache: textureCache
+            ),
+                let dstTexture = makeTexture(
+                    from: destination,
+                    pixelFormat: pixelFormat,
+                    planeIndex: 0,
+                    cache: textureCache
+                ) else {
                 return false
             }
             blits = [(source: srcTexture, destination: dstTexture)]
 
-        case .biPlanar(let lumaFormat, let chromaFormat):
+        case let .biPlanar(lumaFormat, chromaFormat):
             guard planeCount == 2 else { return false }
             guard let srcLuma = makeTexture(from: source, pixelFormat: lumaFormat, planeIndex: 0, cache: textureCache),
-                  let dstLuma = makeTexture(from: destination, pixelFormat: lumaFormat, planeIndex: 0, cache: textureCache),
-                  let srcChroma = makeTexture(from: source, pixelFormat: chromaFormat, planeIndex: 1, cache: textureCache),
-                  let dstChroma = makeTexture(from: destination, pixelFormat: chromaFormat, planeIndex: 1, cache: textureCache) else {
+                  let dstLuma = makeTexture(
+                      from: destination,
+                      pixelFormat: lumaFormat,
+                      planeIndex: 0,
+                      cache: textureCache
+                  ),
+                  let srcChroma = makeTexture(
+                      from: source,
+                      pixelFormat: chromaFormat,
+                      planeIndex: 1,
+                      cache: textureCache
+                  ),
+                  let dstChroma = makeTexture(
+                      from: destination,
+                      pixelFormat: chromaFormat,
+                      planeIndex: 1,
+                      cache: textureCache
+                  ) else {
                 return false
             }
             blits = [
                 (source: srcLuma, destination: dstLuma),
-                (source: srcChroma, destination: dstChroma)
+                (source: srcChroma, destination: dstChroma),
             ]
         }
 
@@ -247,12 +271,12 @@ final class CaptureFrameCopier: @unchecked Sendable {
         commandBuffer.addCompletedHandler { [weak self] buffer in
             guard let self else { return }
             let durationMs = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-            self.releaseCopySlot()
+            releaseCopySlot()
             if buffer.status == .completed {
-                self.recordCopyCompletion(durationMs: durationMs, success: true, usedMetal: true)
+                recordCopyCompletion(durationMs: durationMs, success: true, usedMetal: true)
                 completion(.copied(destination))
             } else {
-                self.recordCopyCompletion(durationMs: durationMs, success: false, usedMetal: true)
+                recordCopyCompletion(durationMs: durationMs, success: false, usedMetal: true)
                 completion(.unsupported)
             }
         }
@@ -284,9 +308,7 @@ final class CaptureFrameCopier: @unchecked Sendable {
     private func recordCopyCompletion(durationMs: Double, success: Bool, usedMetal: Bool) {
         telemetryLock.lock()
         telemetry.copyAttempts += 1
-        if usedMetal {
-            telemetry.metalCopies += 1
-        } else {
+        if usedMetal { telemetry.metalCopies += 1 } else {
             telemetry.cpuCopies += 1
         }
         if success {
@@ -339,12 +361,8 @@ final class CaptureFrameCopier: @unchecked Sendable {
         let srcLock = CVPixelBufferLockBaseAddress(source, .readOnly)
         let dstLock = CVPixelBufferLockBaseAddress(destination, [])
         guard srcLock == kCVReturnSuccess, dstLock == kCVReturnSuccess else {
-            if srcLock == kCVReturnSuccess {
-                CVPixelBufferUnlockBaseAddress(source, .readOnly)
-            }
-            if dstLock == kCVReturnSuccess {
-                CVPixelBufferUnlockBaseAddress(destination, [])
-            }
+            if srcLock == kCVReturnSuccess { CVPixelBufferUnlockBaseAddress(source, .readOnly) }
+            if dstLock == kCVReturnSuccess { CVPixelBufferUnlockBaseAddress(destination, []) }
             return false
         }
 
@@ -364,7 +382,7 @@ final class CaptureFrameCopier: @unchecked Sendable {
             let height = CVPixelBufferGetHeight(source)
             let copyBytes = min(srcBytesPerRow, dstBytesPerRow)
 
-            for row in 0..<height {
+            for row in 0 ..< height {
                 let srcRow = srcBase.advanced(by: row * srcBytesPerRow)
                 let dstRow = dstBase.advanced(by: row * dstBytesPerRow)
                 memcpy(dstRow, srcRow, copyBytes)
@@ -372,7 +390,7 @@ final class CaptureFrameCopier: @unchecked Sendable {
             return true
         }
 
-        for planeIndex in 0..<planeCount {
+        for planeIndex in 0 ..< planeCount {
             guard let srcBase = CVPixelBufferGetBaseAddressOfPlane(source, planeIndex),
                   let dstBase = CVPixelBufferGetBaseAddressOfPlane(destination, planeIndex) else {
                 return false
@@ -382,7 +400,7 @@ final class CaptureFrameCopier: @unchecked Sendable {
             let height = CVPixelBufferGetHeightOfPlane(source, planeIndex)
             let copyBytes = min(srcBytesPerRow, dstBytesPerRow)
 
-            for row in 0..<height {
+            for row in 0 ..< height {
                 let srcRow = srcBase.advanced(by: row * srcBytesPerRow)
                 let dstRow = dstBase.advanced(by: row * dstBytesPerRow)
                 memcpy(dstRow, srcRow, copyBytes)
@@ -395,9 +413,7 @@ final class CaptureFrameCopier: @unchecked Sendable {
     private func ensureMetal() -> Bool {
         metalLock.lock()
         defer { metalLock.unlock() }
-        if metalDevice != nil, metalQueue != nil, metalTextureCache != nil {
-            return true
-        }
+        if metalDevice != nil, metalQueue != nil, metalTextureCache != nil { return true }
 
         guard let device = MTLCreateSystemDefaultDevice() else { return false }
         guard let queue = device.makeCommandQueue() else { return false }
@@ -414,15 +430,15 @@ final class CaptureFrameCopier: @unchecked Sendable {
     private func metalFormat(for pixelFormat: OSType) -> MetalCopyFormat? {
         switch pixelFormat {
         case kCVPixelFormatType_32BGRA:
-            return .single(.bgra8Unorm)
+            .single(.bgra8Unorm)
         case kCVPixelFormatType_ARGB2101010LEPacked:
-            return .single(.bgr10a2Unorm)
+            .single(.bgr10a2Unorm)
         case kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
-            return .biPlanar(luma: .r8Unorm, chroma: .rg8Unorm)
+            .biPlanar(luma: .r8Unorm, chroma: .rg8Unorm)
         case kCVPixelFormatType_420YpCbCr10BiPlanarFullRange:
-            return .biPlanar(luma: .r16Unorm, chroma: .rg16Unorm)
+            .biPlanar(luma: .r16Unorm, chroma: .rg16Unorm)
         default:
-            return nil
+            nil
         }
     }
 
@@ -431,7 +447,8 @@ final class CaptureFrameCopier: @unchecked Sendable {
         pixelFormat: MTLPixelFormat,
         planeIndex: Int,
         cache: CVMetalTextureCache
-    ) -> MTLTexture? {
+    )
+    -> MTLTexture? {
         let width = CVPixelBufferGetWidthOfPlane(pixelBuffer, planeIndex)
         let height = CVPixelBufferGetHeightOfPlane(pixelBuffer, planeIndex)
         var textureRef: CVMetalTexture?
@@ -449,7 +466,6 @@ final class CaptureFrameCopier: @unchecked Sendable {
         guard status == kCVReturnSuccess, let textureRef else { return nil }
         return CVMetalTextureGetTexture(textureRef)
     }
-
 }
 
 #endif

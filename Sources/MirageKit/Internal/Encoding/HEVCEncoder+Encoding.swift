@@ -7,8 +7,8 @@
 //  HEVC encoder extensions.
 //
 
-import Foundation
 import CoreMedia
+import Foundation
 import VideoToolbox
 
 #if os(macOS)
@@ -22,7 +22,7 @@ extension HEVCEncoder {
         }
 
         let preheatStartTime = CFAbsoluteTimeGetCurrent()
-        let preheatFrameCount = 10  // Enough frames to warm up rate control and hardware
+        let preheatFrameCount = 10 // Enough frames to warm up rate control and hardware
 
         // Create a dummy pixel buffer at session dimensions
         var pixelBuffer: CVPixelBuffer?
@@ -34,7 +34,7 @@ extension HEVCEncoder {
             pixelFormatType,
             [
                 kCVPixelBufferMetalCompatibilityKey: true,
-                kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
+                kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
             ] as CFDictionary,
             &pixelBuffer
         )
@@ -48,7 +48,7 @@ extension HEVCEncoder {
         CVPixelBufferLockBaseAddress(buffer, [])
         if CVPixelBufferIsPlanar(buffer) {
             let planeCount = CVPixelBufferGetPlaneCount(buffer)
-            for plane in 0..<planeCount {
+            for plane in 0 ..< planeCount {
                 guard let baseAddress = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { continue }
                 let bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
                 let height = CVPixelBufferGetHeightOfPlane(buffer, plane)
@@ -66,7 +66,7 @@ extension HEVCEncoder {
         let timescale = CMTimeScale(max(1, configuration.targetFrameRate))
 
         // Encode dummy frames and discard output
-        for i in 0..<preheatFrameCount {
+        for i in 0 ..< preheatFrameCount {
             let pts = CMTime(value: CMTimeValue(i), timescale: timescale)
             let duration = CMTime(value: 1, timescale: timescale)
 
@@ -99,11 +99,12 @@ extension HEVCEncoder {
 
         // Reset frame counter so first real frame is frame 0
         frameNumber = 0
-        forceNextKeyframe = true  // First real frame should be keyframe
+        forceNextKeyframe = true // First real frame should be keyframe
 
         let preheatDuration = (CFAbsoluteTimeGetCurrent() - preheatStartTime) * 1000
         MirageLogger.timing("Encoder pre-heat complete: \(String(format: "%.1f", preheatDuration))ms")
     }
+
     func startEncoding(
         onEncodedFrame: @escaping (Data, Bool, CMTime) -> Void,
         onFrameComplete: @escaping @Sendable () -> Void
@@ -112,6 +113,7 @@ extension HEVCEncoder {
         frameCompletionHandler = onFrameComplete
         isEncoding = true
     }
+
     func stopEncoding() {
         isEncoding = false
         encodedFrameHandler = nil
@@ -123,8 +125,9 @@ extension HEVCEncoder {
         }
         compressionSession = nil
     }
+
     func encodeFrame(_ frame: CapturedFrame, forceKeyframe: Bool = false) async throws -> Bool {
-        let encodeStartTime = CFAbsoluteTimeGetCurrent()  // Timing: encode start
+        let encodeStartTime = CFAbsoluteTimeGetCurrent() // Timing: encode start
 
         // Drop frames during dimension update to prevent deadlock
         guard !isUpdatingDimensions else {
@@ -147,7 +150,10 @@ extension HEVCEncoder {
             let bufferFourCC = Self.fourCCString(bufferPixelFormat)
             let sessionFourCC = Self.fourCCString(pixelFormatType)
             if bufferPixelFormat != pixelFormatType {
-                MirageLogger.error(.encoder, "Pixel format mismatch. Buffer=\(bufferFourCC) (\(bufferPixelFormat)) session=\(sessionFourCC) (\(pixelFormatType))")
+                MirageLogger.error(
+                    .encoder,
+                    "Pixel format mismatch. Buffer=\(bufferFourCC) (\(bufferPixelFormat)) session=\(sessionFourCC) (\(pixelFormatType))"
+                )
             } else {
                 MirageLogger.encoder("Pixel format match: \(bufferFourCC) (\(bufferPixelFormat))")
             }
@@ -167,7 +173,10 @@ extension HEVCEncoder {
         var properties: [CFString: Any] = [:]
         let isKeyframe = forceKeyframe || forceNextKeyframe || isFirstFrame
         if isKeyframe {
-            MirageLogger.encoder("Forcing keyframe (first=\(isFirstFrame), forceNext=\(forceNextKeyframe), param=\(forceKeyframe))")
+            MirageLogger
+                .encoder(
+                    "Forcing keyframe (first=\(isFirstFrame), forceNext=\(forceNextKeyframe), param=\(forceKeyframe))"
+                )
             properties[kVTEncodeFrameOptionKey_ForceKeyFrame] = true
             forceNextKeyframe = false
         }
@@ -201,9 +210,7 @@ extension HEVCEncoder {
                 info.completion?()
             }
 
-            guard status == noErr, let sampleBuffer else {
-                return
-            }
+            guard status == noErr, let sampleBuffer else { return }
 
             if infoFlags.contains(.frameDropped) {
                 MirageLogger.debug(.encoder, "VT dropped frame \(info.frameNumber)")
@@ -213,13 +220,16 @@ extension HEVCEncoder {
             // CRITICAL: Discard frames from old sessions during dimension transitions
             // This prevents sending P-frames encoded at old dimensions after a resize
             guard info.isSessionCurrent else {
-                MirageLogger.encoder("Discarding frame \(info.frameNumber) from old session (version \(info.sessionVersion) != \(info.getCurrentVersion()))")
+                MirageLogger
+                    .encoder(
+                        "Discarding frame \(info.frameNumber) from old session (version \(info.sessionVersion) != \(info.getCurrentVersion()))"
+                    )
                 return
             }
 
             // Timing: calculate encoding duration
             let encodeEndTime = CFAbsoluteTimeGetCurrent()
-            let encodingDuration = (encodeEndTime - info.encodeStartTime) * 1000  // ms
+            let encodingDuration = (encodeEndTime - info.encodeStartTime) * 1000 // ms
             info.performanceTracker?.record(durationMs: encodingDuration)
 
             // Check if keyframe
@@ -230,7 +240,13 @@ extension HEVCEncoder {
 
             var length = 0
             var dataPointer: UnsafeMutablePointer<Int8>?
-            CMBlockBufferGetDataPointer(dataBuffer, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &dataPointer)
+            CMBlockBufferGetDataPointer(
+                dataBuffer,
+                atOffset: 0,
+                lengthAtOffsetOut: nil,
+                totalLengthOut: &length,
+                dataPointerOut: &dataPointer
+            )
 
             guard let pointer = dataPointer else { return }
 
@@ -261,7 +277,10 @@ extension HEVCEncoder {
             // Log timing for every frame (first 10, then every 60th)
             if info.frameNumber < 10 || info.frameNumber % 60 == 0 || isKeyframe {
                 let bytesKB = Double(data.count) / 1024.0
-                MirageLogger.debug(.timing, "Encoder frame \(info.frameNumber): \(String(format: "%.2f", encodingDuration))ms, \(String(format: "%.1f", bytesKB))KB\(isKeyframe ? " (keyframe)" : "")")
+                MirageLogger.debug(
+                    .timing,
+                    "Encoder frame \(info.frameNumber): \(String(format: "%.2f", encodingDuration))ms, \(String(format: "%.1f", bytesKB))KB\(isKeyframe ? " (keyframe)" : "")"
+                )
             }
 
             info.handler?(data, isKeyframe, pts)

@@ -7,8 +7,8 @@
 //  HEVC encoder extensions.
 //
 
-import Foundation
 import CoreMedia
+import Foundation
 import VideoToolbox
 
 #if os(macOS)
@@ -18,11 +18,10 @@ extension EncodePerformanceTracker {
     func record(durationMs: Double) {
         lock.lock()
         samples.append(durationMs)
-        if samples.count > maxSamples {
-            samples.removeFirst(samples.count - maxSamples)
-        }
+        if samples.count > maxSamples { samples.removeFirst(samples.count - maxSamples) }
         lock.unlock()
     }
+
     func averageMs() -> Double {
         lock.lock()
         let snapshot = samples

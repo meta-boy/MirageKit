@@ -12,16 +12,10 @@ import Foundation
 #if os(macOS)
 extension StreamContext {
     func markDiscontinuity(reason: String, advanceEpoch: Bool) {
-        if dynamicFrameFlags.contains(.discontinuity) {
-            return
-        }
-        if advanceEpoch {
-            epoch &+= 1
-        }
+        if dynamicFrameFlags.contains(.discontinuity) { return }
+        if advanceEpoch { epoch &+= 1 }
         dynamicFrameFlags.insert(.discontinuity)
-        if advanceEpoch {
-            MirageLogger.stream("Stream epoch advanced to \(epoch) (\(reason))")
-        } else {
+        if advanceEpoch { MirageLogger.stream("Stream epoch advanced to \(epoch) (\(reason))") } else {
             MirageLogger.stream("Stream discontinuity flagged without epoch bump (\(reason))")
         }
     }
@@ -32,16 +26,12 @@ extension StreamContext {
 
     func markKeyframeInFlight() {
         let deadline = CFAbsoluteTimeGetCurrent() + keyframeInFlightCap
-        if deadline > keyframeSendDeadline {
-            keyframeSendDeadline = deadline
-        }
+        if deadline > keyframeSendDeadline { keyframeSendDeadline = deadline }
     }
 
     func markKeyframeRequestIssued() {
         let deadline = CFAbsoluteTimeGetCurrent() + keyframeInFlightCap
-        if deadline > keyframeSendDeadline {
-            keyframeSendDeadline = deadline
-        }
+        if deadline > keyframeSendDeadline { keyframeSendDeadline = deadline }
     }
 
     func shouldThrottleKeyframeRequest(requestLabel: String, checkInFlight: Bool) -> Bool {
@@ -69,10 +59,9 @@ extension StreamContext {
         requiresReset: Bool = false,
         advanceEpochOnReset: Bool = true,
         urgent: Bool = false
-    ) -> Bool {
-        guard !shouldThrottleKeyframeRequest(requestLabel: reason, checkInFlight: checkInFlight) else {
-            return false
-        }
+    )
+    -> Bool {
+        guard !shouldThrottleKeyframeRequest(requestLabel: reason, checkInFlight: checkInFlight) else { return false }
         let now = CFAbsoluteTimeGetCurrent()
         pendingKeyframeReason = reason
         if urgent {
@@ -86,9 +75,7 @@ extension StreamContext {
             pendingKeyframeRequiresReset = true
             pendingKeyframeRequiresFlush = true
         }
-        if requiresFlush {
-            pendingKeyframeRequiresFlush = true
-        }
+        if requiresFlush { pendingKeyframeRequiresFlush = true }
         return true
     }
 
@@ -103,9 +90,7 @@ extension StreamContext {
             requiresReset: true,
             urgent: true
         )
-        if !queued {
-            MirageLogger.stream("Fallback keyframe skipped (unable to queue after restart)")
-        }
+        if !queued { MirageLogger.stream("Fallback keyframe skipped (unable to queue after restart)") }
     }
 
     func shouldEmitPendingKeyframe(queueBytes: Int) -> Bool {
@@ -133,7 +118,8 @@ extension StreamContext {
     static func keyframeCadence(
         intervalFrames: Int,
         frameRate: Int
-    ) -> (interval: CFAbsoluteTime, maxInterval: CFAbsoluteTime) {
+    )
+    -> (interval: CFAbsoluteTime, maxInterval: CFAbsoluteTime) {
         let clampedFrames = max(1, intervalFrames)
         let clampedRate = max(1, frameRate)
         let intervalSeconds = Double(clampedFrames) / Double(clampedRate)
@@ -153,9 +139,7 @@ extension StreamContext {
 
     func updateMotionState(with frameInfo: CapturedFrameInfo) {
         let normalized = max(0.0, min(1.0, Double(frameInfo.dirtyPercentage) / 100.0))
-        if smoothedDirtyPercentage == 0 {
-            smoothedDirtyPercentage = normalized
-        } else {
+        if smoothedDirtyPercentage == 0 { smoothedDirtyPercentage = normalized } else {
             smoothedDirtyPercentage = smoothedDirtyPercentage * (1.0 - motionSmoothingFactor)
                 + normalized * motionSmoothingFactor
         }
@@ -174,9 +158,7 @@ extension StreamContext {
         let queueBackedUp = queueBytes >= queuePressureBytes
         let allowDespitePressure = elapsed >= keyframeMaxIntervalSeconds
 
-        if (highMotion || queueBackedUp) && !allowDespitePressure {
-            return false
-        }
+        if highMotion || queueBackedUp, !allowDespitePressure { return false }
 
         return !shouldThrottleKeyframeRequest(requestLabel: "Scheduled keyframe", checkInFlight: true)
     }
@@ -188,17 +170,13 @@ extension StreamContext {
         pendingKeyframeRequiresFlush = false
         pendingKeyframeUrgent = false
         pendingKeyframeRequiresReset = false
-        if dynamicFrameFlags.contains(.discontinuity) {
-            dynamicFrameFlags.remove(.discontinuity)
-        }
+        if dynamicFrameFlags.contains(.discontinuity) { dynamicFrameFlags.remove(.discontinuity) }
     }
 
     func noteLossEvent(reason: String) {
         let now = CFAbsoluteTimeGetCurrent()
         let deadline = now + lossModeHold
-        if deadline > lossModeDeadline {
-            lossModeDeadline = deadline
-        }
+        if deadline > lossModeDeadline { lossModeDeadline = deadline }
         MirageLogger.stream("Loss mode extended to \(Int((lossModeDeadline - now) * 1000))ms (\(reason))")
     }
 
@@ -224,9 +202,7 @@ extension StreamContext {
 
     /// Force an immediate keyframe by flushing the encoder pipeline.
     func forceImmediateKeyframe() async {
-        if shouldThrottleKeyframeRequest(requestLabel: "Immediate keyframe", checkInFlight: false) {
-            return
-        }
+        if shouldThrottleKeyframeRequest(requestLabel: "Immediate keyframe", checkInFlight: false) { return }
 
         markKeyframeRequestIssued()
 
@@ -242,9 +218,7 @@ extension StreamContext {
             let reduction = Float(0.25 * pressure)
             quality = max(keyframeQualityFloor, quality - reduction)
         }
-        if smoothedDirtyPercentage >= keyframeMotionThreshold {
-            quality = max(keyframeQualityFloor, quality - 0.10)
-        }
+        if smoothedDirtyPercentage >= keyframeMotionThreshold { quality = max(keyframeQualityFloor, quality - 0.10) }
         return quality
     }
 }

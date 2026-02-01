@@ -7,8 +7,8 @@
 //  Shared virtual display generation rebind handling.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import ScreenCaptureKit
@@ -18,7 +18,8 @@ extension MirageHostService {
     func handleSharedDisplayGenerationChange(
         newContext: SharedVirtualDisplayManager.DisplaySnapshot,
         previousGeneration: UInt64
-    ) async {
+    )
+    async {
         guard previousGeneration != newContext.generation else { return }
 
         let displayBounds = CGVirtualDisplayBridge.getDisplayBounds(
@@ -27,7 +28,10 @@ extension MirageHostService {
         )
         sharedVirtualDisplayBounds = displayBounds
         sharedVirtualDisplayGeneration = newContext.generation
-        MirageLogger.host("Shared display generation change: \(previousGeneration) -> \(newContext.generation) (display \(newContext.displayID))")
+        MirageLogger
+            .host(
+                "Shared display generation change: \(previousGeneration) -> \(newContext.generation) (display \(newContext.displayID))"
+            )
 
         var streamIDsToRebind: [StreamID] = []
         for session in activeStreams {
@@ -68,7 +72,10 @@ extension MirageHostService {
 
                 await sendStreamScaleUpdate(streamID: streamID)
             } catch {
-                MirageLogger.error(.host, "Failed to rebind stream \(streamID) after shared display generation change: \(error)")
+                MirageLogger.error(
+                    .host,
+                    "Failed to rebind stream \(streamID) after shared display generation change: \(error)"
+                )
             }
         }
 
@@ -78,7 +85,8 @@ extension MirageHostService {
     private func handleDesktopStreamSharedDisplayGenerationChange(
         newContext: SharedVirtualDisplayManager.DisplaySnapshot,
         displayBounds: CGRect
-    ) async {
+    )
+    async {
         guard desktopUsesVirtualDisplay else { return }
         guard let desktopStreamID, let desktopContext = desktopStreamContext else { return }
 
@@ -87,12 +95,11 @@ extension MirageHostService {
         do {
             await setupDisplayMirroring(targetDisplayID: newContext.displayID)
 
-            let captureDisplay: SCDisplayWrapper
-            switch desktopCaptureSource {
+            let captureDisplay: SCDisplayWrapper = switch desktopCaptureSource {
             case .mainDisplay:
-                captureDisplay = try await findMainSCDisplayWithRetry(maxAttempts: 6, delayMs: 60)
+                try await findMainSCDisplayWithRetry(maxAttempts: 6, delayMs: 60)
             case .virtualDisplay:
-                captureDisplay = try await findSCDisplayWithRetry(maxAttempts: 6, delayMs: 60)
+                try await findSCDisplayWithRetry(maxAttempts: 6, delayMs: 60)
             }
             try await desktopContext.updateCaptureDisplay(
                 captureDisplay,
@@ -106,9 +113,15 @@ extension MirageHostService {
             )
             inputStreamCacheActor.updateWindowFrame(desktopStreamID, newFrame: inputBounds)
             await sendStreamScaleUpdate(streamID: desktopStreamID)
-            MirageLogger.host("Desktop stream rebound to shared display generation \(newContext.generation) (\(desktopCaptureSource.displayName))")
+            MirageLogger
+                .host(
+                    "Desktop stream rebound to shared display generation \(newContext.generation) (\(desktopCaptureSource.displayName))"
+                )
         } catch {
-            MirageLogger.error(.host, "Failed to update desktop stream after shared display generation change: \(error)")
+            MirageLogger.error(
+                .host,
+                "Failed to update desktop stream after shared display generation change: \(error)"
+            )
         }
     }
 }

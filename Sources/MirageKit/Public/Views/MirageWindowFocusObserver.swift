@@ -6,8 +6,8 @@
 //
 
 #if os(macOS)
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// Observes macOS window focus changes for a stream session.
 /// Observes macOS window focus changes for a stream session.
@@ -21,7 +21,7 @@ struct MirageWindowFocusObserver: NSViewRepresentable {
     /// Client service used to send focus input events.
     let clientService: MirageClientService
 
-    func makeNSView(context: Context) -> NSView {
+    func makeNSView(context _: Context) -> NSView {
         let view = FocusTrackingView()
         view.sessionID = sessionID
         view.streamID = streamID
@@ -30,7 +30,7 @@ struct MirageWindowFocusObserver: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_: NSView, context _: Context) {}
 }
 
 private final class FocusTrackingView: NSView {
@@ -41,7 +41,7 @@ private final class FocusTrackingView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window = self.window else { return }
+        guard let window else { return }
 
         NotificationCenter.default.addObserver(
             self,
@@ -62,15 +62,15 @@ private final class FocusTrackingView: NSView {
         }
     }
 
-    @objc private func windowDidBecomeKey(_ notification: Notification) {
+    @objc
+    private func windowDidBecomeKey(_: Notification) {
         sessionStore?.setFocusedSession(sessionID)
         notifyHostWindowFocused()
     }
 
-    @objc private func windowDidResignKey(_ notification: Notification) {
-        if sessionStore?.focusedSessionID == sessionID {
-            sessionStore?.setFocusedSession(nil)
-        }
+    @objc
+    private func windowDidResignKey(_: Notification) {
+        if sessionStore?.focusedSessionID == sessionID { sessionStore?.setFocusedSession(nil) }
 
         guard let streamID else { return }
         clientService?.sendInputFireAndForget(.flagsChanged([]), forStream: streamID)

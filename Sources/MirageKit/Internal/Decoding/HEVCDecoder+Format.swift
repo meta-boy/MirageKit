@@ -7,9 +7,9 @@
 //  HEVC decoder extensions.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 import VideoToolbox
 
 extension HEVCDecoder {
@@ -19,9 +19,9 @@ extension HEVCDecoder {
             // Extract VPS, SPS, PPS from the parameter sets portion
             let (vps, sps, pps) = extractParameterSets(from: framed.parameterSets)
             if let vpsData = vps, let spsData = sps, let ppsData = pps {
-                self.cachedVPS = vpsData
-                self.cachedSPS = spsData
-                self.cachedPPS = ppsData
+                cachedVPS = vpsData
+                cachedSPS = spsData
+                cachedPPS = ppsData
                 try updateFormatDescription(vpsData: vpsData, spsData: spsData, ppsData: ppsData)
                 // Return the frame data portion (already stripped of parameter sets)
                 var strippedData = framed.frameData
@@ -41,12 +41,12 @@ extension HEVCDecoder {
         let searchLimit = min(data.count, 200)
 
         while i < searchLimit - 3 {
-            if data[i] == 0x00 && data[i + 1] == 0x00 {
+            if data[i] == 0x00, data[i + 1] == 0x00 {
                 if data[i + 2] == 0x01 {
                     startCodePositions.append((i, 3))
                     i += 3
                     continue
-                } else if i + 3 < searchLimit && data[i + 2] == 0x00 && data[i + 3] == 0x01 {
+                } else if i + 3 < searchLimit, data[i + 2] == 0x00, data[i + 3] == 0x01 {
                     startCodePositions.append((i, 4))
                     i += 4
                     continue
@@ -63,25 +63,23 @@ extension HEVCDecoder {
         var vps: Data?
         var sps: Data?
         var pps: Data?
-        var parameterSetsEnd: Int = 0
+        var parameterSetsEnd = 0
 
         // Extract each NAL unit between consecutive start codes
         for (idx, startCode) in startCodePositions.enumerated() {
             let nalStart = startCode.position + startCode.length
-            let nalEnd: Int
-
-            if idx + 1 < startCodePositions.count {
+            let nalEnd: Int = if idx + 1 < startCodePositions.count {
                 // NAL ends where next start code begins
-                nalEnd = startCodePositions[idx + 1].position
+                startCodePositions[idx + 1].position
             } else {
                 // Last start code - this is PPS, need to find where AVCC starts
                 // Scan forward from NAL start looking for AVCC length prefix
-                nalEnd = findAVCCBoundary(in: data, after: nalStart)
+                findAVCCBoundary(in: data, after: nalStart)
             }
 
-            guard nalEnd > nalStart && nalStart < data.count else { continue }
+            guard nalEnd > nalStart, nalStart < data.count else { continue }
             let actualEnd = min(nalEnd, data.count)
-            let nalData = data.subdata(in: nalStart..<actualEnd)
+            let nalData = data.subdata(in: nalStart ..< actualEnd)
             guard !nalData.isEmpty else { continue }
 
             // HEVC NAL unit header is 2 bytes
@@ -105,26 +103,29 @@ extension HEVCDecoder {
 
         // Need all three parameter sets
         guard let vpsData = vps, let spsData = sps, let ppsData = pps else {
-            MirageLogger.error(.decoder, "Missing parameter sets - VPS: \(vps != nil), SPS: \(sps != nil), PPS: \(pps != nil)")
+            MirageLogger.error(
+                .decoder,
+                "Missing parameter sets - VPS: \(vps != nil), SPS: \(sps != nil), PPS: \(pps != nil)"
+            )
 
             // Try to use cached format description if available
             if let cached = cachedFormatDescription {
                 MirageLogger.decoder("Using cached format description due to corrupted keyframe")
-                self.formatDescription = cached
+                formatDescription = cached
             }
 
             return data // Return original data, will try again on next keyframe
         }
 
         // Cache the parameter sets for resilience
-        self.cachedVPS = vpsData
-        self.cachedSPS = spsData
-        self.cachedPPS = ppsData
+        cachedVPS = vpsData
+        cachedSPS = spsData
+        cachedPPS = ppsData
 
         try updateFormatDescription(vpsData: vpsData, spsData: spsData, ppsData: ppsData)
 
         // Return data with parameter sets stripped (the remaining AVCC data)
-        if parameterSetsEnd > 0 && parameterSetsEnd < data.count {
+        if parameterSetsEnd > 0, parameterSetsEnd < data.count {
             var strippedData = Data(data.suffix(from: parameterSetsEnd))
 
             // Strip any leading SEI NAL units that may confuse VideoToolbox
@@ -137,41 +138,43 @@ extension HEVCDecoder {
 
         return data
     }
+
     private func splitFramedKeyframeData(from data: Data) -> (parameterSets: Data, frameData: Data)? {
         guard data.count > 8 else { return nil }
 
         let length = UInt32(data[0]) << 24 |
-                     UInt32(data[1]) << 16 |
-                     UInt32(data[2]) << 8 |
-                     UInt32(data[3])
+            UInt32(data[1]) << 16 |
+            UInt32(data[2]) << 8 |
+            UInt32(data[3])
         guard length > 0 else { return nil }
 
         let start = 4
         let end = start + Int(length)
         guard end > start, end <= data.count else { return nil }
 
-        let parameterSets = data.subdata(in: start..<end)
+        let parameterSets = data.subdata(in: start ..< end)
         let hasStartCode = parameterSets.starts(with: [0x00, 0x00, 0x00, 0x01]) ||
-                           parameterSets.starts(with: [0x00, 0x00, 0x01])
+            parameterSets.starts(with: [0x00, 0x00, 0x01])
         guard hasStartCode else { return nil }
 
-        let frameData = data.subdata(in: end..<data.count)
+        let frameData = data.subdata(in: end ..< data.count)
         guard !frameData.isEmpty else { return nil }
 
         return (parameterSets, frameData)
     }
+
     private func extractParameterSets(from data: Data) -> (vps: Data?, sps: Data?, pps: Data?) {
         var startCodePositions: [(position: Int, length: Int)] = []
         var i = 0
         let searchLimit = max(0, data.count - 3)
 
         while i < searchLimit {
-            if data[i] == 0x00 && data[i + 1] == 0x00 {
+            if data[i] == 0x00, data[i + 1] == 0x00 {
                 if data[i + 2] == 0x01 {
                     startCodePositions.append((i, 3))
                     i += 3
                     continue
-                } else if i + 3 < data.count && data[i + 2] == 0x00 && data[i + 3] == 0x01 {
+                } else if i + 3 < data.count, data[i + 2] == 0x00, data[i + 3] == 0x01 {
                     startCodePositions.append((i, 4))
                     i += 4
                     continue
@@ -193,8 +196,8 @@ extension HEVCDecoder {
             let nalStart = startCode.position + startCode.length
             let nalEnd = idx + 1 < startCodePositions.count ? startCodePositions[idx + 1].position : data.count
 
-            guard nalEnd > nalStart && nalStart < data.count else { continue }
-            let nalData = data.subdata(in: nalStart..<nalEnd)
+            guard nalEnd > nalStart, nalStart < data.count else { continue }
+            let nalData = data.subdata(in: nalStart ..< nalEnd)
             guard !nalData.isEmpty else { continue }
 
             let nalType = (nalData[0] >> 1) & 0x3F
@@ -212,6 +215,7 @@ extension HEVCDecoder {
 
         return (vps, sps, pps)
     }
+
     private func updateFormatDescription(vpsData: Data, spsData: Data, ppsData: Data) throws {
         try vpsData.withUnsafeBytes { vpsPtr in
             try spsData.withUnsafeBytes { spsPtr in
@@ -219,7 +223,7 @@ extension HEVCDecoder {
                     let parameterSetPointers: [UnsafePointer<UInt8>] = [
                         vpsPtr.baseAddress!.assumingMemoryBound(to: UInt8.self),
                         spsPtr.baseAddress!.assumingMemoryBound(to: UInt8.self),
-                        ppsPtr.baseAddress!.assumingMemoryBound(to: UInt8.self)
+                        ppsPtr.baseAddress!.assumingMemoryBound(to: UInt8.self),
                     ]
                     let parameterSetSizes: [Int] = [vpsData.count, spsData.count, ppsData.count]
 
@@ -240,8 +244,11 @@ extension HEVCDecoder {
                             self.formatDescription = cached
                             return
                         }
-                        throw MirageError.decodingError(NSError(domain: NSOSStatusErrorDomain, code: Int(status),
-                            userInfo: [NSLocalizedDescriptionKey: "Failed to create format description"]))
+                        throw MirageError.decodingError(NSError(
+                            domain: NSOSStatusErrorDomain,
+                            code: Int(status),
+                            userInfo: [NSLocalizedDescriptionKey: "Failed to create format description"]
+                        ))
                     }
 
                     let oldDims = self.formatDescription.flatMap { CMVideoFormatDescriptionGetDimensions($0) }
@@ -252,18 +259,28 @@ extension HEVCDecoder {
                     } ?? false
 
                     let isFirstKeyframe = oldDims == nil
-                    let shouldRecreateForErrors = !isFirstKeyframe && (self.errorTracker?.shouldRecreateSession() ?? false)
+                    let shouldRecreateForErrors = !isFirstKeyframe &&
+                        (self.errorTracker?.shouldRecreateSession() ?? false)
                     let shouldRecreateSession = dimensionsMismatch || shouldRecreateForErrors
 
                     if isFirstKeyframe {
-                        MirageLogger.decoder("First keyframe - session will be created fresh (\(newDims.width)x\(newDims.height))")
+                        MirageLogger
+                            .decoder(
+                                "First keyframe - session will be created fresh (\(newDims.width)x\(newDims.height))"
+                            )
                     }
 
                     if shouldRecreateSession {
                         if dimensionsMismatch, let old = oldDims {
-                            MirageLogger.decoder("Dimensions changed from \(old.width)x\(old.height) to \(newDims.width)x\(newDims.height) - recreating session")
+                            MirageLogger
+                                .decoder(
+                                    "Dimensions changed from \(old.width)x\(old.height) to \(newDims.width)x\(newDims.height) - recreating session"
+                                )
                         } else if shouldRecreateForErrors {
-                            MirageLogger.decoder("Recreating session due to decode errors (dimensions unchanged: \(newDims.width)x\(newDims.height))")
+                            MirageLogger
+                                .decoder(
+                                    "Recreating session due to decode errors (dimensions unchanged: \(newDims.width)x\(newDims.height))"
+                                )
                         }
 
                         if let session = self.decompressionSession {
@@ -295,22 +312,25 @@ extension HEVCDecoder {
             }
         }
     }
+
     private func preferredOutputPixelFormat(for formatDescription: CMFormatDescription) -> OSType {
         guard let extensions = CMFormatDescriptionGetExtensions(formatDescription) as? [CFString: Any],
               let bits = extensions[kCMFormatDescriptionExtension_BitsPerComponent] as? Int else {
             return kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
         }
-        return bits > 8 ? kCVPixelFormatType_420YpCbCr10BiPlanarFullRange : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        return bits > 8 ? kCVPixelFormatType_420YpCbCr10BiPlanarFullRange :
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
     }
+
     private func stripSEINALUnits(from data: Data) -> Data {
         var result = data
 
         while result.count > 5 {
             // Read AVCC length (4 bytes big-endian)
             let length = UInt32(result[0]) << 24 |
-                         UInt32(result[1]) << 16 |
-                         UInt32(result[2]) << 8 |
-                         UInt32(result[3])
+                UInt32(result[1]) << 16 |
+                UInt32(result[2]) << 8 |
+                UInt32(result[3])
 
             // Sanity check: length must be reasonable
             guard length > 0 && length < result.count - 4 else { break }
@@ -336,6 +356,7 @@ extension HEVCDecoder {
 
         return result
     }
+
     private func findAVCCBoundary(in data: Data, after nalStart: Int) -> Int {
         // PPS NAL is typically 5-15 bytes. Scan forward looking for AVCC length prefix.
         // Skip the 2-byte NAL header first
@@ -351,7 +372,7 @@ extension HEVCDecoder {
             let potentialLength = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 
             // Check if this could be a start code (we're still in Annex B)
-            if b0 == 0x00 && b1 == 0x00 && (b2 == 0x01 || (b2 == 0x00 && b3 == 0x01)) {
+            if b0 == 0x00, b1 == 0x00, b2 == 0x01 || (b2 == 0x00 && b3 == 0x01) {
                 // Found another start code, boundary is here
                 return pos
             }
@@ -360,7 +381,7 @@ extension HEVCDecoder {
             // - Not 0 or 1 (too small for a NAL)
             // - Reasonable size for a video NAL (> 10 bytes, < remaining data)
             let remainingData = data.count - pos - 4
-            if potentialLength > 10 && potentialLength < remainingData {
+            if potentialLength > 10, potentialLength < remainingData {
                 // This looks like AVCC, boundary is here
                 return pos
             }
@@ -371,6 +392,7 @@ extension HEVCDecoder {
         // Fallback: assume PPS is about 10 bytes
         return min(nalStart + 10, data.count)
     }
+
     private func parseNALUnitsWithPositions(from data: Data) -> [(Data, Int)] {
         var nalUnits: [(Data, Int)] = []
         var currentIndex = 0
@@ -381,12 +403,12 @@ extension HEVCDecoder {
             var foundStartCode = false
 
             if currentIndex + 3 <= data.count {
-                if data[currentIndex] == 0x00 && data[currentIndex + 1] == 0x00 {
+                if data[currentIndex] == 0x00, data[currentIndex + 1] == 0x00 {
                     if data[currentIndex + 2] == 0x01 {
                         startCodeLength = 3
                         foundStartCode = true
-                    } else if currentIndex + 4 <= data.count &&
-                              data[currentIndex + 2] == 0x00 && data[currentIndex + 3] == 0x01 {
+                    } else if currentIndex + 4 <= data.count,
+                              data[currentIndex + 2] == 0x00, data[currentIndex + 3] == 0x01 {
                         startCodeLength = 4
                         foundStartCode = true
                     }
@@ -399,10 +421,10 @@ extension HEVCDecoder {
                 // Find next start code or end of data
                 var nextStart = currentIndex
                 while nextStart < data.count {
-                    if nextStart + 3 <= data.count &&
-                       data[nextStart] == 0x00 && data[nextStart + 1] == 0x00 &&
-                       (data[nextStart + 2] == 0x01 ||
-                        (nextStart + 4 <= data.count && data[nextStart + 2] == 0x00 && data[nextStart + 3] == 0x01)) {
+                    if nextStart + 3 <= data.count,
+                       data[nextStart] == 0x00, data[nextStart + 1] == 0x00,
+                       data[nextStart + 2] == 0x01 ||
+                       (nextStart + 4 <= data.count && data[nextStart + 2] == 0x00 && data[nextStart + 3] == 0x01) {
                         break
                     }
                     nextStart += 1
@@ -410,7 +432,7 @@ extension HEVCDecoder {
 
                 // Extract NAL unit
                 if nextStart > currentIndex {
-                    let nalUnit = data.subdata(in: currentIndex..<nextStart)
+                    let nalUnit = data.subdata(in: currentIndex ..< nextStart)
                     nalUnits.append((nalUnit, nextStart))
                 }
                 currentIndex = nextStart
@@ -422,6 +444,7 @@ extension HEVCDecoder {
 
         return nalUnits
     }
+
     private func parseNALUnits(from data: Data) -> [Data] {
         var nalUnits: [Data] = []
         var currentIndex = 0
@@ -432,12 +455,12 @@ extension HEVCDecoder {
             var foundStartCode = false
 
             if currentIndex + 3 <= data.count {
-                if data[currentIndex] == 0x00 && data[currentIndex + 1] == 0x00 {
+                if data[currentIndex] == 0x00, data[currentIndex + 1] == 0x00 {
                     if data[currentIndex + 2] == 0x01 {
                         startCodeLength = 3
                         foundStartCode = true
-                    } else if currentIndex + 4 <= data.count &&
-                              data[currentIndex + 2] == 0x00 && data[currentIndex + 3] == 0x01 {
+                    } else if currentIndex + 4 <= data.count,
+                              data[currentIndex + 2] == 0x00, data[currentIndex + 3] == 0x01 {
                         startCodeLength = 4
                         foundStartCode = true
                     }
@@ -450,10 +473,10 @@ extension HEVCDecoder {
                 // Find next start code or end of data
                 var nextStart = currentIndex
                 while nextStart < data.count {
-                    if nextStart + 3 <= data.count &&
-                       data[nextStart] == 0x00 && data[nextStart + 1] == 0x00 &&
-                       (data[nextStart + 2] == 0x01 ||
-                        (nextStart + 4 <= data.count && data[nextStart + 2] == 0x00 && data[nextStart + 3] == 0x01)) {
+                    if nextStart + 3 <= data.count,
+                       data[nextStart] == 0x00, data[nextStart + 1] == 0x00,
+                       data[nextStart + 2] == 0x01 ||
+                       (nextStart + 4 <= data.count && data[nextStart + 2] == 0x00 && data[nextStart + 3] == 0x01) {
                         break
                     }
                     nextStart += 1
@@ -461,7 +484,7 @@ extension HEVCDecoder {
 
                 // Extract NAL unit
                 if nextStart > currentIndex {
-                    let nalUnit = data.subdata(in: currentIndex..<nextStart)
+                    let nalUnit = data.subdata(in: currentIndex ..< nextStart)
                     nalUnits.append(nalUnit)
                 }
                 currentIndex = nextStart

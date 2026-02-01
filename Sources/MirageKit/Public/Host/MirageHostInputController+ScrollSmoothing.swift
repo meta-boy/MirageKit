@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -21,7 +21,7 @@ extension MirageHostInputController {
         let now = CACurrentMediaTime()
 
         if event.phase == .began || event.phase == .ended || event.phase == .cancelled ||
-           event.momentumPhase == .began || event.momentumPhase == .ended || event.momentumPhase == .cancelled {
+            event.momentumPhase == .began || event.momentumPhase == .ended || event.momentumPhase == .cancelled {
             if event.phase == .began || event.momentumPhase == .began {
                 scrollRateX = 0
                 scrollRateY = 0
@@ -92,7 +92,7 @@ extension MirageHostInputController {
         scrollRateX += (scrollTargetRateX - scrollRateX) * alpha
         scrollRateY += (scrollTargetRateY - scrollRateY) * alpha
 
-        let tickDuration: CGFloat = CGFloat(scrollOutputIntervalMs) / 1000.0
+        let tickDuration = CGFloat(scrollOutputIntervalMs) / 1000.0
         let deltaX = scrollRateX * tickDuration
         let deltaY = scrollRateY * tickDuration
 
@@ -112,9 +112,7 @@ extension MirageHostInputController {
         if rateMagnitude < scrollRateThreshold {
             let finalX = trunc(scrollRemainderX)
             let finalY = trunc(scrollRemainderY)
-            if abs(finalX) >= 1 || abs(finalY) >= 1 {
-                injectScrollPixels(Int32(finalX), Int32(finalY), context: context)
-            }
+            if abs(finalX) >= 1 || abs(finalY) >= 1 { injectScrollPixels(Int32(finalX), Int32(finalY), context: context) }
 
             scrollRateX = 0
             scrollRateY = 0
@@ -136,16 +134,21 @@ extension MirageHostInputController {
     private func injectScrollPixels(
         _ pixelsX: Int32,
         _ pixelsY: Int32,
-        context: (frame: CGRect, app: MirageApplication?, location: CGPoint?, modifiers: MirageModifierFlags, isPrecise: Bool)
+        context: (
+            frame: CGRect,
+            app: MirageApplication?,
+            location: CGPoint?,
+            modifiers: MirageModifierFlags,
+            isPrecise: Bool
+        )
     ) {
-        let scrollPoint: CGPoint
-        if let normalizedLocation = context.location {
-            scrollPoint = CGPoint(
+        let scrollPoint = if let normalizedLocation = context.location {
+            CGPoint(
                 x: context.frame.origin.x + normalizedLocation.x * context.frame.width,
                 y: context.frame.origin.y + normalizedLocation.y * context.frame.height
             )
         } else {
-            scrollPoint = CGPoint(x: context.frame.midX, y: context.frame.midY)
+            CGPoint(x: context.frame.midX, y: context.frame.midY)
         }
 
         guard let cgEvent = CGEvent(
@@ -155,12 +158,13 @@ extension MirageHostInputController {
             wheel1: pixelsY,
             wheel2: pixelsX,
             wheel3: 0
-        ) else { return }
+        ) else {
+            return
+        }
 
         cgEvent.location = scrollPoint
         postEvent(cgEvent)
     }
-
 }
 
 #endif

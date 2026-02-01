@@ -32,18 +32,14 @@ actor BonjourAdvertiser {
 
     /// Start advertising the service
     func start(port: UInt16 = 0, onConnection: @escaping @Sendable (NWConnection) -> Void) async throws -> UInt16 {
-        guard !isAdvertising else {
-            throw MirageError.alreadyAdvertising
-        }
+        guard !isAdvertising else { throw MirageError.alreadyAdvertising }
 
         let parameters = NWParameters.tcp
         parameters.serviceClass = .interactiveVideo
         parameters.includePeerToPeer = enablePeerToPeer
 
         // Enable TCP_NODELAY for low latency
-        if let tcpOptions = parameters.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options {
-            tcpOptions.noDelay = true
-        }
+        if let tcpOptions = parameters.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options { tcpOptions.noDelay = true }
 
         let actualPort: NWEndpoint.Port = port == 0 ? .any : NWEndpoint.Port(rawValue: port)!
 
@@ -61,9 +57,7 @@ actor BonjourAdvertiser {
         listener?.newConnectionHandler = onConnection
 
         // Capture listener reference for the closure
-        guard let listener = self.listener else {
-            throw MirageError.protocolError("Failed to create listener")
-        }
+        guard let listener else { throw MirageError.protocolError("Failed to create listener") }
 
         return try await withCheckedThrowingContinuation { continuation in
             let continuationBox = ContinuationBox<UInt16>(continuation)
@@ -76,10 +70,10 @@ actor BonjourAdvertiser {
                         Task { await self?.setAdvertising(true) }
                         continuationBox.resume(returning: port)
                     }
-                case .failed(let error):
+                case let .failed(error):
                     Task { await self?.setAdvertising(false) }
                     continuationBox.resume(throwing: error)
-                case .waiting(let error):
+                case let .waiting(error):
                     MirageLogger.network("Advertiser waiting: \(error)")
                 case .cancelled:
                     Task { await self?.setAdvertising(false) }
@@ -114,9 +108,7 @@ actor BonjourAdvertiser {
         )
     }
 
-    var port: UInt16? {
-        listener?.port?.rawValue
-    }
+    var port: UInt16? { listener?.port?.rawValue }
 }
 
 /// Mirage-specific errors
@@ -136,27 +128,27 @@ public enum MirageError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .alreadyAdvertising:
-            return "Already advertising service"
+            "Already advertising service"
         case .notAdvertising:
-            return "Not currently advertising"
-        case .connectionFailed(let error):
-            return "Connection failed: \(error.localizedDescription)"
+            "Not currently advertising"
+        case let .connectionFailed(error):
+            "Connection failed: \(error.localizedDescription)"
         case .authenticationFailed:
-            return "Authentication failed"
+            "Authentication failed"
         case .streamNotFound:
-            return "Stream not found"
+            "Stream not found"
         case .windowNotFound:
-            return "Window not found"
-        case .encodingError(let error):
-            return "Encoding error: \(error.localizedDescription)"
-        case .decodingError(let error):
-            return "Decoding error: \(error.localizedDescription)"
+            "Window not found"
+        case let .encodingError(error):
+            "Encoding error: \(error.localizedDescription)"
+        case let .decodingError(error):
+            "Decoding error: \(error.localizedDescription)"
         case .permissionDenied:
-            return "Permission denied"
+            "Permission denied"
         case .timeout:
-            return "Operation timed out"
-        case .protocolError(let message):
-            return "Protocol error: \(message)"
+            "Operation timed out"
+        case let .protocolError(message):
+            "Protocol error: \(message)"
         }
     }
 }

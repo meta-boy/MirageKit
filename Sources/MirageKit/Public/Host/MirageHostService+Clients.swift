@@ -35,9 +35,7 @@ extension MirageHostService {
             removedConnectionID = key
         }
 
-        if let removedConnectionID, singleClientConnectionID == removedConnectionID {
-            singleClientConnectionID = nil
-        }
+        if let removedConnectionID, singleClientConnectionID == removedConnectionID { singleClientConnectionID = nil }
 
         connectedClients.removeAll { $0.id == client.id }
 

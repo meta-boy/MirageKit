@@ -8,8 +8,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import CoreGraphics
+import Foundation
 
 extension CGVirtualDisplayBridge {
     // MARK: - Display Utilities
@@ -18,7 +18,7 @@ extension CGVirtualDisplayBridge {
     /// Note: CGDisplayBounds can return stale values for newly created virtual displays
     /// Prefer using the resolution from VirtualDisplayContext when available
     static func getDisplayBounds(_ displayID: CGDirectDisplayID) -> CGRect {
-        return CGDisplayBounds(displayID)
+        CGDisplayBounds(displayID)
     }
 
     /// Wait for a virtual display to become online with non-zero bounds.
@@ -28,7 +28,8 @@ extension CGVirtualDisplayBridge {
         expectedResolution: CGSize,
         timeout: TimeInterval = 4.0,
         pollInterval: TimeInterval = 0.05
-    ) async -> CGRect? {
+    )
+    async -> CGRect? {
         let deadline = Date().addingTimeInterval(timeout)
         var lastBounds = CGRect.zero
 
@@ -37,24 +38,28 @@ extension CGVirtualDisplayBridge {
             let bounds = CGDisplayBounds(displayID)
             lastBounds = bounds
 
-            if online && bounds.width > 0 && bounds.height > 0 {
-                return bounds
-            }
+            if online, bounds.width > 0, bounds.height > 0 { return bounds }
 
-            let sleepMs = Int(max(10.0, pollInterval * 1_000.0))
+            let sleepMs = Int(max(10.0, pollInterval * 1000.0))
             try? await Task.sleep(for: .milliseconds(sleepMs))
         }
 
         let online = isDisplayOnline(displayID)
-        if online && expectedResolution.width > 0 && expectedResolution.height > 0 {
+        if online, expectedResolution.width > 0, expectedResolution.height > 0 {
             let origin = configuredDisplayOrigins[displayID] ?? lastBounds.origin
             let fallbackBounds = CGRect(origin: origin, size: expectedResolution)
-            MirageLogger.host("Display \(displayID) online but bounds invalid after wait; using known resolution \(fallbackBounds)")
+            MirageLogger
+                .host(
+                    "Display \(displayID) online but bounds invalid after wait; using known resolution \(fallbackBounds)"
+                )
             return fallbackBounds
         }
 
         let timeoutText = timeout.formatted(.number.precision(.fractionLength(2)))
-        MirageLogger.error(.host, "Display \(displayID) not ready after \(timeoutText)s (online: \(online), lastBounds: \(lastBounds))")
+        MirageLogger.error(
+            .host,
+            "Display \(displayID) not ready after \(timeoutText)s (online: \(online), lastBounds: \(lastBounds))"
+        )
         return nil
     }
 
@@ -70,17 +75,23 @@ extension CGVirtualDisplayBridge {
         let rawBounds = CGDisplayBounds(displayID)
         let origin = configuredDisplayOrigins[displayID] ?? rawBounds.origin
 
-        if rawBounds.width > 0 && rawBounds.height > 0 {
+        if rawBounds.width > 0, rawBounds.height > 0 {
             let bounds = CGRect(origin: origin, size: rawBounds.size)
             if abs(rawBounds.width - knownResolution.width) > 1 || abs(rawBounds.height - knownResolution.height) > 1 {
-                MirageLogger.host("getDisplayBounds(\(displayID)): raw size \(rawBounds.size) differs from knownResolution \(knownResolution) (origin \(origin))")
+                MirageLogger
+                    .host(
+                        "getDisplayBounds(\(displayID)): raw size \(rawBounds.size) differs from knownResolution \(knownResolution) (origin \(origin))"
+                    )
             }
             return bounds
         }
 
         // Fallback to known resolution when raw bounds are not available yet.
         let bounds = CGRect(origin: origin, size: knownResolution)
-        MirageLogger.host("getDisplayBounds(\(displayID)): using origin \(origin) with knownSize=\(knownResolution) (rawBounds=\(rawBounds)) -> \(bounds)")
+        MirageLogger
+            .host(
+                "getDisplayBounds(\(displayID)): using origin \(origin) with knownSize=\(knownResolution) (rawBounds=\(rawBounds)) -> \(bounds)"
+            )
         return bounds
     }
 
@@ -97,12 +108,12 @@ extension CGVirtualDisplayBridge {
     /// Returns true if the display is a Mirage-created virtual display.
     static func isMirageDisplay(_ displayID: CGDirectDisplayID) -> Bool {
         CGDisplayVendorNumber(displayID) == mirageVendorID &&
-        CGDisplayModelNumber(displayID) == mirageProductID
+            CGDisplayModelNumber(displayID) == mirageProductID
     }
 
     /// Get the space ID for a display
     static func getSpaceForDisplay(_ displayID: CGDirectDisplayID) -> CGSSpaceID {
-        return CGSWindowSpaceBridge.getCurrentSpaceForDisplay(displayID)
+        CGSWindowSpaceBridge.getCurrentSpaceForDisplay(displayID)
     }
 }
 #endif

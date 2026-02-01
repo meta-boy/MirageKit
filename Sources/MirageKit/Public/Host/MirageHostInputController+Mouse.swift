@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -17,7 +17,13 @@ import ApplicationServices
 extension MirageHostInputController {
     // MARK: - Mouse Event Injection (runs on accessibilityQueue)
 
-    func injectMouseEvent(_ type: CGEventType, _ event: MirageMouseEvent, _ windowFrame: CGRect, windowID: WindowID, app: MirageApplication?) {
+    func injectMouseEvent(
+        _ type: CGEventType,
+        _ event: MirageMouseEvent,
+        _ windowFrame: CGRect,
+        windowID: WindowID,
+        app _: MirageApplication?
+    ) {
         let actualFrame = currentWindowFrame(for: windowID)
         let useActualFrame = actualFrame.map { framesAreClose($0, windowFrame) } ?? false
         let resolvedFrame = useActualFrame ? (actualFrame ?? windowFrame) : windowFrame
@@ -28,7 +34,9 @@ extension MirageHostInputController {
         )
 
         switch type {
-        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+        case .leftMouseDown,
+             .otherMouseDown,
+             .rightMouseDown:
             CGWarpMouseCursorPosition(screenPoint)
         default:
             break
@@ -36,7 +44,7 @@ extension MirageHostInputController {
 
         let pixelX = event.location.x * resolvedFrame.width
         let pixelY = event.location.y * resolvedFrame.height
-        if pixelX < 80 && pixelY < 30 && (type == .leftMouseDown || type == .leftMouseUp) {
+        if pixelX < 80, pixelY < 30, type == .leftMouseDown || type == .leftMouseUp {
             MirageLogger.host("Blocked click in traffic light area")
             return
         }
@@ -46,10 +54,17 @@ extension MirageHostInputController {
             mouseType: type,
             mouseCursorPosition: screenPoint,
             mouseButton: event.button.cgMouseButton
-        ) else { return }
+        ) else {
+            return
+        }
 
         switch type {
-        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
+        case .leftMouseDown,
+             .leftMouseUp,
+             .otherMouseDown,
+             .otherMouseUp,
+             .rightMouseDown,
+             .rightMouseUp:
             cgEvent.setIntegerValueField(.mouseEventClickState, value: Int64(event.clickCount))
         default:
             break
@@ -57,7 +72,6 @@ extension MirageHostInputController {
 
         postEvent(cgEvent)
     }
-
 }
 
 #endif

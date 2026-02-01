@@ -20,7 +20,7 @@ final class FramePacingController: @unchecked Sendable {
 
     init(targetFPS: Int) {
         let clamped = max(1, targetFPS)
-        self.targetFrameInterval = 1.0 / Double(clamped)
+        targetFrameInterval = 1.0 / Double(clamped)
     }
 
     func updateTargetFPS(_ targetFPS: Int) {

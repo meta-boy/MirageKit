@@ -5,43 +5,46 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 /// Magic number for packet validation
-let MirageProtocolMagic: UInt32 = 0x4D495247 // "MIRG"
+let mirageProtocolMagic: UInt32 = 0x4D49_5247 // "MIRG"
 
 /// Protocol version
-let MirageProtocolVersion: UInt8 = 4
+let mirageProtocolVersion: UInt8 = 4
 
 /// Default maximum UDP packet size (header + payload) to avoid IPv6 fragmentation.
 /// 1200 bytes keeps packets under the IPv6 minimum MTU (1280) once IP/UDP headers are added.
-public let MirageDefaultMaxPacketSize: Int = 1200
+public let mirageDefaultMaxPacketSize: Int = 1200
+
+// swiftlint:disable identifier_name
+@available(*, deprecated, renamed: "mirageDefaultMaxPacketSize")
+public let MirageDefaultMaxPacketSize: Int = mirageDefaultMaxPacketSize
+// swiftlint:enable identifier_name
 
 /// Header size in bytes:
 /// Base fields (4+1+2+2+4+8+4+2+2+4+4+4 = 41) +
 /// contentRect (4 x Float32 = 16) +
 /// dimensionToken (UInt16 = 2) +
 /// epoch (UInt16 = 2) = 61 total
-let MirageHeaderSize: Int = 61
+let mirageHeaderSize: Int = 61
 
 /// Compute payload size from the configured maximum packet size.
 /// `maxPacketSize` includes the Mirage header; this returns the payload size only.
 func miragePayloadSize(maxPacketSize: Int) -> Int {
-    let payload = maxPacketSize - MirageHeaderSize
-    if payload > 0 {
-        return payload
-    }
-    return MirageDefaultMaxPacketSize - MirageHeaderSize
+    let payload = maxPacketSize - mirageHeaderSize
+    if payload > 0 { return payload }
+    return mirageDefaultMaxPacketSize - mirageHeaderSize
 }
 
 /// Video frame packet header (61 bytes, fixed size)
 struct FrameHeader {
     /// Magic number for validation (0x4D495247 = "MIRG")
-    var magic: UInt32 = MirageProtocolMagic
+    var magic: UInt32 = mirageProtocolMagic
 
     /// Protocol version
-    var version: UInt8 = MirageProtocolVersion
+    var version: UInt8 = mirageProtocolVersion
 
     /// Packet flags
     var flags: FrameFlags
@@ -115,10 +118,10 @@ struct FrameHeader {
         self.payloadLength = payloadLength
         self.frameByteCount = frameByteCount
         self.checksum = checksum
-        self.contentRectX = Float32(contentRect.origin.x)
-        self.contentRectY = Float32(contentRect.origin.y)
-        self.contentRectWidth = Float32(contentRect.size.width)
-        self.contentRectHeight = Float32(contentRect.size.height)
+        contentRectX = Float32(contentRect.origin.x)
+        contentRectY = Float32(contentRect.origin.y)
+        contentRectWidth = Float32(contentRect.size.width)
+        contentRectHeight = Float32(contentRect.size.height)
         self.dimensionToken = dimensionToken
         self.epoch = epoch
     }
@@ -135,7 +138,7 @@ struct FrameHeader {
 
     /// Serialize header to bytes
     func serialize() -> Data {
-        var data = Data(capacity: MirageHeaderSize)
+        var data = Data(capacity: mirageHeaderSize)
 
         withUnsafeBytes(of: magic.littleEndian) { data.append(contentsOf: $0) }
         data.append(version)
@@ -165,7 +168,7 @@ struct FrameHeader {
 
     /// Serialize header into a preallocated buffer.
     func serialize(into buffer: UnsafeMutableRawBufferPointer) {
-        guard buffer.count >= MirageHeaderSize, buffer.baseAddress != nil else { return }
+        guard buffer.count >= mirageHeaderSize, buffer.baseAddress != nil else { return }
         var offset = 0
 
         func write<T: FixedWidthInteger>(_ value: T) {
@@ -204,11 +207,11 @@ struct FrameHeader {
 
     /// Deserialize header from bytes
     static func deserialize(from data: Data) -> FrameHeader? {
-        guard data.count >= MirageHeaderSize else { return nil }
+        guard data.count >= mirageHeaderSize else { return nil }
 
         var offset = 0
 
-        func read<T: FixedWidthInteger>(_ type: T.Type) -> T {
+        func read<T: FixedWidthInteger>(_: T.Type) -> T {
             let value = data.withUnsafeBytes { ptr in
                 ptr.loadUnaligned(fromByteOffset: offset, as: T.self)
             }
@@ -228,10 +231,10 @@ struct FrameHeader {
         }
 
         let magic = read(UInt32.self)
-        guard magic == MirageProtocolMagic else { return nil }
+        guard magic == mirageProtocolMagic else { return nil }
 
         let version = readByte()
-        guard version == MirageProtocolVersion else { return nil }
+        guard version == mirageProtocolVersion else { return nil }
 
         let flagsRaw = read(UInt16.self)
         let flags = FrameFlags(rawValue: flagsRaw)
@@ -314,15 +317,13 @@ struct FrameFlags: OptionSet, Sendable {
 
 /// CRC32 calculation for packet validation
 enum CRC32 {
-    private static let table: [UInt32] = {
-        (0..<256).map { i -> UInt32 in
-            var crc = UInt32(i)
-            for _ in 0..<8 {
-                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1
-            }
-            return crc
+    private static let table: [UInt32] = (0 ..< 256).map { i -> UInt32 in
+        var crc = UInt32(i)
+        for _ in 0 ..< 8 {
+            crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB8_8320 : crc >> 1
         }
-    }()
+        return crc
+    }
 
     static func calculate(_ data: Data) -> UInt32 {
         data.withUnsafeBytes { buffer in
@@ -331,12 +332,12 @@ enum CRC32 {
     }
 
     static func calculate(_ buffer: UnsafeRawBufferPointer) -> UInt32 {
-        var crc: UInt32 = 0xFFFFFFFF
+        var crc: UInt32 = 0xFFFF_FFFF
         let bytes = buffer.bindMemory(to: UInt8.self)
         for byte in bytes {
             let index = Int((crc ^ UInt32(byte)) & 0xFF)
             crc = (crc >> 8) ^ table[index]
         }
-        return crc ^ 0xFFFFFFFF
+        return crc ^ 0xFFFF_FFFF
     }
 }

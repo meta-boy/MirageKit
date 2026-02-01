@@ -7,8 +7,8 @@
 //  Stream controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 extension StreamController {
     // MARK: - Private Helpers
@@ -24,15 +24,13 @@ extension StreamController {
     func recordDecodedFrame() {
         lastDecodedFrameTime = CFAbsoluteTimeGetCurrent()
         startFreezeMonitorIfNeeded()
-        if isInputBlocked {
-            updateInputBlocking(false)
-        }
+        if isInputBlocked { updateInputBlocking(false) }
     }
 
     /// Update input blocking state and notify callback
     func updateInputBlocking(_ isBlocked: Bool) {
-        guard self.isInputBlocked != isBlocked else { return }
-        self.isInputBlocked = isBlocked
+        guard isInputBlocked != isBlocked else { return }
+        isInputBlocked = isBlocked
         MirageLogger.client("Input blocking state changed: \(isBlocked ? "BLOCKED" : "allowed") for stream \(streamID)")
         Task { @MainActor [weak self] in
             await self?.onInputBlockingChanged?(isBlocked)
@@ -57,9 +55,7 @@ extension StreamController {
             guard let awaitingDuration = reassembler.awaitingKeyframeDuration(now: now) else { break }
             let timeout = reassembler.keyframeTimeoutSeconds()
             guard awaitingDuration >= timeout else { continue }
-            if lastRecoveryRequestTime > 0, now - lastRecoveryRequestTime < timeout {
-                continue
-            }
+            if lastRecoveryRequestTime > 0, now - lastRecoveryRequestTime < timeout { continue }
             guard let handler = onKeyframeNeeded else { break }
             lastRecoveryRequestTime = now
             await MainActor.run {
@@ -80,9 +76,9 @@ extension StreamController {
                 } catch {
                     break
                 }
-                await self.evaluateFreezeState()
+                await evaluateFreezeState()
             }
-            await self.clearFreezeMonitorTask()
+            await clearFreezeMonitorTask()
         }
     }
 
@@ -108,7 +104,7 @@ extension StreamController {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.onResizeStateChanged?(newState)
+            await onResizeStateChanged?(newState)
         }
     }
 
@@ -116,7 +112,8 @@ extension StreamController {
         pixelSize: CGSize,
         screenBounds: CGSize,
         scaleFactor: CGFloat
-    ) async {
+    )
+    async {
         // Calculate aspect ratio
         let aspectRatio = pixelSize.width / pixelSize.height
 
@@ -184,9 +181,7 @@ extension StreamController {
         // Fallback timeout
         do {
             try await Task.sleep(for: Self.resizeTimeout)
-            if case .awaiting = resizeState {
-                await setResizeState(.idle)
-            }
+            if case .awaiting = resizeState { await setResizeState(.idle) }
         } catch {
             // Cancelled, ignore
         }

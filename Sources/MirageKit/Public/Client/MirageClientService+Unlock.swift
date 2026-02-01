@@ -10,20 +10,16 @@
 import Foundation
 
 @MainActor
-extension MirageClientService {
+public extension MirageClientService {
     /// Send an unlock request to the host.
     /// - Parameters:
     ///   - username: Username (required if host is at login screen).
     ///   - password: Password for the account.
     /// - Throws: Error if not connected or no session token.
-    public func sendUnlockRequest(username: String?, password: String) async throws {
-        guard let connection else {
-            throw MirageError.protocolError("Not connected to host")
-        }
+    func sendUnlockRequest(username: String?, password: String) async throws {
+        guard let connection else { throw MirageError.protocolError("Not connected to host") }
 
-        guard let token = currentSessionToken else {
-            throw MirageError.protocolError("No session token available")
-        }
+        guard let token = currentSessionToken else { throw MirageError.protocolError("No session token available") }
 
         let request = UnlockRequestMessage(
             sessionToken: token,
@@ -36,9 +32,7 @@ extension MirageClientService {
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: data, completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
+                if let error { continuation.resume(throwing: error) } else {
                     MirageLogger.client("Sent unlock request")
                     continuation.resume()
                 }

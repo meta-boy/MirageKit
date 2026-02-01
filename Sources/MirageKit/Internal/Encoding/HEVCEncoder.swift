@@ -5,10 +5,10 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Foundation
-import VideoToolbox
 import CoreMedia
 import CoreVideo
+import Foundation
+import VideoToolbox
 
 #if os(macOS)
 
@@ -54,35 +54,37 @@ actor HEVCEncoder {
     ) {
         self.configuration = configuration
         self.latencyMode = latencyMode
-        self.activePixelFormat = configuration.pixelFormat
+        activePixelFormat = configuration.pixelFormat
         let defaultLimit = configuration.targetFrameRate >= 120 ? 2 : 1
-        self.encoderInFlightLimit = max(1, inFlightLimit ?? defaultLimit)
-        self.baseQuality = configuration.frameQuality
+        encoderInFlightLimit = max(1, inFlightLimit ?? defaultLimit)
+        baseQuality = configuration.frameQuality
     }
 
     var pixelFormatType: OSType {
         switch activePixelFormat {
         case .p010:
-            return kCVPixelFormatType_420YpCbCr10BiPlanarFullRange
+            kCVPixelFormatType_420YpCbCr10BiPlanarFullRange
         case .bgr10a2:
-            return kCVPixelFormatType_ARGB2101010LEPacked
+            kCVPixelFormatType_ARGB2101010LEPacked
         case .bgra8:
-            return kCVPixelFormatType_32BGRA
+            kCVPixelFormatType_32BGRA
         case .nv12:
-            return kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
         }
     }
 
     var profileLevel: CFString {
         switch activePixelFormat {
-        case .p010, .bgr10a2:
-            return kVTProfileLevel_HEVC_Main10_AutoLevel
-        case .bgra8, .nv12:
-            return kVTProfileLevel_HEVC_Main_AutoLevel
+        case .bgr10a2,
+             .p010:
+            kVTProfileLevel_HEVC_Main10_AutoLevel
+        case .bgra8,
+             .nv12:
+            kVTProfileLevel_HEVC_Main_AutoLevel
         }
     }
 
-    /// Create the compression session
+    // Create the compression session
 
     struct QualitySettings {
         let quality: Float
@@ -90,53 +92,36 @@ actor HEVCEncoder {
         let maxQP: Int?
     }
 
+    // Pre-heat the encoder with dummy frames to eliminate warm-up latency
+    // VideoToolbox hardware encoders need ~5-10 frames to reach steady-state performance
+    // Without pre-heating, first real frames take 70-80ms instead of 3-4ms
 
+    // Start encoding with a frame handler
 
+    // Stop encoding
 
+    // Encode a frame
 
-
-
-
-
-
-
-    /// Pre-heat the encoder with dummy frames to eliminate warm-up latency
-    /// VideoToolbox hardware encoders need ~5-10 frames to reach steady-state performance
-    /// Without pre-heating, first real frames take 70-80ms instead of 3-4ms
-
-    /// Start encoding with a frame handler
-
-    /// Stop encoding
-
-    /// Encode a frame
-
-    /// Update quality dynamically (0.0 to 1.0)
-    /// Lower quality reduces frame size during throughput pressure.
-
-
-
-
+    // Update quality dynamically (0.0 to 1.0)
+    // Lower quality reduces frame size during throughput pressure.
 
     // No explicit bitrate caps; encoder quality and QP bounds define compression.
 
-    /// Update encoder dimensions (requires session recreation)
+    // Update encoder dimensions (requires session recreation)
 
-    /// Force a keyframe on next encode
+    // Force a keyframe on next encode
 
+    // Get the current average encode time (ms) from recent samples.
 
+    // Flush all pending frames from the encoder pipeline and force next keyframe.
+    // This ensures the next frame captured will be encoded as a keyframe immediately,
+    // without waiting for any in-flight frames to complete first.
 
-    /// Get the current average encode time (ms) from recent samples.
+    // Reset the encoder session to recover from stuck state
+    // This invalidates the current session and creates a new one
+    // Forces a keyframe on the next encode
 
-    /// Flush all pending frames from the encoder pipeline and force next keyframe.
-    /// This ensures the next frame captured will be encoded as a keyframe immediately,
-    /// without waiting for any in-flight frames to complete first.
-
-    /// Reset the encoder session to recover from stuck state
-    /// This invalidates the current session and creates a new one
-    /// Forces a keyframe on the next encode
-
-
-    /// Extract VPS, SPS, PPS from format description and format with Annex B start codes
+    // Extract VPS, SPS, PPS from format description and format with Annex B start codes
 }
 
 /// Thread-safe encode timing tracker for recent samples
@@ -144,8 +129,6 @@ final class EncodePerformanceTracker: @unchecked Sendable {
     let lock = NSLock()
     var samples: [Double] = []
     let maxSamples: Int = 30
-
-
 }
 
 /// Info passed through the encode callback
@@ -179,9 +162,7 @@ final class EncodeInfo: @unchecked Sendable {
 
     /// Check if this frame's session is still current
     /// Returns false if a dimension change occurred since this frame was queued
-    var isSessionCurrent: Bool {
-        return sessionVersion == getCurrentVersion()
-    }
+    var isSessionCurrent: Bool { sessionVersion == getCurrentVersion() }
 }
 
 #endif

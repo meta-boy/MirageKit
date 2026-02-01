@@ -9,9 +9,9 @@
 //  Unlock manager extensions.
 //
 
-import Foundation
 import AppKit
 import CoreGraphics
+import Foundation
 
 extension UnlockManager {
     // MARK: - Login Window Detection
@@ -28,14 +28,10 @@ extension UnlockManager {
                 let layer = window[kCGWindowLayer as String] as? Int ?? 0
 
                 if ownerName == "loginwindow" || ownerName == "LoginWindow" {
-                    if layer >= shieldingLevel {
-                        return true
-                    }
+                    if layer >= shieldingLevel { return true }
                 }
 
-                if ownerName == "ScreenSaverEngine", layer >= screenSaverLevel {
-                    return true
-                }
+                if ownerName == "ScreenSaverEngine", layer >= screenSaverLevel { return true }
             }
             return false
         }
@@ -76,7 +72,6 @@ extension UnlockManager {
         MirageLogger.error(.host, "Login window not detected after \(timeout)s (\(pollCount) polls)")
         return false
     }
-
 }
 
 #endif

@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -19,7 +19,9 @@ extension MirageHostInputController {
 
     func activateWindow(windowID: WindowID, app: MirageApplication?) {
         guard let app,
-              let runningApp = NSRunningApplication(processIdentifier: app.id) else { return }
+              let runningApp = NSRunningApplication(processIdentifier: app.id) else {
+            return
+        }
 
         runningApp.activate()
 
@@ -43,7 +45,9 @@ extension MirageHostInputController {
         let result = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
 
         guard result == .success,
-              let windows = windowsRef as? [AXUIElement] else { return nil }
+              let windows = windowsRef as? [AXUIElement] else {
+            return nil
+        }
 
         for axWindow in windows {
             var cgWindowID: CGWindowID = 0
@@ -54,7 +58,6 @@ extension MirageHostInputController {
         }
         return nil
     }
-
 }
 
 #endif

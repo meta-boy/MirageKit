@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/6/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -14,7 +14,6 @@ import AppKit
 /// Manages window movement between displays/spaces for Mirage streams
 /// Handles moving windows to virtual displays and restoring them on stream end
 actor WindowSpaceManager {
-
     // MARK: - Singleton
 
     static let shared = WindowSpaceManager()
@@ -39,12 +38,12 @@ actor WindowSpaceManager {
 
         var errorDescription: String? {
             switch self {
-            case .windowNotFound(let id):
-                return "Window \(id) not found"
-            case .noOriginalState(let id):
-                return "No saved state for window \(id)"
-            case .moveFailed(let id, let reason):
-                return "Failed to move window \(id): \(reason)"
+            case let .windowNotFound(id):
+                "Window \(id) not found"
+            case let .noOriginalState(id):
+                "No saved state for window \(id)"
+            case let .moveFailed(id, reason):
+                "Failed to move window \(id): \(reason)"
             }
         }
     }
@@ -67,11 +66,10 @@ actor WindowSpaceManager {
         toSpaceID spaceID: CGSSpaceID,
         displayID: CGDirectDisplayID,
         displayBounds: CGRect
-    ) async throws {
+    )
+    async throws {
         // Get current window info
-        guard let windowInfo = getWindowInfo(windowID) else {
-            throw WindowSpaceError.windowNotFound(windowID)
-        }
+        guard let windowInfo = getWindowInfo(windowID) else { throw WindowSpaceError.windowNotFound(windowID) }
 
         if savedStates[windowID] == nil {
             let currentSpaces = CGSWindowSpaceBridge.getSpacesForWindow(windowID)
@@ -90,16 +88,12 @@ actor WindowSpaceManager {
         // Move window to the virtual display's space
         CGSWindowSpaceBridge.moveWindowToSpace(windowID, spaceID: spaceID)
         let didActivateSpace = CGSWindowSpaceBridge.setCurrentSpaceForDisplay(displayID, spaceID: spaceID)
-        if !didActivateSpace {
-            MirageLogger.host("Failed to set current space \(spaceID) for display \(displayID)")
-        }
+        if !didActivateSpace { MirageLogger.host("Failed to set current space \(spaceID) for display \(displayID)") }
 
         // Position window at the origin of the virtual display
         // The window will fill the display as needed
         let targetOrigin = displayBounds.origin
-        if !CGSWindowSpaceBridge.moveWindow(windowID, to: targetOrigin) {
-            MirageLogger.debug(.host,"Failed to move window \(windowID) to position \(targetOrigin)")
-        }
+        if !CGSWindowSpaceBridge.moveWindow(windowID, to: targetOrigin) { MirageLogger.debug(.host, "Failed to move window \(windowID) to position \(targetOrigin)") }
 
         MirageLogger.host("Moved window \(windowID) to space \(spaceID) at \(targetOrigin)")
     }
@@ -108,7 +102,7 @@ actor WindowSpaceManager {
     /// - Parameter windowID: The window to restore
     func restoreWindow(_ windowID: WindowID) async throws {
         guard let savedState = savedStates.removeValue(forKey: windowID) else {
-            MirageLogger.debug(.host,"No saved state for window \(windowID), cannot restore")
+            MirageLogger.debug(.host, "No saved state for window \(windowID), cannot restore")
             throw WindowSpaceError.noOriginalState(windowID)
         }
 
@@ -122,9 +116,7 @@ actor WindowSpaceManager {
         }
 
         // Restore original position
-        if !CGSWindowSpaceBridge.moveWindow(windowID, to: savedState.originalFrame.origin) {
-            MirageLogger.debug(.host,"Failed to restore window \(windowID) position")
-        }
+        if !CGSWindowSpaceBridge.moveWindow(windowID, to: savedState.originalFrame.origin) { MirageLogger.debug(.host, "Failed to restore window \(windowID) position") }
 
         MirageLogger.host("Restored window \(windowID) to frame \(savedState.originalFrame)")
     }
@@ -134,7 +126,7 @@ actor WindowSpaceManager {
         do {
             try await restoreWindow(windowID)
         } catch {
-            MirageLogger.debug(.host,"Failed to restore window \(windowID): \(error)")
+            MirageLogger.debug(.host, "Failed to restore window \(windowID): \(error)")
         }
     }
 
@@ -145,9 +137,7 @@ actor WindowSpaceManager {
     ///   - windowID: The window to position
     ///   - position: Target position within display
     func positionWindow(_ windowID: WindowID, at position: CGPoint) {
-        if !CGSWindowSpaceBridge.moveWindow(windowID, to: position) {
-            MirageLogger.debug(.host,"Failed to position window \(windowID) at \(position)")
-        }
+        if !CGSWindowSpaceBridge.moveWindow(windowID, to: position) { MirageLogger.debug(.host, "Failed to position window \(windowID) at \(position)") }
     }
 
     /// Center a window on a display
@@ -168,23 +158,23 @@ actor WindowSpaceManager {
 
     /// Check if we have saved state for a window
     func hasSavedState(for windowID: WindowID) -> Bool {
-        return savedStates[windowID] != nil
+        savedStates[windowID] != nil
     }
 
     /// Get the saved state for a window
     func getSavedState(for windowID: WindowID) -> SavedWindowState? {
-        return savedStates[windowID]
+        savedStates[windowID]
     }
 
     /// Get all windows with saved states
     func windowsWithSavedStates() -> [WindowID] {
-        return Array(savedStates.keys)
+        Array(savedStates.keys)
     }
 
     /// Get all window IDs that have been moved to the shared virtual display
     /// Alias for windowsWithSavedStates() with clearer semantics for shared display usage
     func getMovedWindowIDs() -> [WindowID] {
-        return Array(savedStates.keys)
+        Array(savedStates.keys)
     }
 
     // MARK: - Cleanup
@@ -211,9 +201,7 @@ actor WindowSpaceManager {
     private func getWindowInfo(_ windowID: WindowID) -> (frame: CGRect, title: String?)? {
         let windowList = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[CFString: Any]]
 
-        guard let info = windowList?.first else {
-            return nil
-        }
+        guard let info = windowList?.first else { return nil }
 
         guard let boundsDict = info[kCGWindowBounds] as? [String: CGFloat],
               let x = boundsDict["X"],
@@ -233,9 +221,7 @@ actor WindowSpaceManager {
     func getWindowsOnDisplay(_ displayID: CGDirectDisplayID) -> [WindowID] {
         let displayBounds = CGDisplayBounds(displayID)
 
-        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[CFString: Any]] else {
-            return []
-        }
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[CFString: Any]] else { return [] }
 
         var windowsOnDisplay: [WindowID] = []
 
@@ -249,9 +235,7 @@ actor WindowSpaceManager {
 
             // Check if window origin is within display bounds
             let windowOrigin = CGPoint(x: x, y: y)
-            if displayBounds.contains(windowOrigin) {
-                windowsOnDisplay.append(windowID)
-            }
+            if displayBounds.contains(windowOrigin) { windowsOnDisplay.append(windowID) }
         }
 
         return windowsOnDisplay
@@ -261,17 +245,17 @@ actor WindowSpaceManager {
 // MARK: - Accessibility Integration
 
 extension WindowSpaceManager {
-
     /// Resize a window using Accessibility API
     /// This is more reliable than CGS APIs for some apps
     func resizeWindowViaAccessibility(
         _ windowID: WindowID,
         to size: CGSize,
         axElement: AXUIElement? = nil
-    ) async -> Bool {
+    )
+    async -> Bool {
         // If no AX element provided, we can't resize via accessibility
         guard let element = axElement else {
-            MirageLogger.debug(.host,"No AXUIElement provided for window \(windowID)")
+            MirageLogger.debug(.host, "No AXUIElement provided for window \(windowID)")
             return false
         }
 
@@ -289,7 +273,7 @@ extension WindowSpaceManager {
             MirageLogger.host("Resized window \(windowID) to \(size) via Accessibility")
             return true
         } else {
-            MirageLogger.debug(.host,"Failed to resize window \(windowID) via Accessibility: \(result)")
+            MirageLogger.debug(.host, "Failed to resize window \(windowID) via Accessibility: \(result)")
             return false
         }
     }

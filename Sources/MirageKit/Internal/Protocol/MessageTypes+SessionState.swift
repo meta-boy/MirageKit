@@ -25,16 +25,20 @@ public enum HostSessionState: String, Codable, Sendable {
     /// Whether credentials are required to reach active state
     public var requiresUnlock: Bool {
         switch self {
-        case .active: return false
-        case .screenLocked, .loginScreen, .sleeping: return true
+        case .active: false
+        case .loginScreen,
+             .screenLocked,
+             .sleeping: true
         }
     }
 
     /// Whether username is needed in addition to password
     public var requiresUsername: Bool {
         switch self {
-        case .loginScreen: return true
-        case .active, .screenLocked, .sleeping: return false
+        case .loginScreen: true
+        case .active,
+             .screenLocked,
+             .sleeping: false
         }
     }
 }

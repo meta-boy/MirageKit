@@ -7,8 +7,8 @@
 //  HEVC encoder extensions.
 //
 
-import Foundation
 import CoreMedia
+import Foundation
 import VideoToolbox
 
 #if os(macOS)
@@ -16,24 +16,26 @@ import ScreenCaptureKit
 
 extension HEVCEncoder {
     static func isKeyframe(_ sampleBuffer: CMSampleBuffer) -> Bool {
-        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[CFString: Any]],
-              let attachment = attachments.first else {
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(
+            sampleBuffer,
+            createIfNecessary: false
+        ) as? [[CFString: Any]],
+            let attachment = attachments.first else {
             return false
         }
 
         // If DependsOnOthers is false or not present, it's a keyframe
-        if let dependsOnOthers = attachment[kCMSampleAttachmentKey_DependsOnOthers] as? Bool {
-            return !dependsOnOthers
-        }
+        if let dependsOnOthers = attachment[kCMSampleAttachmentKey_DependsOnOthers] as? Bool { return !dependsOnOthers }
 
         return true
     }
+
     static func extractParameterSets(from formatDescription: CMFormatDescription) -> Data? {
         var result = Data()
         let startCode: [UInt8] = [0x00, 0x00, 0x00, 0x01]
 
         // Get the number of parameter sets by querying index 0
-        var parameterSetCount: Int = 0
+        var parameterSetCount = 0
         var nalUnitHeaderLength: Int32 = 0
         var status = CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(
             formatDescription,
@@ -45,7 +47,10 @@ extension HEVCEncoder {
         )
 
         // Log the result for debugging
-        MirageLogger.encoder("Parameter set query: status=\(status), count=\(parameterSetCount), nalHeaderLen=\(nalUnitHeaderLength)")
+        MirageLogger
+            .encoder(
+                "Parameter set query: status=\(status), count=\(parameterSetCount), nalHeaderLen=\(nalUnitHeaderLength)"
+            )
 
         guard status == noErr else {
             MirageLogger.error(.encoder, "Failed to get parameter set count: \(status)")
@@ -58,9 +63,9 @@ extension HEVCEncoder {
         }
 
         // Extract each parameter set (VPS at 0, SPS at 1, PPS at 2)
-        for i in 0..<parameterSetCount {
+        for i in 0 ..< parameterSetCount {
             var parameterSetPointer: UnsafePointer<UInt8>?
-            var parameterSetSize: Int = 0
+            var parameterSetSize = 0
 
             status = CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(
                 formatDescription,
@@ -81,9 +86,7 @@ extension HEVCEncoder {
             result.append(pointer, count: parameterSetSize)
         }
 
-        if result.isEmpty {
-            return nil
-        }
+        if result.isEmpty { return nil }
 
         MirageLogger.encoder("Extracted \(parameterSetCount) parameter sets")
         return result

@@ -7,14 +7,14 @@
 //  Frame handling helpers.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 import os
 
 #if os(macOS)
-import ScreenCaptureKit
 import AppKit
+import ScreenCaptureKit
 
 extension WindowCaptureEngine {
     func handleFrame(_ frame: CapturedFrame) {

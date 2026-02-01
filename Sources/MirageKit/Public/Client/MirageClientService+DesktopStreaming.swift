@@ -11,7 +11,7 @@ import CoreGraphics
 import Foundation
 
 @MainActor
-extension MirageClientService {
+public extension MirageClientService {
     /// Start streaming the full desktop (virtual display mirroring mode).
     /// - Parameters:
     ///   - quality: Quality preset for the stream.
@@ -23,7 +23,7 @@ extension MirageClientService {
     ///   - captureSource: Optional desktop capture source override.
     // TODO: HDR support - requires proper virtual display EDR configuration.
     // ///   - preferHDR: Whether to request HDR streaming (Rec. 2020 with PQ).
-    public func startDesktopStream(
+    func startDesktopStream(
         quality: MirageQualityPreset = .medium,
         scaleFactor: CGFloat? = nil,
         displayResolution: CGSize? = nil,
@@ -32,17 +32,14 @@ extension MirageClientService {
         encoderOverrides: MirageEncoderOverrides? = nil,
         captureSource: MirageDesktopCaptureSource? = nil
         // preferHDR: Bool = false
-    ) async throws {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+    )
+    async throws {
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         // Use provided display resolution or detect from main display.
         let effectiveDisplayResolution = scaledDisplayResolution(displayResolution ?? getMainDisplayResolution())
 
-        guard effectiveDisplayResolution.width > 0 && effectiveDisplayResolution.height > 0 else {
-            throw MirageError.protocolError("Invalid display resolution")
-        }
+        guard effectiveDisplayResolution.width > 0, effectiveDisplayResolution.height > 0 else { throw MirageError.protocolError("Invalid display resolution") }
 
         var request = StartDesktopStreamMessage(
             preferredQuality: quality,
@@ -67,31 +64,26 @@ extension MirageClientService {
         // request.preferHDR = preferHDR
 
         var overrides = encoderOverrides ?? MirageEncoderOverrides()
-        if overrides.keyFrameInterval == nil {
-            overrides.keyFrameInterval = keyFrameInterval
-        }
-        if overrides.frameQuality == nil {
-            overrides.frameQuality = keyframeQuality
-        }
+        if overrides.keyFrameInterval == nil { overrides.keyFrameInterval = keyFrameInterval }
+        if overrides.frameQuality == nil { overrides.frameQuality = keyframeQuality }
         applyEncoderOverrides(overrides, to: &request)
 
-        if let captureSource {
-            MirageLogger.client("Requesting desktop capture source: \(captureSource.displayName)")
-        }
+        if let captureSource { MirageLogger.client("Requesting desktop capture source: \(captureSource.displayName)") }
 
         let message = try ControlMessage(type: .startDesktopStream, content: request)
         desktopStreamRequestStartTime = CFAbsoluteTimeGetCurrent()
         MirageLogger.client("Desktop start: request sent")
         connection.send(content: message.serialize(), completion: .idempotent)
 
-        MirageLogger.client("Requested desktop stream: \(Int(effectiveDisplayResolution.width))x\(Int(effectiveDisplayResolution.height))")
+        MirageLogger
+            .client(
+                "Requested desktop stream: \(Int(effectiveDisplayResolution.width))x\(Int(effectiveDisplayResolution.height))"
+            )
     }
 
     /// Stop the current desktop stream.
-    public func stopDesktopStream() async throws {
-        guard case .connected = connectionState, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+    func stopDesktopStream() async throws {
+        guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         guard let streamID = desktopStreamID else {
             MirageLogger.client("No active desktop stream to stop")

@@ -18,13 +18,15 @@ final class StreamFrameInbox: @unchecked Sendable {
     private var headIndex: Int = 0
     private var tailIndex: Int = 0
     private var count: Int = 0
+    // Requires lock.
+    private var isEmpty: Bool { isEmpty }
     private var enqueuedCount: UInt64 = 0
     private var droppedCount: UInt64 = 0
     private var isScheduled: Bool = false
 
     init(capacity: Int = 1) {
         self.capacity = max(1, capacity)
-        self.buffer = Array(repeating: nil, count: self.capacity)
+        buffer = Array(repeating: nil, count: self.capacity)
     }
 
     /// Enqueue a frame, returning true if a drain task should be scheduled.
@@ -40,9 +42,7 @@ final class StreamFrameInbox: @unchecked Sendable {
         tailIndex = (tailIndex + 1) % capacity
         count += 1
         let shouldSchedule = !isScheduled
-        if shouldSchedule {
-            isScheduled = true
-        }
+        if shouldSchedule { isScheduled = true }
         lock.unlock()
         return shouldSchedule
     }
@@ -50,7 +50,7 @@ final class StreamFrameInbox: @unchecked Sendable {
     /// Take the oldest queued frame (FIFO).
     func takeNext() -> CapturedFrame? {
         lock.lock()
-        guard count > 0 else {
+        guard !isEmpty else {
             lock.unlock()
             return nil
         }
@@ -82,7 +82,7 @@ final class StreamFrameInbox: @unchecked Sendable {
 
     func hasPending() -> Bool {
         lock.lock()
-        let hasPending = count > 0
+        let hasPending = !isEmpty
         lock.unlock()
         return hasPending
     }
@@ -98,9 +98,7 @@ final class StreamFrameInbox: @unchecked Sendable {
     func scheduleIfNeeded() -> Bool {
         lock.lock()
         let shouldSchedule = !isScheduled
-        if shouldSchedule {
-            isScheduled = true
-        }
+        if shouldSchedule { isScheduled = true }
         lock.unlock()
         return shouldSchedule
     }
@@ -114,9 +112,7 @@ final class StreamFrameInbox: @unchecked Sendable {
 
     func clear() {
         lock.lock()
-        if count > 0 {
-            droppedCount += UInt64(count)
-        }
+        if !isEmpty { droppedCount += UInt64(count) }
         buffer = Array(repeating: nil, count: capacity)
         headIndex = 0
         tailIndex = 0

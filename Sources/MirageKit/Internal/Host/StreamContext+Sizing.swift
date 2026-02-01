@@ -7,8 +7,8 @@
 //  Capture sizing and queue limit calculations.
 //
 
-import Foundation
 import CoreVideo
+import Foundation
 
 #if os(macOS)
 extension StreamContext {
@@ -29,9 +29,7 @@ extension StreamContext {
         guard bufferSize != currentCaptureSize else { return }
         currentCaptureSize = bufferSize
         currentEncodedSize = bufferSize
-        if streamScale > 0 {
-            baseCaptureSize = CGSize(width: bufferSize.width / streamScale, height: bufferSize.height / streamScale)
-        }
+        if streamScale > 0 { baseCaptureSize = CGSize(width: bufferSize.width / streamScale, height: bufferSize.height / streamScale) }
         updateQueueLimits()
     }
 

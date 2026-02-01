@@ -9,9 +9,9 @@
 //  Unlock manager extensions.
 //
 
-import Foundation
 import AppKit
 import CoreGraphics
+import Foundation
 
 extension UnlockManager {
     // MARK: - Virtual Display Management
@@ -32,7 +32,10 @@ extension UnlockManager {
             // and delivered later when another display (like Jump Desktop) connects
             let loginWindowReady = await waitForLoginWindowReady(timeout: 8.0)
             if !loginWindowReady {
-                MirageLogger.error(.host, "Proceeding with unlock despite loginwindow not being detected - HID events may be queued")
+                MirageLogger.error(
+                    .host,
+                    "Proceeding with unlock despite loginwindow not being detected - HID events may be queued"
+                )
             }
         } catch {
             MirageLogger.error(.host, "Failed to acquire shared virtual display for unlock: \(error)")
@@ -44,7 +47,6 @@ extension UnlockManager {
         await SharedVirtualDisplayManager.shared.releaseDisplayForConsumer(.unlockKeyboard)
         MirageLogger.host("Released shared virtual display for unlock")
     }
-
 }
 
 #endif

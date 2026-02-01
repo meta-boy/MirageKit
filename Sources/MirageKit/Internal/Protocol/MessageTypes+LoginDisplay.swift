@@ -7,8 +7,8 @@
 //  Message type definitions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 // MARK: - Login Display Streaming
 
@@ -26,7 +26,7 @@ struct LoginDisplayReadyMessage: Codable {
     let requiresUsername: Bool
     /// Dimension token for rejecting old-dimension P-frames after resize.
     /// Client should update its reassembler with this token.
-    var dimensionToken: UInt16? = nil
+    var dimensionToken: UInt16?
 }
 
 /// Sent when login display stream stops (user logged in successfully)

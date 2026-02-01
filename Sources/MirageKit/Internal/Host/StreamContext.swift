@@ -5,9 +5,9 @@
 //  Created by Ethan Lipnik on 1/5/26.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 
 #if os(macOS)
 import ScreenCaptureKit
@@ -29,12 +29,13 @@ actor StreamContext {
         case window
         case display
     }
+
     var captureMode: CaptureMode = .window
     /// Max payload size per UDP packet (excludes Mirage header).
     nonisolated let maxPayloadSize: Int
     nonisolated(unsafe) var shouldEncodeFrames: Bool = true
 
-    // Window capture engine (used both for legacy and virtual display modes)
+    /// Window capture engine (used both for legacy and virtual display modes)
     var captureEngine: WindowCaptureEngine?
 
     // Virtual display components (provides window isolation)
@@ -86,7 +87,7 @@ actor StreamContext {
     let qualityFloor: Float
     let qualityCeiling: Float
     let keyframeQualityFloor: Float
-    var pendingKeyframeReason: String? = nil
+    var pendingKeyframeReason: String?
     var pendingKeyframeDeadline: CFAbsoluteTime = 0
     var isKeyframeEncoding: Bool = false
     var pendingKeyframeRequiresFlush: Bool = false
@@ -246,7 +247,7 @@ actor StreamContext {
         encoderConfig: MirageEncoderConfiguration,
         qualityPreset: MirageQualityPreset? = nil,
         streamScale: CGFloat = 1.0,
-        maxPacketSize: Int = MirageDefaultMaxPacketSize,
+        maxPacketSize: Int = mirageDefaultMaxPacketSize,
         additionalFrameFlags: FrameFlags = [],
         adaptiveScaleEnabled: Bool = true,
         latencyMode: MirageStreamLatencyMode = .smoothest
@@ -258,18 +259,18 @@ actor StreamContext {
         self.latencyMode = latencyMode
         let clampedScale = StreamContext.clampStreamScale(streamScale)
         self.streamScale = clampedScale
-        self.requestedStreamScale = clampedScale
+        requestedStreamScale = clampedScale
         self.adaptiveScaleEnabled = adaptiveScaleEnabled
-        self.baseFrameFlags = additionalFrameFlags
-        self.shouldMaintainIdleFrames = additionalFrameFlags.contains(.desktopStream)
-        self.maxPayloadSize = miragePayloadSize(maxPacketSize: maxPacketSize)
-        self.currentFrameRate = encoderConfig.targetFrameRate
-        self.captureFrameRateOverride = nil
-        self.captureFrameRate = encoderConfig.targetFrameRate
-        self.activePixelFormat = encoderConfig.pixelFormat
+        baseFrameFlags = additionalFrameFlags
+        shouldMaintainIdleFrames = additionalFrameFlags.contains(.desktopStream)
+        maxPayloadSize = miragePayloadSize(maxPacketSize: maxPacketSize)
+        currentFrameRate = encoderConfig.targetFrameRate
+        captureFrameRateOverride = nil
+        captureFrameRate = encoderConfig.targetFrameRate
+        activePixelFormat = encoderConfig.pixelFormat
         let prefersSmoothness = latencyMode == .smoothest
         let latencySensitive = latencyMode == .lowestLatency
-        self.useLowLatencyPipeline = latencySensitive || (encoderConfig.targetFrameRate >= 120 && !prefersSmoothness)
+        useLowLatencyPipeline = latencySensitive || (encoderConfig.targetFrameRate >= 120 && !prefersSmoothness)
         let bufferDepth = Self.frameBufferDepth(
             useLowLatencyPipeline: useLowLatencyPipeline,
             frameRate: encoderConfig.targetFrameRate,
@@ -288,25 +289,25 @@ actor StreamContext {
                 latencyMode: latencyMode
             )
         )
-        self.maxInFlightFramesCap = max(1, inFlightCap)
-        self.minInFlightFrames = minInFlight
-        self.maxInFlightFrames = min(minInFlight, maxInFlightFramesCap)
-        self.frameBufferDepth = bufferDepth
-        self.frameInbox = StreamFrameInbox(capacity: bufferDepth)
-        self.maxEncodeTimeMs = encoderConfig.targetFrameRate >= 120 ? 900 : 600
-        self.shouldEncodeFrames = false
+        maxInFlightFramesCap = max(1, inFlightCap)
+        minInFlightFrames = minInFlight
+        maxInFlightFrames = min(minInFlight, maxInFlightFramesCap)
+        frameBufferDepth = bufferDepth
+        frameInbox = StreamFrameInbox(capacity: bufferDepth)
+        maxEncodeTimeMs = encoderConfig.targetFrameRate >= 120 ? 900 : 600
+        shouldEncodeFrames = false
         let qualityFloorFactor: Float = 0.6
         let keyframeFloorFactor: Float = 0.6
-        self.qualityCeiling = encoderConfig.frameQuality
-        self.qualityFloor = max(0.1, encoderConfig.frameQuality * qualityFloorFactor)
-        self.activeQuality = encoderConfig.frameQuality
-        self.keyframeQualityFloor = max(0.1, encoderConfig.keyframeQuality * keyframeFloorFactor)
+        qualityCeiling = encoderConfig.frameQuality
+        qualityFloor = max(0.1, encoderConfig.frameQuality * qualityFloorFactor)
+        activeQuality = encoderConfig.frameQuality
+        keyframeQualityFloor = max(0.1, encoderConfig.keyframeQuality * keyframeFloorFactor)
         let cadence = Self.keyframeCadence(
             intervalFrames: encoderConfig.keyFrameInterval,
             frameRate: encoderConfig.targetFrameRate
         )
-        self.keyframeIntervalSeconds = cadence.interval
-        self.keyframeMaxIntervalSeconds = cadence.maxInterval
+        keyframeIntervalSeconds = cadence.interval
+        keyframeMaxIntervalSeconds = cadence.maxInterval
         frameThrottle.configure(
             targetFrameRate: currentFrameRate,
             captureFrameRate: captureFrameRate,
@@ -335,9 +336,7 @@ actor StreamContext {
     }
 
     func resolvedCaptureFrameRate(for targetFrameRate: Int) -> Int {
-        if let override = captureFrameRateOverride {
-            return override
-        }
+        if let override = captureFrameRateOverride { return override }
         return targetFrameRate
     }
 
@@ -360,34 +359,21 @@ actor StreamContext {
         useLowLatencyPipeline: Bool,
         frameRate: Int,
         latencyMode: MirageStreamLatencyMode
-    ) -> Int {
-        if useLowLatencyPipeline {
-            return frameRate >= 120 ? 2 : 1
-        }
+    )
+    -> Int {
+        if useLowLatencyPipeline { return frameRate >= 120 ? 2 : 1 }
         switch latencyMode {
         case .smoothest:
-            if frameRate >= 120 {
-                return 6
-            }
-            if frameRate >= 60 {
-                return 5
-            }
+            if frameRate >= 120 { return 6 }
+            if frameRate >= 60 { return 5 }
             return 3
         case .balanced:
-            if frameRate >= 120 {
-                return 4
-            }
-            if frameRate >= 60 {
-                return 3
-            }
+            if frameRate >= 120 { return 4 }
+            if frameRate >= 60 { return 3 }
             return 2
         case .lowestLatency:
-            if frameRate >= 120 {
-                return 2
-            }
-            if frameRate >= 60 {
-                return 2
-            }
+            if frameRate >= 120 { return 2 }
+            if frameRate >= 60 { return 2 }
             return 1
         }
     }
@@ -396,31 +382,20 @@ actor StreamContext {
         useLowLatencyPipeline: Bool,
         frameRate: Int,
         latencyMode: MirageStreamLatencyMode
-    ) -> Int {
-        if useLowLatencyPipeline {
-            return frameRate >= 120 ? 2 : 1
-        }
+    )
+    -> Int {
+        if useLowLatencyPipeline { return frameRate >= 120 ? 2 : 1 }
         switch latencyMode {
         case .smoothest:
-            if frameRate >= 120 {
-                return 5
-            }
-            if frameRate >= 60 {
-                return 4
-            }
+            if frameRate >= 120 { return 5 }
+            if frameRate >= 60 { return 4 }
             return 2
         case .balanced:
-            if frameRate >= 120 {
-                return 3
-            }
-            if frameRate >= 60 {
-                return 2
-            }
+            if frameRate >= 120 { return 3 }
+            if frameRate >= 60 { return 2 }
             return 1
         case .lowestLatency:
-            if frameRate >= 120 {
-                return 2
-            }
+            if frameRate >= 120 { return 2 }
             return 1
         }
     }
@@ -429,23 +404,16 @@ actor StreamContext {
         useLowLatencyPipeline: Bool,
         frameRate: Int,
         latencyMode: MirageStreamLatencyMode
-    ) -> Int {
-        if useLowLatencyPipeline {
-            return 1
-        }
+    )
+    -> Int {
+        if useLowLatencyPipeline { return 1 }
         switch latencyMode {
         case .smoothest:
-            if frameRate >= 120 {
-                return 4
-            }
-            if frameRate >= 60 {
-                return 3
-            }
+            if frameRate >= 120 { return 4 }
+            if frameRate >= 60 { return 3 }
             return 1
         case .balanced:
-            if frameRate >= 60 {
-                return 2
-            }
+            if frameRate >= 60 { return 2 }
             return 1
         case .lowestLatency:
             return 1

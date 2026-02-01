@@ -7,32 +7,34 @@
 //  HEVC decoder extensions.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 import VideoToolbox
 
 extension HEVCDecoder {
     private func configureMemoryPoolIfNeeded() {
         guard memoryPool == nil else { return }
         let options: [CFString: Any] = [
-            kCMMemoryPoolOption_AgeOutPeriod: NSNumber(value: memoryPoolAgeOutSeconds)
+            kCMMemoryPoolOption_AgeOutPeriod: NSNumber(value: memoryPoolAgeOutSeconds),
         ]
         memoryPool = CMMemoryPoolCreate(options: options as CFDictionary)
     }
+
     func memoryPoolAllocator() -> CFAllocator {
         configureMemoryPoolIfNeeded()
         guard let memoryPool else { return kCFAllocatorDefault }
         return CMMemoryPoolGetAllocator(memoryPool)
     }
+
     func flushMemoryPool() {
         guard let memoryPool else { return }
         CMMemoryPoolFlush(memoryPool)
     }
+
     func invalidateMemoryPool() {
         guard let memoryPool else { return }
         CMMemoryPoolInvalidate(memoryPool)
         self.memoryPool = nil
     }
 }
-

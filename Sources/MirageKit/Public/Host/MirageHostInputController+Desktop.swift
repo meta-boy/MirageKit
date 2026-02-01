@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -26,68 +26,63 @@ extension MirageHostInputController {
             guard let self else { return }
 
             switch event {
-            case .mouseDown(let e):
-                self.flushPointerLerp()
-                self.clearUnexpectedSystemModifiers()
-                let point = self.screenPoint(e.location, in: bounds)
+            case let .mouseDown(e):
+                flushPointerLerp()
+                clearUnexpectedSystemModifiers()
+                let point = screenPoint(e.location, in: bounds)
                 CGWarpMouseCursorPosition(point)
-                self.injectDesktopMouseEvent(.leftMouseDown, e, at: point)
-            case .mouseUp(let e):
-                self.flushPointerLerp()
-                let point = self.screenPoint(e.location, in: bounds)
-                self.injectDesktopMouseEvent(.leftMouseUp, e, at: point)
-            case .rightMouseDown(let e):
-                self.flushPointerLerp()
-                self.clearUnexpectedSystemModifiers()
-                let point = self.screenPoint(e.location, in: bounds)
+                injectDesktopMouseEvent(.leftMouseDown, e, at: point)
+            case let .mouseUp(e):
+                flushPointerLerp()
+                let point = screenPoint(e.location, in: bounds)
+                injectDesktopMouseEvent(.leftMouseUp, e, at: point)
+            case let .rightMouseDown(e):
+                flushPointerLerp()
+                clearUnexpectedSystemModifiers()
+                let point = screenPoint(e.location, in: bounds)
                 CGWarpMouseCursorPosition(point)
-                self.injectDesktopMouseEvent(.rightMouseDown, e, at: point)
-            case .rightMouseUp(let e):
-                self.flushPointerLerp()
-                let point = self.screenPoint(e.location, in: bounds)
-                self.injectDesktopMouseEvent(.rightMouseUp, e, at: point)
-            case .otherMouseDown(let e):
-                self.flushPointerLerp()
-                self.clearUnexpectedSystemModifiers()
-                let point = self.screenPoint(e.location, in: bounds)
+                injectDesktopMouseEvent(.rightMouseDown, e, at: point)
+            case let .rightMouseUp(e):
+                flushPointerLerp()
+                let point = screenPoint(e.location, in: bounds)
+                injectDesktopMouseEvent(.rightMouseUp, e, at: point)
+            case let .otherMouseDown(e):
+                flushPointerLerp()
+                clearUnexpectedSystemModifiers()
+                let point = screenPoint(e.location, in: bounds)
                 CGWarpMouseCursorPosition(point)
-                self.injectDesktopMouseEvent(.otherMouseDown, e, at: point)
-            case .otherMouseUp(let e):
-                self.flushPointerLerp()
-                let point = self.screenPoint(e.location, in: bounds)
-                self.injectDesktopMouseEvent(.otherMouseUp, e, at: point)
-
-            case .mouseMoved(let e):
-                self.queuePointerLerp(.mouseMoved, e, bounds, windowID: 0, app: nil, isDesktop: true)
-            case .mouseDragged(let e):
-                self.queuePointerLerp(.leftMouseDragged, e, bounds, windowID: 0, app: nil, isDesktop: true)
-            case .rightMouseDragged(let e):
-                self.queuePointerLerp(.rightMouseDragged, e, bounds, windowID: 0, app: nil, isDesktop: true)
-            case .otherMouseDragged(let e):
-                self.queuePointerLerp(.otherMouseDragged, e, bounds, windowID: 0, app: nil, isDesktop: true)
-
-            case .scrollWheel(let e):
-                self.injectDesktopScrollEvent(e, bounds: bounds)
-
-            case .keyDown(let e):
-                self.flushPointerLerp()
+                injectDesktopMouseEvent(.otherMouseDown, e, at: point)
+            case let .otherMouseUp(e):
+                flushPointerLerp()
+                let point = screenPoint(e.location, in: bounds)
+                injectDesktopMouseEvent(.otherMouseUp, e, at: point)
+            case let .mouseMoved(e):
+                queuePointerLerp(.mouseMoved, e, bounds, windowID: 0, app: nil, isDesktop: true)
+            case let .mouseDragged(e):
+                queuePointerLerp(.leftMouseDragged, e, bounds, windowID: 0, app: nil, isDesktop: true)
+            case let .rightMouseDragged(e):
+                queuePointerLerp(.rightMouseDragged, e, bounds, windowID: 0, app: nil, isDesktop: true)
+            case let .otherMouseDragged(e):
+                queuePointerLerp(.otherMouseDragged, e, bounds, windowID: 0, app: nil, isDesktop: true)
+            case let .scrollWheel(e):
+                injectDesktopScrollEvent(e, bounds: bounds)
+            case let .keyDown(e):
+                flushPointerLerp()
                 // Use HID tap for system-level UIs (screensaver, screenshot overlay)
-                self.postHIDKeyEvent(isKeyDown: true, e)
-            case .keyUp(let e):
-                self.flushPointerLerp()
-                self.postHIDKeyEvent(isKeyDown: false, e)
-            case .flagsChanged(let modifiers):
-                self.injectFlagsChanged(modifiers, app: nil)
-
-            case .magnify(let e):
-                self.handleMagnifyGesture(e, windowFrame: bounds)
-
-            case .rotate(let e):
-                self.handleRotateGesture(e, windowFrame: bounds)
-
-            case .windowResize, .relativeResize, .pixelResize:
+                postHIDKeyEvent(isKeyDown: true, e)
+            case let .keyUp(e):
+                flushPointerLerp()
+                postHIDKeyEvent(isKeyDown: false, e)
+            case let .flagsChanged(modifiers):
+                injectFlagsChanged(modifiers, app: nil)
+            case let .magnify(e):
+                handleMagnifyGesture(e, windowFrame: bounds)
+            case let .rotate(e):
+                handleRotateGesture(e, windowFrame: bounds)
+            case .pixelResize,
+                 .relativeResize,
+                 .windowResize:
                 break
-
             case .windowFocus:
                 break
             }
@@ -109,10 +104,17 @@ extension MirageHostInputController {
             mouseType: type,
             mouseCursorPosition: point,
             mouseButton: event.button.cgMouseButton
-        ) else { return }
+        ) else {
+            return
+        }
 
         switch type {
-        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
+        case .leftMouseDown,
+             .leftMouseUp,
+             .otherMouseDown,
+             .otherMouseUp,
+             .rightMouseDown,
+             .rightMouseUp:
             cgEvent.setIntegerValueField(.mouseEventClickState, value: Int64(event.clickCount))
         default:
             break
@@ -128,7 +130,9 @@ extension MirageHostInputController {
             keyboardEventSource: nil,
             virtualKey: CGKeyCode(event.keyCode),
             keyDown: isKeyDown
-        ) else { return }
+        ) else {
+            return
+        }
 
         cgEvent.flags = event.modifiers.cgEventFlags
         cgEvent.post(tap: .cghidEventTap)
@@ -136,11 +140,10 @@ extension MirageHostInputController {
 
     /// Inject scroll event for desktop streaming.
     private func injectDesktopScrollEvent(_ event: MirageScrollEvent, bounds: CGRect) {
-        let scrollPoint: CGPoint
-        if let normalizedLocation = event.location {
-            scrollPoint = screenPoint(normalizedLocation, in: bounds)
+        let scrollPoint: CGPoint = if let normalizedLocation = event.location {
+            screenPoint(normalizedLocation, in: bounds)
         } else {
-            scrollPoint = CGPoint(x: bounds.midX, y: bounds.midY)
+            CGPoint(x: bounds.midX, y: bounds.midY)
         }
 
         guard let cgEvent = CGEvent(
@@ -150,12 +153,13 @@ extension MirageHostInputController {
             wheel1: Int32(event.deltaY),
             wheel2: Int32(event.deltaX),
             wheel3: 0
-        ) else { return }
+        ) else {
+            return
+        }
 
         cgEvent.location = scrollPoint
         postEvent(cgEvent)
     }
-
 }
 
 #endif

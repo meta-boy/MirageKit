@@ -86,18 +86,18 @@ public struct MirageCloudKitHostInfo: Identifiable, Hashable, Sendable {
 
 // MARK: - CloudKit Record Keys
 
-extension MirageCloudKitHostInfo {
+public extension MirageCloudKitHostInfo {
     /// Keys used for CloudKit record fields.
-    public enum RecordKey: String {
-        case deviceID = "deviceID"
-        case name = "name"
-        case deviceType = "deviceType"
-        case maxFrameRate = "maxFrameRate"
-        case supportsHEVC = "supportsHEVC"
-        case supportsP3 = "supportsP3"
-        case maxStreams = "maxStreams"
-        case protocolVersion = "protocolVersion"
-        case lastSeen = "lastSeen"
-        case createdAt = "createdAt"
+    enum RecordKey: String {
+        case deviceID
+        case name
+        case deviceType
+        case maxFrameRate
+        case supportsHEVC
+        case supportsP3
+        case maxStreams
+        case protocolVersion
+        case lastSeen
+        case createdAt
     }
 }

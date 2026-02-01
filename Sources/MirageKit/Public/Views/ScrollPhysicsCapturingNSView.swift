@@ -109,9 +109,7 @@ final class ScrollPhysicsCapturingNSView: NSView {
         super.layout()
 
         // Ensure documentView maintains its large size (NSScrollView may resize it)
-        if documentView.frame.size.width != scrollableSize || documentView.frame.size.height != scrollableSize {
-            documentView.frame = NSRect(x: 0, y: 0, width: scrollableSize, height: scrollableSize)
-        }
+        if documentView.frame.size.width != scrollableSize || documentView.frame.size.height != scrollableSize { documentView.frame = NSRect(x: 0, y: 0, width: scrollableSize, height: scrollableSize) }
 
         recenterIfNeeded(force: lastScrollPosition == .zero)
     }
@@ -135,14 +133,15 @@ final class ScrollPhysicsCapturingNSView: NSView {
         }
     }
 
-    @objc private func boundsDidChange(_ notification: Notification) {
+    @objc
+    private func boundsDidChange(_: Notification) {
         // Skip sending events during recenter operation
         guard !isRecentering else { return }
 
         let currentPos = scrollView.documentVisibleRect.origin
         // Calculate deltas (content moving = scroll in opposite direction)
         let deltaX = lastScrollPosition.x - currentPos.x
-        let deltaY = currentPos.y - lastScrollPosition.y  // NSScrollView Y is flipped
+        let deltaY = currentPos.y - lastScrollPosition.y // NSScrollView Y is flipped
         lastScrollPosition = currentPos
 
         if deltaX != 0 || deltaY != 0 {
@@ -154,7 +153,7 @@ final class ScrollPhysicsCapturingNSView: NSView {
         }
     }
 
-    // Override scrollWheel to capture phases and handle momentum
+    /// Override scrollWheel to capture phases and handle momentum
     override func scrollWheel(with event: NSEvent) {
         // Extract phases from NSEvent
         let phase = MirageScrollPhase(from: event.phase)
@@ -165,7 +164,7 @@ final class ScrollPhysicsCapturingNSView: NSView {
         if bounds.width > 0 && bounds.height > 0 {
             lastMouseLocation = CGPoint(
                 x: locationInView.x / bounds.width,
-                y: 1.0 - (locationInView.y / bounds.height)  // Flip Y for normalized coords
+                y: 1.0 - (locationInView.y / bounds.height) // Flip Y for normalized coords
             )
         }
 
@@ -345,12 +344,10 @@ final class ScrollPhysicsCapturingNSView: NSView {
     /// Normalize mouse location to 0-1 range within view bounds
     private func normalizedLocation(from event: NSEvent) -> CGPoint {
         let locationInView = convert(event.locationInWindow, from: nil)
-        guard bounds.width > 0, bounds.height > 0 else {
-            return CGPoint(x: 0.5, y: 0.5)
-        }
+        guard bounds.width > 0, bounds.height > 0 else { return CGPoint(x: 0.5, y: 0.5) }
         return CGPoint(
             x: locationInView.x / bounds.width,
-            y: 1.0 - (locationInView.y / bounds.height)  // Flip Y for normalized coords
+            y: 1.0 - (locationInView.y / bounds.height) // Flip Y for normalized coords
         )
     }
 

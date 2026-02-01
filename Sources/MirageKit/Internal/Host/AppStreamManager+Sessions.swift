@@ -8,10 +8,10 @@
 //
 
 #if os(macOS)
-import Foundation
 import AppKit
+import Foundation
 
-extension AppStreamManager {
+public extension AppStreamManager {
     // MARK: - Session Management
 
     /// Start streaming an app to a client
@@ -22,13 +22,14 @@ extension AppStreamManager {
     ///   - clientID: The client receiving the stream
     ///   - clientName: Display name of the client
     /// - Returns: The created session, or nil if app is not available
-    public func startAppSession(
+    func startAppSession(
         bundleIdentifier: String,
         appName: String,
         appPath: String,
         clientID: UUID,
         clientName: String
-    ) -> MirageAppStreamSession? {
+    )
+    -> MirageAppStreamSession? {
         let key = bundleIdentifier.lowercased()
 
         // Check if already streaming (and not expired reservation)
@@ -56,13 +57,13 @@ extension AppStreamManager {
     }
 
     /// Update session state to streaming
-    public func markSessionStreaming(_ bundleIdentifier: String) {
+    func markSessionStreaming(_ bundleIdentifier: String) {
         let key = bundleIdentifier.lowercased()
         sessions[key]?.state = .streaming
     }
 
     /// Add a window stream to an app session
-    public func addWindowToSession(
+    func addWindowToSession(
         bundleIdentifier: String,
         windowID: WindowID,
         streamID: StreamID,
@@ -90,7 +91,7 @@ extension AppStreamManager {
     }
 
     /// Remove a window from an app session (entering cooldown)
-    public func removeWindowFromSession(
+    func removeWindowFromSession(
         bundleIdentifier: String,
         windowID: WindowID,
         enterCooldown: Bool
@@ -108,13 +109,13 @@ extension AppStreamManager {
     }
 
     /// Cancel cooldown for a window (e.g., user clicked "Close Now")
-    public func cancelCooldown(bundleIdentifier: String, windowID: WindowID) {
+    func cancelCooldown(bundleIdentifier: String, windowID: WindowID) {
         let key = bundleIdentifier.lowercased()
         sessions[key]?.windowsInCooldown.removeValue(forKey: windowID)
     }
 
     /// Handle client disconnect (start reservation period)
-    public func handleClientDisconnect(clientID: UUID) {
+    func handleClientDisconnect(clientID: UUID) {
         for (key, session) in sessions {
             if session.clientID == clientID {
                 let reservationExpires = Date().addingTimeInterval(disconnectReservationDuration)
@@ -126,7 +127,7 @@ extension AppStreamManager {
     }
 
     /// Handle client reconnect (resume session if within reservation)
-    public func handleClientReconnect(clientID: UUID) -> [String] {
+    func handleClientReconnect(clientID: UUID) -> [String] {
         var resumedApps: [String] = []
 
         for (key, session) in sessions {
@@ -142,23 +143,19 @@ extension AppStreamManager {
     }
 
     /// End an app streaming session
-    public func endSession(bundleIdentifier: String) {
+    func endSession(bundleIdentifier: String) {
         let key = bundleIdentifier.lowercased()
-        if let session = sessions.removeValue(forKey: key) {
-            logger.info("Ended app session: \(session.appName)")
-        }
+        if let session = sessions.removeValue(forKey: key) { logger.info("Ended app session: \(session.appName)") }
 
         // Stop monitoring if no more sessions
-        if sessions.isEmpty {
-            stopMonitoring()
-        }
+        if sessions.isEmpty { stopMonitoring() }
     }
 
     /// End all sessions for a client
-    public func endSessionsForClient(_ clientID: UUID) {
+    func endSessionsForClient(_ clientID: UUID) {
         let appsToRemove = sessions.values
             .filter { $0.clientID == clientID }
-            .map { $0.bundleIdentifier }
+            .map(\.bundleIdentifier)
 
         for app in appsToRemove {
             endSession(bundleIdentifier: app)
@@ -166,22 +163,21 @@ extension AppStreamManager {
     }
 
     /// Get session for an app
-    public func getSession(bundleIdentifier: String) -> MirageAppStreamSession? {
+    func getSession(bundleIdentifier: String) -> MirageAppStreamSession? {
         sessions[bundleIdentifier.lowercased()]
     }
 
     /// Get all active sessions
-    public func getAllSessions() -> [MirageAppStreamSession] {
+    func getAllSessions() -> [MirageAppStreamSession] {
         Array(sessions.values)
     }
 
     /// Get session containing a specific window
-    public func getSessionForWindow(_ windowID: WindowID) -> MirageAppStreamSession? {
+    func getSessionForWindow(_ windowID: WindowID) -> MirageAppStreamSession? {
         sessions.values.first { session in
             session.windowStreams[windowID] != nil || session.windowsInCooldown[windowID] != nil
         }
     }
-
 }
 
 #endif

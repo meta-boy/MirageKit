@@ -13,7 +13,12 @@ import Network
 #if os(macOS)
 @MainActor
 extension MirageHostService {
-    func handleClientMessage(_ message: ControlMessage, from client: MirageConnectedClient, connection: NWConnection) async {
+    func handleClientMessage(
+        _ message: ControlMessage,
+        from client: MirageConnectedClient,
+        connection: NWConnection
+    )
+    async {
         MirageLogger.host("Received message type: \(message.type) from \(client.name)")
         switch message.type {
         case .startStream:
@@ -24,9 +29,7 @@ extension MirageHostService {
                 await refreshSessionStateIfNeeded()
                 guard sessionState == .active else {
                     MirageLogger.host("Rejecting startStream while session is \(sessionState)")
-                    if let clientContext = clientsByConnection[ObjectIdentifier(connection)] {
-                        await sendSessionState(to: clientContext)
-                    }
+                    if let clientContext = clientsByConnection[ObjectIdentifier(connection)] { await sendSessionState(to: clientContext) }
                     return
                 }
 
@@ -50,7 +53,8 @@ extension MirageHostService {
                         width: CGFloat(pixelWidth) / scaleFactor,
                         height: CGFloat(pixelHeight) / scaleFactor
                     )
-                    MirageLogger.host("Client initial size (legacy): \(pixelWidth)x\(pixelHeight) px -> \(pointSize) pts")
+                    MirageLogger
+                        .host("Client initial size (legacy): \(pixelWidth)x\(pixelHeight) px -> \(pointSize) pts")
                     onResizeWindowForStream?(window, pointSize)
                 }
 
@@ -68,7 +72,10 @@ extension MirageHostService {
                 let requestedScale = request.streamScale ?? 1.0
                 let adaptiveScaleEnabled = request.adaptiveScaleEnabled ?? true
                 let latencyMode = request.latencyMode ?? .smoothest
-                MirageLogger.host("Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)")
+                MirageLogger
+                    .host(
+                        "Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)"
+                    )
 
                 try await startStream(
                     for: window,
@@ -96,7 +103,10 @@ extension MirageHostService {
         case .displayResolutionChange:
             do {
                 let request = try message.decode(DisplayResolutionChangeMessage.self)
-                MirageLogger.host("Client requested display resolution change for stream \(request.streamID): \(request.displayWidth)x\(request.displayHeight)")
+                MirageLogger
+                    .host(
+                        "Client requested display resolution change for stream \(request.streamID): \(request.displayWidth)x\(request.displayHeight)"
+                    )
                 await handleDisplayResolutionChange(
                     streamID: request.streamID,
                     newResolution: CGSize(width: request.displayWidth, height: request.displayHeight)
@@ -108,7 +118,8 @@ extension MirageHostService {
         case .streamScaleChange:
             do {
                 let request = try message.decode(StreamScaleChangeMessage.self)
-                MirageLogger.host("Client requested stream scale change for stream \(request.streamID): \(request.streamScale)")
+                MirageLogger
+                    .host("Client requested stream scale change for stream \(request.streamID): \(request.streamScale)")
                 await handleStreamScaleChange(
                     streamID: request.streamID,
                     streamScale: request.streamScale,
@@ -121,7 +132,10 @@ extension MirageHostService {
         case .streamRefreshRateChange:
             do {
                 let request = try message.decode(StreamRefreshRateChangeMessage.self)
-                MirageLogger.host("Client requested refresh rate override for stream \(request.streamID): \(request.maxRefreshRate)Hz")
+                MirageLogger
+                    .host(
+                        "Client requested refresh rate override for stream \(request.streamID): \(request.maxRefreshRate)Hz"
+                    )
                 await handleStreamRefreshRateChange(
                     streamID: request.streamID,
                     maxRefreshRate: request.maxRefreshRate,
@@ -133,9 +147,7 @@ extension MirageHostService {
 
         case .stopStream:
             if let request = try? message.decode(StopStreamMessage.self) {
-                if let session = activeStreams.first(where: { $0.id == request.streamID }) {
-                    await stopStream(session, minimizeWindow: request.minimizeWindow)
-                }
+                if let session = activeStreams.first(where: { $0.id == request.streamID }) { await stopStream(session, minimizeWindow: request.minimizeWindow) }
             }
 
         case .keyframeRequest:
@@ -151,11 +163,19 @@ extension MirageHostService {
         case .inputEvent:
             do {
                 let inputMessage = try message.decode(InputEventMessage.self)
-                if case .windowResize(let resizeEvent) = inputMessage.event {
-                    MirageLogger.host("Received RESIZE event: \(resizeEvent.newSize) pts, scale: \(resizeEvent.scaleFactor), pixels: \(resizeEvent.pixelSize)")
+                if case let .windowResize(resizeEvent) = inputMessage.event {
+                    MirageLogger
+                        .host(
+                            "Received RESIZE event: \(resizeEvent.newSize) pts, scale: \(resizeEvent.scaleFactor), pixels: \(resizeEvent.pixelSize)"
+                        )
                 }
                 if let session = activeStreams.first(where: { $0.id == inputMessage.streamID }) {
-                    delegate?.hostService(self, didReceiveInputEvent: inputMessage.event, forWindow: session.window, fromClient: client)
+                    delegate?.hostService(
+                        self,
+                        didReceiveInputEvent: inputMessage.event,
+                        forWindow: session.window,
+                        fromClient: client
+                    )
                 } else {
                     MirageLogger.host("No session found for stream \(inputMessage.streamID)")
                 }
@@ -164,9 +184,7 @@ extension MirageHostService {
             }
 
         case .disconnect:
-            if let disconnect = try? message.decode(DisconnectMessage.self) {
-                MirageLogger.host("Client \(client.name) disconnected: \(disconnect.reason.rawValue)")
-            } else {
+            if let disconnect = try? message.decode(DisconnectMessage.self) { MirageLogger.host("Client \(client.name) disconnected: \(disconnect.reason.rawValue)") } else {
                 MirageLogger.host("Client \(client.name) disconnected")
             }
             await disconnectClient(client)
@@ -207,10 +225,8 @@ extension MirageHostService {
         }
     }
 
-    func sendVideoData(_ data: Data, header: FrameHeader, to client: MirageConnectedClient) async {
-        if let clientContext = clientsByConnection.values.first(where: { $0.client.id == client.id }) {
-            clientContext.sendVideoPacket(data)
-        }
+    func sendVideoData(_ data: Data, header _: FrameHeader, to client: MirageConnectedClient) async {
+        if let clientContext = clientsByConnection.values.first(where: { $0.client.id == client.id }) { clientContext.sendVideoPacket(data) }
     }
 }
 #endif

@@ -8,8 +8,8 @@
 //
 
 #if os(macOS)
-import Foundation
 import CoreGraphics
+import Foundation
 
 extension SharedVirtualDisplayManager {
     // MARK: - Private Helpers
@@ -26,7 +26,7 @@ extension SharedVirtualDisplayManager {
     /// 2880×1800 (16:10) - balanced between 4K (text too small) and 1080p (text too big)
     /// With HiDPI this gives 1440×900 logical points
     func calculateOptimalResolution() -> CGSize {
-        return CGSize(width: 2880, height: 1800)
+        CGSize(width: 2880, height: 1800)
     }
 
     /// Check if display needs to be resized
@@ -41,7 +41,8 @@ extension SharedVirtualDisplayManager {
         newResolution: CGSize,
         refreshRate: Int,
         colorSpace: MirageColorSpace
-    ) async -> Bool {
+    )
+    async -> Bool {
         guard let display = sharedDisplay else { return false }
         guard display.colorSpace == colorSpace else { return false }
 
@@ -75,7 +76,12 @@ extension SharedVirtualDisplayManager {
 
     /// Create the shared virtual display
     // TODO: HDR support - add hdr: Bool parameter when EDR configuration is figured out
-    func createDisplay(resolution: CGSize, refreshRate: Int, colorSpace: MirageColorSpace) async throws -> ManagedDisplayContext {
+    func createDisplay(
+        resolution: CGSize,
+        refreshRate: Int,
+        colorSpace: MirageColorSpace
+    )
+    async throws -> ManagedDisplayContext {
         displayCounter += 1
         displayGeneration &+= 1
         let generation = displayGeneration
@@ -86,7 +92,7 @@ extension SharedVirtualDisplayManager {
             width: Int(resolution.width),
             height: Int(resolution.height),
             refreshRate: Double(refreshRate),
-            hiDPI: true,  // Enable HiDPI for Retina-quality rendering
+            hiDPI: true, // Enable HiDPI for Retina-quality rendering
             colorSpace: colorSpace
         ) else {
             throw SharedDisplayError.creationFailed("CGVirtualDisplay creation returned nil")
@@ -102,9 +108,7 @@ extension SharedVirtualDisplayManager {
         // Get the space ID for the display
         let spaceID = CGVirtualDisplayBridge.getSpaceForDisplay(displayContext.displayID)
 
-        guard spaceID != 0 else {
-            throw SharedDisplayError.spaceNotFound(displayContext.displayID)
-        }
+        guard spaceID != 0 else { throw SharedDisplayError.spaceNotFound(displayContext.displayID) }
 
         let managedContext = ManagedDisplayContext(
             displayID: displayContext.displayID,
@@ -117,7 +121,10 @@ extension SharedVirtualDisplayManager {
             displayRef: UncheckedSendableBox(displayContext.display)
         )
 
-        MirageLogger.host("Created shared virtual display: \(Int(resolution.width))x\(Int(resolution.height))@\(refreshRate)Hz, color=\(displayContext.colorSpace.displayName), displayID=\(displayContext.displayID), spaceID=\(spaceID), generation=\(generation), bounds=\(readyBounds)")
+        MirageLogger
+            .host(
+                "Created shared virtual display: \(Int(resolution.width))x\(Int(resolution.height))@\(refreshRate)Hz, color=\(displayContext.colorSpace.displayName), displayID=\(displayContext.displayID), spaceID=\(spaceID), generation=\(generation), bounds=\(readyBounds)"
+            )
 
         await MainActor.run {
             VirtualDisplayKeepaliveController.shared.start(
@@ -132,7 +139,12 @@ extension SharedVirtualDisplayManager {
 
     /// Recreate the display at a new resolution
     // TODO: HDR support - add hdr: Bool parameter when EDR configuration is figured out
-    func recreateDisplay(newResolution: CGSize, refreshRate: Int, colorSpace: MirageColorSpace) async throws -> ManagedDisplayContext {
+    func recreateDisplay(
+        newResolution: CGSize,
+        refreshRate: Int,
+        colorSpace: MirageColorSpace
+    )
+    async throws -> ManagedDisplayContext {
         // Destroy current display
         await destroyDisplay()
 
@@ -170,6 +182,5 @@ extension SharedVirtualDisplayManager {
 
         MirageLogger.error(.host, "WARNING: Virtual display \(displayID) still exists after destruction!")
     }
-
 }
 #endif

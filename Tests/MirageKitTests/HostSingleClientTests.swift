@@ -7,8 +7,8 @@
 //  Single-client enforcement for host connections.
 //
 
-import Testing
 @testable import MirageKit
+import Testing
 
 #if os(macOS)
 import Network

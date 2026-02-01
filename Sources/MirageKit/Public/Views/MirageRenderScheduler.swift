@@ -12,7 +12,7 @@ import Foundation
 import QuartzCore
 #endif
 
-// @unchecked Sendable: state access is guarded by NSLock and views are used on MainActor only.
+/// @unchecked Sendable: state access is guarded by NSLock and views are used on MainActor only.
 final class MirageRenderScheduler: @unchecked Sendable {
     static let shared = MirageRenderScheduler()
 
@@ -120,7 +120,7 @@ final class MirageRenderScheduler: @unchecked Sendable {
                     view.noteScheduledDraw(signalTime: signalTime)
                     view.draw()
                 } else {
-                    self.completeDraw(for: streamID)
+                    completeDraw(for: streamID)
                 }
             }
         }
@@ -140,9 +140,7 @@ final class MirageRenderScheduler: @unchecked Sendable {
 
         state.inFlightCount = max(0, state.inFlightCount - 1)
         state.renderCount &+= 1
-        if state.renderLogStartTime == 0 {
-            state.renderLogStartTime = now
-        } else if now - state.renderLogStartTime > 2.0 {
+        if state.renderLogStartTime == 0 { state.renderLogStartTime = now } else if now - state.renderLogStartTime > 2.0 {
             let elapsed = now - state.renderLogStartTime
             renderFPS = Double(state.renderCount) / elapsed
             state.renderCount = 0
@@ -172,7 +170,7 @@ final class MirageRenderScheduler: @unchecked Sendable {
                     view.noteScheduledDraw(signalTime: now)
                     view.draw()
                 } else {
-                    self.completeDraw(for: streamID)
+                    completeDraw(for: streamID)
                 }
             }
         }

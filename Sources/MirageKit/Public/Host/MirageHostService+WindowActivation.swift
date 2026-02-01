@@ -27,11 +27,11 @@ extension MirageHostService {
         let result = windowActivator.activate(app: app, window: window, axWindow: axWindow)
 
         switch result {
-        case .success(let method):
+        case let .success(method):
             MirageLogger.host("Window activated via \(method)")
-        case .partialSuccess(let method, let message):
+        case let .partialSuccess(method, message):
             MirageLogger.host("Window partially activated via \(method): \(message)")
-        case .failure(_, let error):
+        case let .failure(_, error):
             MirageLogger.error(.host, "Window activation failed: \(error)")
         }
     }
@@ -74,9 +74,7 @@ extension MirageHostService {
         }
 
         // Single window - use it directly
-        if axWindows.count == 1 {
-            return axWindows[0]
-        }
+        if axWindows.count == 1 { return axWindows[0] }
 
         // Get window position from CGWindowList using the known window ID
         guard let windowList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]],
@@ -96,9 +94,7 @@ extension MirageHostService {
                 var position = CGPoint.zero
                 AXValueGetValue(positionValue as! AXValue, .cgPoint, &position)
 
-                if abs(position.x - windowX) < 10 && abs(position.y - windowY) < 10 {
-                    return axWindow
-                }
+                if abs(position.x - windowX) < 10, abs(position.y - windowY) < 10 { return axWindow }
             }
         }
 

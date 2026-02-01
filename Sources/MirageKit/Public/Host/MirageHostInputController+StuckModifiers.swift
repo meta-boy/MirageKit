@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -43,9 +43,7 @@ extension MirageHostInputController {
 
         // Check each active modifier individually for staleness
         for (flag, timestamp) in modifierLastEventTimes {
-            if now - timestamp > modifierStuckTimeoutSeconds {
-                stuckModifiers.insert(flag)
-            }
+            if now - timestamp > modifierStuckTimeoutSeconds { stuckModifiers.insert(flag) }
         }
 
         if !stuckModifiers.isEmpty {
@@ -64,12 +62,10 @@ extension MirageHostInputController {
 
         var actualModifiers: MirageModifierFlags = []
         for (cgFlag, mirageFlag) in Self.cgFlagToMirageFlag {
-            if systemFlags.contains(cgFlag) {
-                actualModifiers.insert(mirageFlag)
-            }
+            if systemFlags.contains(cgFlag) { actualModifiers.insert(mirageFlag) }
         }
 
-        if !actualModifiers.isEmpty && lastSentModifiers.isEmpty {
+        if !actualModifiers.isEmpty, lastSentModifiers.isEmpty {
             MirageLogger.host("Clearing unexpected system modifiers: \(actualModifiers)")
 
             for (flag, keyCode) in Self.modifierKeyCodes where actualModifiers.contains(flag) {
@@ -94,30 +90,29 @@ extension MirageHostInputController {
         accessibilityQueue.async { [weak self] in
             guard let self else { return }
 
-            guard !self.lastSentModifiers.isEmpty || !self.heldModifierKeyCodes.isEmpty else { return }
+            guard !lastSentModifiers.isEmpty || !heldModifierKeyCodes.isEmpty else { return }
 
             MirageLogger.host("Clearing all modifiers on session change")
 
-            for keyCode in self.heldModifierKeyCodes {
+            for keyCode in heldModifierKeyCodes {
                 if let keyEvent = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
                     keyEvent.flags = []
-                    self.postEvent(keyEvent)
+                    postEvent(keyEvent)
                 }
             }
-            self.heldModifierKeyCodes.removeAll()
+            heldModifierKeyCodes.removeAll()
 
             if let cgEvent = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) {
                 cgEvent.type = .flagsChanged
                 cgEvent.flags = []
-                self.postEvent(cgEvent)
+                postEvent(cgEvent)
             }
 
-            self.lastSentModifiers = []
-            self.modifierLastEventTimes.removeAll()
-            self.stopModifierResetTimer()
+            lastSentModifiers = []
+            modifierLastEventTimes.removeAll()
+            stopModifierResetTimer()
         }
     }
-
 }
 
 #endif

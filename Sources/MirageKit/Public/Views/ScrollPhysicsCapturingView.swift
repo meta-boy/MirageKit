@@ -12,7 +12,6 @@ import UIKit
 /// The actual content (Metal view) stays pinned while scroll events are forwarded
 /// to the host with native momentum and bounce physics.
 final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
-
     // MARK: - Safe Area Override
 
     /// Override safe area insets to ensure content fills entire screen
@@ -88,7 +87,7 @@ final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureR
 
         // CRITICAL: Only accept trackpad/mouse wheel scrolling, not direct touch
         scrollView.panGestureRecognizer.allowedTouchTypes = [
-            NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)
+            NSNumber(value: UITouch.TouchType.indirectPointer.rawValue),
         ]
 
         // Add scroll content (large enough to allow scrolling in all directions)
@@ -177,12 +176,10 @@ final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureR
         let momentumPhase: MirageScrollPhase = scrollView.isDecelerating ? .changed : .none
 
         // Send scroll delta if there's actual movement
-        if deltaX != 0 || deltaY != 0 {
-            onScroll?(deltaX, deltaY, phase, momentumPhase)
-        }
+        if deltaX != 0 || deltaY != 0 { onScroll?(deltaX, deltaY, phase, momentumPhase) }
     }
 
-    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    func scrollViewDidEndDragging(_: UIScrollView, willDecelerate decelerate: Bool) {
         isTracking = false
 
         if !decelerate {
@@ -192,13 +189,13 @@ final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureR
         }
     }
 
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    func scrollViewDidEndDecelerating(_: UIScrollView) {
         // Momentum ended, send final event and recenter
         onScroll?(0, 0, .none, .ended)
         recenterIfNeeded()
     }
 
-    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+    func scrollViewDidEndScrollingAnimation(_: UIScrollView) {
         // Animation ended (e.g., from programmatic scroll)
         recenterIfNeeded()
     }
@@ -206,9 +203,10 @@ final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureR
     // MARK: - UIGestureRecognizerDelegate
 
     func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
+        _: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer
+    )
+    -> Bool {
         // Allow pinch + rotation simultaneously (map-style interaction)
         // Allow gestures to work alongside scroll view's pan
         true
@@ -216,7 +214,8 @@ final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureR
 
     // MARK: - Trackpad Gesture Handlers
 
-    @objc private func handleRotation(_ gesture: UIRotationGestureRecognizer) {
+    @objc
+    private func handleRotation(_ gesture: UIRotationGestureRecognizer) {
         let phase = MirageScrollPhase(gestureState: gesture.state)
 
         switch gesture.state {
@@ -230,7 +229,8 @@ final class ScrollPhysicsCapturingView: UIView, UIScrollViewDelegate, UIGestureR
             lastRotationAngle = gesture.rotation
             onRotation?(rotationDelta, phase)
 
-        case .ended, .cancelled:
+        case .cancelled,
+             .ended:
             onRotation?(0, phase)
             lastRotationAngle = 0
 

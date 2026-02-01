@@ -17,9 +17,7 @@ extension StreamContext {
         guard isRunning, let captureEngine else { return }
         let clamped = max(1, fps)
         let desiredCaptureRate = resolvedCaptureFrameRate(for: clamped)
-        if desiredCaptureRate != captureFrameRate {
-            try await captureEngine.updateFrameRate(desiredCaptureRate)
-        }
+        if desiredCaptureRate != captureFrameRate { try await captureEngine.updateFrameRate(desiredCaptureRate) }
         currentFrameRate = clamped
         encoderConfig = encoderConfig.withTargetFrameRate(clamped)
         await refreshCaptureCadence()
@@ -59,15 +57,14 @@ extension StreamContext {
         lastWindowFrame = windowFrame
         captureMode = .window
 
-        MirageLogger.stream("Updating stream to scaled resolution: \(width)x\(height) (capture \(captureTarget.width)x\(captureTarget.height), scale: \(captureTarget.hostScaleFactor), from \(windowFrame.width)x\(windowFrame.height) pts) (frames paused)")
+        MirageLogger
+            .stream(
+                "Updating stream to scaled resolution: \(width)x\(height) (capture \(captureTarget.width)x\(captureTarget.height), scale: \(captureTarget.hostScaleFactor), from \(windowFrame.width)x\(windowFrame.height) pts) (frames paused)"
+            )
 
-        if let captureEngine {
-            try await captureEngine.updateDimensions(windowFrame: windowFrame, outputScale: streamScale)
-        }
+        if let captureEngine { try await captureEngine.updateDimensions(windowFrame: windowFrame, outputScale: streamScale) }
 
-        if let encoder {
-            try await encoder.updateDimensions(width: width, height: height)
-        }
+        if let encoder { try await encoder.updateDimensions(width: width, height: height) }
 
         await encoder?.forceKeyframe()
 
@@ -119,11 +116,12 @@ extension StreamContext {
         streamScale = resolvedScaleForUpdate
         captureMode = .display
 
-        MirageLogger.stream("Updating to client-requested resolution: \(width)x\(height) (scaled \(scaledWidth)x\(scaledHeight)) (frames paused)")
+        MirageLogger
+            .stream(
+                "Updating to client-requested resolution: \(width)x\(height) (scaled \(scaledWidth)x\(scaledHeight)) (frames paused)"
+            )
 
-        if let captureEngine {
-            try await captureEngine.updateResolution(width: scaledWidth, height: scaledHeight)
-        }
+        if let captureEngine { try await captureEngine.updateResolution(width: scaledWidth, height: scaledHeight) }
 
         currentCaptureSize = outputSize
         currentEncodedSize = outputSize
@@ -156,9 +154,7 @@ extension StreamContext {
         resetPipelineStateForReconfiguration(reason: "stream scale update")
 
         let derivedBaseSize: CGSize
-        if baseCaptureSize != .zero {
-            derivedBaseSize = baseCaptureSize
-        } else if previousScale > 0 {
+        if baseCaptureSize != .zero { derivedBaseSize = baseCaptureSize } else if previousScale > 0 {
             let fallbackSize = currentCaptureSize == .zero ? currentEncodedSize : currentCaptureSize
             derivedBaseSize = CGSize(
                 width: fallbackSize.width / previousScale,
@@ -189,9 +185,7 @@ extension StreamContext {
             case .display:
                 try await captureEngine.updateResolution(width: scaledWidth, height: scaledHeight)
             case .window:
-                if !lastWindowFrame.isEmpty {
-                    try await captureEngine.updateDimensions(windowFrame: lastWindowFrame, outputScale: streamScale)
-                }
+                if !lastWindowFrame.isEmpty { try await captureEngine.updateDimensions(windowFrame: lastWindowFrame, outputScale: streamScale) }
             }
         }
 
@@ -202,7 +196,10 @@ extension StreamContext {
         updateQueueLimits()
 
         await encoder?.forceKeyframe()
-        MirageLogger.stream("Stream scale updated to \(streamScale), encoding at \(Int(outputSize.width))x\(Int(outputSize.height))")
+        MirageLogger
+            .stream(
+                "Stream scale updated to \(streamScale), encoding at \(Int(outputSize.width))x\(Int(outputSize.height))"
+            )
     }
 
     func applyStreamScale(_ newScale: CGFloat, logLabel: String) async throws {
@@ -219,9 +216,7 @@ extension StreamContext {
         resetPipelineStateForReconfiguration(reason: "adaptive scale update")
 
         let derivedBaseSize: CGSize
-        if baseCaptureSize != .zero {
-            derivedBaseSize = baseCaptureSize
-        } else if previousScale > 0 {
+        if baseCaptureSize != .zero { derivedBaseSize = baseCaptureSize } else if previousScale > 0 {
             let fallbackSize = currentCaptureSize == .zero ? currentEncodedSize : currentCaptureSize
             derivedBaseSize = CGSize(
                 width: fallbackSize.width / previousScale,
@@ -252,9 +247,7 @@ extension StreamContext {
             case .display:
                 try await captureEngine.updateResolution(width: scaledWidth, height: scaledHeight)
             case .window:
-                if !lastWindowFrame.isEmpty {
-                    try await captureEngine.updateDimensions(windowFrame: lastWindowFrame, outputScale: streamScale)
-                }
+                if !lastWindowFrame.isEmpty { try await captureEngine.updateDimensions(windowFrame: lastWindowFrame, outputScale: streamScale) }
             }
         }
 
@@ -291,20 +284,19 @@ extension StreamContext {
         let scaledWidth = Int(outputSize.width)
         let scaledHeight = Int(outputSize.height)
 
-        MirageLogger.stream("Switching to new display \(displayWrapper.display.displayID) at \(Int(resolution.width))x\(Int(resolution.height)) (scaled \(scaledWidth)x\(scaledHeight)) (frames paused)")
+        MirageLogger
+            .stream(
+                "Switching to new display \(displayWrapper.display.displayID) at \(Int(resolution.width))x\(Int(resolution.height)) (scaled \(scaledWidth)x\(scaledHeight)) (frames paused)"
+            )
 
-        if let captureEngine {
-            try await captureEngine.updateCaptureDisplay(displayWrapper.display, resolution: outputSize)
-        }
+        if let captureEngine { try await captureEngine.updateCaptureDisplay(displayWrapper.display, resolution: outputSize) }
 
         currentCaptureSize = outputSize
         currentEncodedSize = outputSize
         captureMode = .display
         updateQueueLimits()
 
-        if let encoder {
-            try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight)
-        }
+        if let encoder { try await encoder.updateDimensions(width: scaledWidth, height: scaledHeight) }
 
         await encoder?.forceKeyframe()
 

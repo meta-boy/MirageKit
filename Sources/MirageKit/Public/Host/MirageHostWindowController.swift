@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/21/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -70,7 +70,9 @@ public final class MirageHostWindowController {
         for session in sessions {
             let window = session.window
             guard let axWindow = getOrCacheAXWindow(for: window),
-                  let frame = axWindowFrame(axWindow) else { continue }
+                  let frame = axWindowFrame(axWindow) else {
+                continue
+            }
             centerWindowOnScreen(axWindow, newSize: frame.size, windowID: window.id)
         }
     }
@@ -79,13 +81,9 @@ public final class MirageHostWindowController {
 
     /// Returns a cached AX window element or looks it up if needed.
     public func getOrCacheAXWindow(for window: MirageWindow) -> AXUIElement? {
-        if let cached = cachedAXWindows[window.id] {
-            return cached
-        }
+        if let cached = cachedAXWindows[window.id] { return cached }
 
-        guard let axWindow = findAXWindow(for: window) else {
-            return nil
-        }
+        guard let axWindow = findAXWindow(for: window) else { return nil }
 
         cachedAXWindows[window.id] = axWindow
         return axWindow
@@ -109,13 +107,9 @@ public final class MirageHostWindowController {
         var windowsRef: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
 
-        guard result == .success, let axWindows = windowsRef as? [AXUIElement] else {
-            return nil
-        }
+        guard result == .success, let axWindows = windowsRef as? [AXUIElement] else { return nil }
 
-        if axWindows.count == 1 {
-            return axWindows[0]
-        }
+        if axWindows.count == 1 { return axWindows[0] }
 
         guard let windowList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]],
               let windowInfo = windowList.first(where: { ($0[kCGWindowNumber as String] as? Int) == Int(window.id) }),
@@ -133,9 +127,7 @@ public final class MirageHostWindowController {
                 var position = CGPoint.zero
                 AXValueGetValue(positionValue as! AXValue, .cgPoint, &position)
 
-                if abs(position.x - windowX) < 10 && abs(position.y - windowY) < 10 {
-                    return axWindow
-                }
+                if abs(position.x - windowX) < 10, abs(position.y - windowY) < 10 { return axWindow }
             }
         }
 
@@ -183,9 +175,7 @@ public final class MirageHostWindowController {
     /// Returns the maximum allowed window size for a streamed window.
     /// - Parameter window: Window to evaluate.
     public func maxWindowSize(for window: MirageWindow) -> CGSize? {
-        if let virtualBounds = hostService?.getVirtualDisplayBounds(windowID: window.id) {
-            return virtualBounds.size
-        }
+        if let virtualBounds = hostService?.getVirtualDisplayBounds(windowID: window.id) { return virtualBounds.size }
 
         guard let currentFrame = currentWindowFrame(for: window.id) else { return nil }
         let windowCenter = CGPoint(x: currentFrame.midX, y: currentFrame.midY)
@@ -196,9 +186,7 @@ public final class MirageHostWindowController {
     /// Returns the visible frame for sizing a streamed window.
     /// - Parameter window: Window to evaluate.
     public func maxWindowSizeRect(for window: MirageWindow) -> CGRect? {
-        if let virtualBounds = hostService?.getVirtualDisplayBounds(windowID: window.id) {
-            return virtualBounds
-        }
+        if let virtualBounds = hostService?.getVirtualDisplayBounds(windowID: window.id) { return virtualBounds }
 
         guard let currentFrame = currentWindowFrame(for: window.id) else { return nil }
         let windowCenter = CGPoint(x: currentFrame.midX, y: currentFrame.midY)
@@ -235,9 +223,7 @@ public final class MirageHostWindowController {
             minimumWindowSizes[windowID] = size
         }
 
-        if let minSize = minimumWindowSizes[windowID] {
-            hostService?.updateMinimumSize(for: windowID, minSize: minSize)
-        }
+        if let minSize = minimumWindowSizes[windowID] { hostService?.updateMinimumSize(for: windowID, minSize: minSize) }
     }
 
     // MARK: - Window Centering
@@ -267,9 +253,7 @@ public final class MirageHostWindowController {
         let centeredX = screenFrame.origin.x + (screenFrame.width - newSize.width) / 2
 
         let axCenteredY: CGFloat
-        if isVirtualDisplay {
-            axCenteredY = screenFrame.origin.y + (screenFrame.height - newSize.height) / 2
-        } else {
+        if isVirtualDisplay { axCenteredY = screenFrame.origin.y + (screenFrame.height - newSize.height) / 2 } else {
             let cocoaCenteredY = screenFrame.origin.y + (screenFrame.height - newSize.height) / 2
             axCenteredY = cocoaYToAXY(cocoaCenteredY, windowHeight: newSize.height)
         }
@@ -279,9 +263,7 @@ public final class MirageHostWindowController {
 
         let result = AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, positionValue)
         if result == .success, let wid = windowID {
-            if let actualFrame = axWindowFrame(axWindow) {
-                hostService?.updateInputCacheFrame(windowID: wid, newFrame: actualFrame)
-            } else {
+            if let actualFrame = axWindowFrame(axWindow) { hostService?.updateInputCacheFrame(windowID: wid, newFrame: actualFrame) } else {
                 let newFrame = CGRect(origin: newPosition, size: newSize)
                 hostService?.updateInputCacheFrame(windowID: wid, newFrame: newFrame)
             }
@@ -290,7 +272,7 @@ public final class MirageHostWindowController {
 
     /// Convert Cocoa Y coordinate (bottom-left origin) to AX Y coordinate (top-left origin).
     private func cocoaYToAXY(_ cocoaY: CGFloat, windowHeight: CGFloat) -> CGFloat {
-        let totalHeight = NSScreen.screens.map { $0.frame.maxY }.max() ?? NSScreen.main?.frame.height ?? 1080
+        let totalHeight = NSScreen.screens.map(\.frame.maxY).max() ?? NSScreen.main?.frame.height ?? 1080
         return totalHeight - cocoaY - windowHeight
     }
 
@@ -321,9 +303,7 @@ public final class MirageHostWindowController {
         let centeredX = screenFrame.origin.x + (screenFrame.width - newSize.width) / 2
 
         let axCenteredY: CGFloat
-        if isVirtualDisplay {
-            axCenteredY = screenFrame.origin.y + (screenFrame.height - newSize.height) / 2
-        } else {
+        if isVirtualDisplay { axCenteredY = screenFrame.origin.y + (screenFrame.height - newSize.height) / 2 } else {
             let cocoaCenteredY = screenFrame.origin.y + (screenFrame.height - newSize.height) / 2
             axCenteredY = cocoaYToAXY(cocoaCenteredY, windowHeight: newSize.height)
         }
@@ -338,9 +318,7 @@ public final class MirageHostWindowController {
             guard let positionValue = AXValueCreate(.cgPoint, &newPosition) else { return }
             let posResult = AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, positionValue)
             if posResult == .success {
-                if let actualFrame = axWindowFrame(axWindow) {
-                    hostService?.updateInputCacheFrame(windowID: window.id, newFrame: actualFrame)
-                } else {
+                if let actualFrame = axWindowFrame(axWindow) { hostService?.updateInputCacheFrame(windowID: window.id, newFrame: actualFrame) } else {
                     let newFrame = CGRect(origin: newPosition, size: newSize)
                     hostService?.updateInputCacheFrame(windowID: window.id, newFrame: newFrame)
                 }
@@ -361,8 +339,8 @@ public final class MirageHostWindowController {
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + .milliseconds(Int(resizeDebounceIntervalMs)))
         timer.setEventHandler { [weak self] in
-            guard let self, let request = self.pendingResizeRequest else { return }
-            self.pendingResizeRequest = nil
+            guard let self, let request = pendingResizeRequest else { return }
+            pendingResizeRequest = nil
 
             Task {
                 await self.hostService?.updateCaptureResolution(
@@ -383,7 +361,7 @@ public final class MirageHostWindowController {
     ///   - size: Size in points to constrain.
     ///   - frame: Bounding frame to fit within.
     public func constrainSizeToFrame(_ size: CGSize, frame: CGRect) -> CGSize {
-        guard size.width > 0 && size.height > 0 else { return size }
+        guard size.width > 0, size.height > 0 else { return size }
 
         let aspectRatio = size.width / size.height
         var width = size.width
@@ -413,7 +391,8 @@ public final class MirageHostWindowController {
         relativeScale: CGFloat,
         visibleFrame: CGRect,
         minSize: CGSize
-    ) -> CGSize {
+    )
+    -> CGSize {
         let screenArea = visibleFrame.width * visibleFrame.height
         let targetArea = screenArea * relativeScale
 

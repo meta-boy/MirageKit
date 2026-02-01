@@ -39,7 +39,7 @@ public final class MirageTrustStore {
     /// Creates a trust store with a configurable storage key.
     /// - Parameter storageKey: UserDefaults key used for persistence.
     public init(storageKey: String = "MirageTrustedDevices") {
-        self.trustedDevicesKey = storageKey
+        trustedDevicesKey = storageKey
         loadTrustedDevices()
     }
 
@@ -47,9 +47,7 @@ public final class MirageTrustStore {
 
     /// Load trusted devices from storage.
     public func loadTrustedDevices() {
-        guard let data = UserDefaults.standard.data(forKey: trustedDevicesKey) else {
-            return
-        }
+        guard let data = UserDefaults.standard.data(forKey: trustedDevicesKey) else { return }
         do {
             isLoading = true
             trustedDevices = try JSONDecoder().decode([MirageTrustedDevice].self, from: data)

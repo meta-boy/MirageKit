@@ -5,15 +5,15 @@
 //  Created by Ethan Lipnik on 1/24/26.
 //
 
-import Foundation
 import CoreVideo
+import Foundation
 
 #if os(macOS)
 /// Detects the bounding rectangle of changed pixels between frames
 /// Used for future partial-frame encoding optimization
 final class DirtyRegionDetector: @unchecked Sendable {
     private var previousBuffer: CVPixelBuffer?
-    private let blockSize: Int = 16  // Scan in 16x16 blocks for efficiency
+    private let blockSize: Int = 16 // Scan in 16x16 blocks for efficiency
 
     /// Result of dirty region detection
     struct DetectionResult {
@@ -33,9 +33,8 @@ final class DirtyRegionDetector: @unchecked Sendable {
             previousBuffer = currentBuffer
         }
 
-        guard let previous = previousBuffer else {
-            return nil  // First frame, nothing to compare
-        }
+        // First frame, nothing to compare
+        guard let previous = previousBuffer else { return nil }
 
         // Lock both buffers
         CVPixelBufferLockBaseAddress(currentBuffer, .readOnly)
@@ -91,12 +90,10 @@ final class DirtyRegionDetector: @unchecked Sendable {
 
         let changePercentage = Float(changedBlocks) / Float(max(1, totalBlocks))
 
-        if changedBlocks == 0 {
-            return DetectionResult(dirtyRect: nil, changePercentage: 0, isSmallChange: true)
-        }
+        if changedBlocks == 0 { return DetectionResult(dirtyRect: nil, changePercentage: 0, isSmallChange: true) }
 
         let dirtyRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-        let isSmallChange = changePercentage < 0.05  // Less than 5% changed
+        let isSmallChange = changePercentage < 0.05 // Less than 5% changed
 
         return DetectionResult(dirtyRect: dirtyRect, changePercentage: changePercentage, isSmallChange: isSmallChange)
     }

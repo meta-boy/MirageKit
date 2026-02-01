@@ -7,9 +7,9 @@
 //  HEVC decoder extensions.
 //
 
-import Foundation
 import CoreMedia
 import CoreVideo
+import Foundation
 import VideoToolbox
 
 extension HEVCDecoder {
@@ -20,28 +20,32 @@ extension HEVCDecoder {
             onRecovery: nil
         )
     }
+
     func setDimensionChangeHandler(_ handler: @escaping @Sendable () -> Void) {
         onDimensionChange = handler
     }
+
     func setInputBlockingHandler(_ handler: @escaping @Sendable (Bool) -> Void) {
         onInputBlockingChanged = handler
     }
+
     func getAverageDecodeTimeMs() -> Double {
         performanceTracker.averageMs()
     }
+
     func getTotalDecodeErrors() -> UInt64 {
         errorTracker?.totalErrorsSnapshot() ?? 0
     }
+
     func prepareForDimensionChange(expectedWidth: Int? = nil, expectedHeight: Int? = nil) {
         awaitingDimensionChange = true
         dimensionChangeStartTime = CFAbsoluteTimeGetCurrent()
-        if let w = expectedWidth, let h = expectedHeight {
-            expectedDimensions = (w, h)
-        } else {
+        if let w = expectedWidth, let h = expectedHeight { expectedDimensions = (w, h) } else {
             expectedDimensions = nil
         }
         MirageLogger.decoder("Dimension change expected - discarding P-frames until keyframe")
     }
+
     func clearPendingState() {
         if awaitingDimensionChange {
             MirageLogger.decoder("Clearing stuck awaitingDimensionChange state for recovery")

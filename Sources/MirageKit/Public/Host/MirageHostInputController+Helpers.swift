@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -34,9 +34,9 @@ extension MirageHostInputController {
 
     func framesAreClose(_ a: CGRect, _ b: CGRect, tolerance: CGFloat = 2) -> Bool {
         abs(a.origin.x - b.origin.x) <= tolerance &&
-        abs(a.origin.y - b.origin.y) <= tolerance &&
-        abs(a.width - b.width) <= tolerance &&
-        abs(a.height - b.height) <= tolerance
+            abs(a.origin.y - b.origin.y) <= tolerance &&
+            abs(a.width - b.width) <= tolerance &&
+            abs(a.height - b.height) <= tolerance
     }
 }
 #endif

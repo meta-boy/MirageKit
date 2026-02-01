@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/6/26.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -21,7 +21,6 @@ typealias CGSSpaceID = UInt64
 /// Bridge to CGVirtualDisplay private APIs
 /// These APIs are undocumented but used by production apps like BetterDisplay and Chromium
 final class CGVirtualDisplayBridge: @unchecked Sendable {
-
     // MARK: - Private API Classes (loaded at runtime)
 
     private nonisolated(unsafe) static var cgVirtualDisplayClass: AnyClass?
@@ -37,19 +36,19 @@ final class CGVirtualDisplayBridge: @unchecked Sendable {
 
     /// P3-D65 color space primaries for SDR virtual display configuration
     /// These match the encoder's P3 color space settings
-    struct P3D65Primaries {
+    enum P3D65Primaries {
         static let red = CGPoint(x: 0.680, y: 0.320)
         static let green = CGPoint(x: 0.265, y: 0.690)
         static let blue = CGPoint(x: 0.150, y: 0.060)
-        static let whitePoint = CGPoint(x: 0.3127, y: 0.3290)  // D65
+        static let whitePoint = CGPoint(x: 0.3127, y: 0.3290) // D65
     }
 
     /// sRGB (Rec. 709) color primaries for SDR virtual display configuration
-    struct SRGBPrimaries {
+    enum SRGBPrimaries {
         static let red = CGPoint(x: 0.640, y: 0.330)
         static let green = CGPoint(x: 0.300, y: 0.600)
         static let blue = CGPoint(x: 0.150, y: 0.060)
-        static let whitePoint = CGPoint(x: 0.3127, y: 0.3290)  // D65
+        static let whitePoint = CGPoint(x: 0.3127, y: 0.3290) // D65
     }
 
     // TODO: HDR support - requires proper virtual display EDR configuration
@@ -66,7 +65,7 @@ final class CGVirtualDisplayBridge: @unchecked Sendable {
 
     /// Created virtual display context
     struct VirtualDisplayContext {
-        let display: AnyObject  // CGVirtualDisplay instance (private type)
+        let display: AnyObject // CGVirtualDisplay instance (private type)
         let displayID: CGDirectDisplayID
         let resolution: CGSize
         let refreshRate: Double
@@ -117,7 +116,8 @@ final class CGVirtualDisplayBridge: @unchecked Sendable {
         hiDPI: Bool = false,
         ppi: Double = 220.0,
         colorSpace: MirageColorSpace
-    ) -> VirtualDisplayContext? {
+    )
+    -> VirtualDisplayContext? {
         guard loadPrivateAPIs() else { return nil }
 
         guard let descriptorClass = cgVirtualDisplayDescriptorClass as? NSObject.Type,
@@ -141,7 +141,7 @@ final class CGVirtualDisplayBridge: @unchecked Sendable {
         let descriptor = descriptorClass.init()
         descriptor.setValue(name, forKey: "name")
         descriptor.setValue(mirageVendorID, forKey: "vendorID")
-        descriptor.setValue(mirageProductID, forKey: "productID")  // Virtual display marker
+        descriptor.setValue(mirageProductID, forKey: "productID") // Virtual display marker
         descriptor.setValue(UInt32(arc4random()), forKey: "serialNum")
         descriptor.setValue(UInt32(width), forKey: "maxPixelsWide")
         descriptor.setValue(UInt32(height), forKey: "maxPixelsHigh")
@@ -184,7 +184,10 @@ final class CGVirtualDisplayBridge: @unchecked Sendable {
         settings.setValue([displayMode], forKey: "modes")
         settings.setValue(hiDPI ? UInt32(1) : UInt32(0), forKey: "hiDPI")
 
-        MirageLogger.host("Creating virtual display '\(name)' at \(width)x\(height) pixels, mode=\(modeWidth)x\(modeHeight)@\(refreshRate)Hz, hiDPI=\(hiDPI), color=\(colorSpace.displayName)")
+        MirageLogger
+            .host(
+                "Creating virtual display '\(name)' at \(width)x\(height) pixels, mode=\(modeWidth)x\(modeHeight)@\(refreshRate)Hz, hiDPI=\(hiDPI), color=\(colorSpace.displayName)"
+            )
 
         // Create the virtual display
         // IMPORTANT: Use takeRetainedValue() so ARC properly manages the display lifecycle
@@ -202,16 +205,15 @@ final class CGVirtualDisplayBridge: @unchecked Sendable {
 
         // takeRetainedValue() transfers ownership to ARC - when the reference count hits 0,
         // the display will be properly deallocated and removed from the system
-        guard let display = (allocatedDisplay as AnyObject).perform(initSelector, with: descriptor)?.takeRetainedValue() else {
+        guard let display = (allocatedDisplay as AnyObject).perform(initSelector, with: descriptor)?
+            .takeRetainedValue() else {
             MirageLogger.error(.host, "Failed to create CGVirtualDisplay")
             return nil
         }
 
         // Apply settings
         let applySelector = NSSelectorFromString("applySettings:")
-        if (display as AnyObject).responds(to: applySelector) {
-            _ = (display as AnyObject).perform(applySelector, with: settings)
-        }
+        if (display as AnyObject).responds(to: applySelector) { _ = (display as AnyObject).perform(applySelector, with: settings) }
 
         // Get display ID
         guard let displayID = (display as AnyObject).value(forKey: "displayID") as? CGDirectDisplayID else {
@@ -253,7 +255,8 @@ final class CGVirtualDisplayBridge: @unchecked Sendable {
         height: Int,
         refreshRate: Double = 60.0,
         hiDPI: Bool = true
-    ) -> Bool {
+    )
+    -> Bool {
         guard loadPrivateAPIs() else { return false }
 
         guard let settingsClass = cgVirtualDisplaySettingsClass as? NSObject.Type,
@@ -288,7 +291,10 @@ final class CGVirtualDisplayBridge: @unchecked Sendable {
         let success = result != nil
 
         if success {
-            MirageLogger.host("Updated virtual display resolution to \(width)x\(height) (mode: \(modeWidth)x\(modeHeight)@\(refreshRate)Hz, hiDPI=\(hiDPI))")
+            MirageLogger
+                .host(
+                    "Updated virtual display resolution to \(width)x\(height) (mode: \(modeWidth)x\(modeHeight)@\(refreshRate)Hz, hiDPI=\(hiDPI))"
+                )
         } else {
             MirageLogger.error(.host, "Failed to update virtual display resolution")
         }

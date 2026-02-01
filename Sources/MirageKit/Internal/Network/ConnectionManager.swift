@@ -49,9 +49,7 @@ actor ConnectionManager {
 
     /// Connect to a host endpoint
     func connect(to endpoint: NWEndpoint, timeout: TimeInterval = 10) async throws {
-        guard state == .disconnected else {
-            throw MirageError.protocolError("Already connected or connecting")
-        }
+        guard state == .disconnected else { throw MirageError.protocolError("Already connected or connecting") }
 
         state = .connecting
 
@@ -77,7 +75,7 @@ actor ConnectionManager {
                 case .ready:
                     Task { await self?.setState(.connected) }
                     continuation.resume()
-                case .failed(let error):
+                case let .failed(error):
                     Task { await self?.setState(.failed(error.localizedDescription)) }
                     continuation.resume(throwing: error)
                 case .cancelled:
@@ -120,17 +118,13 @@ actor ConnectionManager {
 
     /// Send a control message
     func send(_ message: ControlMessage) async throws {
-        guard state == .connected, let connection else {
-            throw MirageError.protocolError("Not connected")
-        }
+        guard state == .connected, let connection else { throw MirageError.protocolError("Not connected") }
 
         let data = message.serialize()
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: data, completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
+                if let error { continuation.resume(throwing: error) } else {
                     continuation.resume()
                 }
             })
@@ -138,7 +132,7 @@ actor ConnectionManager {
     }
 
     /// Send a typed message
-    func send<T: Encodable>(_ type: ControlMessageType, content: T) async throws {
+    func send(_ type: ControlMessageType, content: some Encodable) async throws {
         let message = try ControlMessage(type: type, content: content)
         try await send(message)
     }
@@ -174,17 +168,19 @@ actor ConnectionManager {
 
     private func receive(connection: NWConnection, minLength: Int, maxLength: Int) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
-            connection.receive(minimumIncompleteLength: minLength, maximumLength: maxLength) { content, _, isComplete, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if let data = content, !data.isEmpty {
-                    continuation.resume(returning: data)
-                } else if isComplete {
-                    continuation.resume(throwing: MirageError.protocolError("Connection closed"))
-                } else {
-                    continuation.resume(returning: Data())
+            connection
+                .receive(
+                    minimumIncompleteLength: minLength,
+                    maximumLength: maxLength
+                ) { content, _, isComplete, error in
+                    if let error { continuation.resume(throwing: error) } else if let data = content, !data.isEmpty {
+                        continuation.resume(returning: data)
+                    } else if isComplete {
+                        continuation.resume(throwing: MirageError.protocolError("Connection closed"))
+                    } else {
+                        continuation.resume(returning: Data())
+                    }
                 }
-            }
         }
     }
 }

@@ -15,30 +15,32 @@ extension InputCapturingView {
         from event: UIPressesEvent?,
         fallbackFlags: UIKeyModifierFlags?,
         allowFallback: Bool
-    ) -> UIKeyModifierFlags? {
-        if let flags = event?.modifierFlags {
-            return flags
-        }
-        if allowFallback {
-            return fallbackFlags
-        }
+    )
+    -> UIKeyModifierFlags? {
+        if let flags = event?.modifierFlags { return flags }
+        if allowFallback { return fallbackFlags }
         return nil
     }
 
     private func sanitizedModifierFlags(
         _ flags: UIKeyModifierFlags,
         removing keyCode: UIKeyboardHIDUsage?
-    ) -> UIKeyModifierFlags {
+    )
+    -> UIKeyModifierFlags {
         guard let keyCode else { return flags }
         var sanitized = flags
         switch keyCode {
-        case .keyboardLeftShift, .keyboardRightShift:
+        case .keyboardLeftShift,
+             .keyboardRightShift:
             sanitized.remove(.shift)
-        case .keyboardLeftControl, .keyboardRightControl:
+        case .keyboardLeftControl,
+             .keyboardRightControl:
             sanitized.remove(.control)
-        case .keyboardLeftAlt, .keyboardRightAlt:
+        case .keyboardLeftAlt,
+             .keyboardRightAlt:
             sanitized.remove(.alternate)
-        case .keyboardLeftGUI, .keyboardRightGUI:
+        case .keyboardLeftGUI,
+             .keyboardRightGUI:
             sanitized.remove(.command)
         case .keyboardCapsLock:
             sanitized.remove(.alphaShift)
@@ -63,14 +65,12 @@ extension InputCapturingView {
     }
 
     private func updateModifierRefreshTimer() {
-        if heldModifierKeys.isEmpty {
-            stopModifierRefresh()
-        } else {
+        if heldModifierKeys.isEmpty { stopModifierRefresh() } else {
             startModifierRefreshIfNeeded()
         }
     }
 
-    public override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    override public func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         updateHardwareKeyboardPresence(true)
         let hardwareAvailable = refreshModifiersForInput()
         let allowFallback = !hardwareAvailable
@@ -83,9 +83,7 @@ extension InputCapturingView {
             // Escape without modifiers clears any stuck modifier state as a recovery mechanism
             if key.keyCode == .keyboardEscape {
                 let flags = modifierSnapshot(from: event, fallbackFlags: fallbackFlags, allowFallback: true) ?? []
-                if flags.isEmpty {
-                    resetAllModifiers()
-                }
+                if flags.isEmpty { resetAllModifiers() }
             }
 
             if isCapsLockKey {
@@ -94,35 +92,25 @@ extension InputCapturingView {
                 continue
             }
 
-            if let modifierFlags = modifierSnapshot(from: event, fallbackFlags: fallbackFlags, allowFallback: true) {
-                updateCapsLockState(from: modifierFlags)
-            }
+            if let modifierFlags = modifierSnapshot(from: event, fallbackFlags: fallbackFlags, allowFallback: true) { updateCapsLockState(from: modifierFlags) }
             let isModifier = Self.modifierKeyMap[key.keyCode] != nil
 
             if isModifier {
                 heldModifierKeys.insert(key.keyCode)
-                if allowFallback {
-                    resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
-                } else {
+                if allowFallback { resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true) } else {
                     sendModifierStateIfNeeded(force: true)
                 }
             } else {
-                if allowFallback {
-                    resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
-                }
-                if !keyboardModifiers.contains(.command) {
-                    startKeyRepeat(for: press)
-                }
-                if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) {
-                    onInputEvent?(.keyDown(keyEvent))
-                }
+                if allowFallback { resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true) }
+                if !keyboardModifiers.contains(.command) { startKeyRepeat(for: press) }
+                if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) { onInputEvent?(.keyDown(keyEvent)) }
             }
         }
         updateModifierRefreshTimer()
         // Don't call super - we handle all key events
     }
 
-    public override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    override public func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         let hardwareAvailable = refreshModifiersForInput()
         let allowFallback = !hardwareAvailable
 
@@ -131,9 +119,7 @@ extension InputCapturingView {
             let isCapsLockKey = key.keyCode == .keyboardCapsLock
             let fallbackFlags = key.modifierFlags
 
-            if isCapsLockKey {
-                continue
-            }
+            if isCapsLockKey { continue }
 
             let isModifier = Self.modifierKeyMap[key.keyCode] != nil
 
@@ -151,18 +137,14 @@ extension InputCapturingView {
                 }
             } else {
                 stopKeyRepeat(for: key.keyCode)
-                if allowFallback {
-                    resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
-                }
-                if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) {
-                    onInputEvent?(.keyUp(keyEvent))
-                }
+                if allowFallback { resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true) }
+                if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) { onInputEvent?(.keyUp(keyEvent)) }
             }
         }
         updateModifierRefreshTimer()
     }
 
-    public override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    override public func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         let hardwareAvailable = refreshModifiersForInput()
         let allowFallback = !hardwareAvailable
 
@@ -171,9 +153,7 @@ extension InputCapturingView {
             let isCapsLockKey = key.keyCode == .keyboardCapsLock
             let fallbackFlags = key.modifierFlags
 
-            if isCapsLockKey {
-                continue
-            }
+            if isCapsLockKey { continue }
 
             let isModifier = Self.modifierKeyMap[key.keyCode] != nil
 
@@ -191,18 +171,14 @@ extension InputCapturingView {
                 }
             } else {
                 stopKeyRepeat(for: key.keyCode)
-                if allowFallback {
-                    resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true)
-                }
-                if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) {
-                    onInputEvent?(.keyUp(keyEvent))
-                }
+                if allowFallback { resyncModifiers(using: event, fallbackFlags: fallbackFlags, allowFallback: true) }
+                if let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers) { onInputEvent?(.keyUp(keyEvent)) }
             }
         }
         updateModifierRefreshTimer()
     }
 
-    public override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    override public func pressesChanged(_: Set<UIPress>, with _: UIPressesEvent?) {
         // pressesChanged is for force/altitude changes, not modifier state changes
         // We track modifier state via pressesBegan/pressesEnded instead
     }
@@ -221,18 +197,20 @@ extension InputCapturingView {
         heldKeyPresses[keyCode] = press
 
         // Schedule initial delay timer, then switch to repeat interval
-        let initialTimer = Timer.scheduledTimer(withTimeInterval: Self.keyRepeatInitialDelay, repeats: false) { [weak self] _ in
-            guard let self else { return }
+        let initialTimer = Timer
+            .scheduledTimer(withTimeInterval: Self.keyRepeatInitialDelay, repeats: false) { [weak self] _ in
+                guard let self else { return }
 
-            // Start repeating timer
-            let repeatTimer = Timer.scheduledTimer(withTimeInterval: Self.keyRepeatInterval, repeats: true) { [weak self] _ in
-                self?.fireKeyRepeat(for: keyCode)
+                // Start repeating timer
+                let repeatTimer = Timer
+                    .scheduledTimer(withTimeInterval: Self.keyRepeatInterval, repeats: true) { [weak self] _ in
+                        self?.fireKeyRepeat(for: keyCode)
+                    }
+                keyRepeatTimers[keyCode] = repeatTimer
+
+                // Fire first repeat immediately after initial delay
+                fireKeyRepeat(for: keyCode)
             }
-            self.keyRepeatTimers[keyCode] = repeatTimer
-
-            // Fire first repeat immediately after initial delay
-            self.fireKeyRepeat(for: keyCode)
-        }
         keyRepeatTimers[keyCode] = initialTimer
     }
 
@@ -251,7 +229,9 @@ extension InputCapturingView {
             return
         }
         guard let press = heldKeyPresses[keyCode],
-              let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers, isRepeat: true) else { return }
+              let keyEvent = MirageKeyEvent(press: press, modifiers: keyboardModifiers, isRepeat: true) else {
+            return
+        }
         onInputEvent?(.keyDown(keyEvent))
     }
 
@@ -268,32 +248,32 @@ extension InputCapturingView {
 
     /// Override keyCommands to intercept system shortcuts (CMD+W, CMD+Q, etc.)
     /// and forward them to the host instead of letting iOS handle them
-    public override var keyCommands: [UIKeyCommand]? {
+    override public var keyCommands: [UIKeyCommand]? {
         let passthroughShortcuts: [(String, UIKeyModifierFlags)] = [
-            ("w", .command),           // Close window
-            ("q", .command),           // Quit
-            (".", .command),           // Cancel
-            ("h", .command),           // Hide
-            ("m", .command),           // Minimize
-            (",", .command),           // Settings
-            ("n", .command),           // New
-            ("o", .command),           // Open
-            ("s", .command),           // Save
-            ("p", .command),           // Print
-            ("z", .command),           // Undo
+            ("w", .command), // Close window
+            ("q", .command), // Quit
+            (".", .command), // Cancel
+            ("h", .command), // Hide
+            ("m", .command), // Minimize
+            (",", .command), // Settings
+            ("n", .command), // New
+            ("o", .command), // Open
+            ("s", .command), // Save
+            ("p", .command), // Print
+            ("z", .command), // Undo
             ("z", [.command, .shift]), // Redo
-            ("a", .command),           // Select all
-            ("c", .command),           // Copy
-            ("x", .command),           // Cut
-            ("v", .command),           // Paste
-            ("f", .command),           // Find
-            ("g", .command),           // Find next
+            ("a", .command), // Select all
+            ("c", .command), // Copy
+            ("x", .command), // Cut
+            ("v", .command), // Paste
+            ("f", .command), // Find
+            ("g", .command), // Find next
             ("g", [.command, .shift]), // Find previous
-            ("t", .command),           // New tab
+            ("t", .command), // New tab
             ("w", [.command, .shift]), // Close all
         ]
 
-        return passthroughShortcuts.map { (key, modifiers) in
+        return passthroughShortcuts.map { key, modifiers in
             let command = UIKeyCommand(
                 action: #selector(handlePassthroughShortcut(_:)),
                 input: key,
@@ -304,7 +284,8 @@ extension InputCapturingView {
         }
     }
 
-    @objc func handlePassthroughShortcut(_ command: UIKeyCommand) {
+    @objc
+    func handlePassthroughShortcut(_ command: UIKeyCommand) {
         // UIKeyCommand intercepts key events BEFORE pressesBegan is called
         // So we must manually send the character key events here
         guard let input = command.input else { return }
@@ -343,60 +324,62 @@ extension InputCapturingView {
 
     /// Convert a character to macOS virtual key code
     /// Used by handlePassthroughShortcut to send key events for UIKeyCommand shortcuts
+    static let characterToMacKeyCodeMap: [String: UInt16] = [
+        "a": 0x00,
+        "b": 0x0B,
+        "c": 0x08,
+        "d": 0x02,
+        "e": 0x0E,
+        "f": 0x03,
+        "g": 0x05,
+        "h": 0x04,
+        "i": 0x22,
+        "j": 0x26,
+        "k": 0x28,
+        "l": 0x25,
+        "m": 0x2E,
+        "n": 0x2D,
+        "o": 0x1F,
+        "p": 0x23,
+        "q": 0x0C,
+        "r": 0x0F,
+        "s": 0x01,
+        "t": 0x11,
+        "u": 0x20,
+        "v": 0x09,
+        "w": 0x0D,
+        "x": 0x07,
+        "y": 0x10,
+        "z": 0x06,
+        "1": 0x12,
+        "2": 0x13,
+        "3": 0x14,
+        "4": 0x15,
+        "5": 0x17,
+        "6": 0x16,
+        "7": 0x1A,
+        "8": 0x1C,
+        "9": 0x19,
+        "0": 0x1D,
+        ",": 0x2B,
+        ".": 0x2F,
+        "/": 0x2C,
+        ";": 0x29,
+        "'": 0x27,
+        "[": 0x21,
+        "]": 0x1E,
+        "\\": 0x2A,
+        "-": 0x1B,
+        "=": 0x18,
+        "`": 0x32,
+        " ": 0x31,
+        "\t": 0x30,
+        "\n": 0x24,
+    ]
+
     static func characterToMacKeyCode(_ char: String) -> UInt16 {
-        switch char.lowercased() {
-        case "a": return 0x00
-        case "b": return 0x0B
-        case "c": return 0x08
-        case "d": return 0x02
-        case "e": return 0x0E
-        case "f": return 0x03
-        case "g": return 0x05
-        case "h": return 0x04
-        case "i": return 0x22
-        case "j": return 0x26
-        case "k": return 0x28
-        case "l": return 0x25
-        case "m": return 0x2E
-        case "n": return 0x2D
-        case "o": return 0x1F
-        case "p": return 0x23
-        case "q": return 0x0C
-        case "r": return 0x0F
-        case "s": return 0x01
-        case "t": return 0x11
-        case "u": return 0x20
-        case "v": return 0x09
-        case "w": return 0x0D
-        case "x": return 0x07
-        case "y": return 0x10
-        case "z": return 0x06
-        case "1": return 0x12
-        case "2": return 0x13
-        case "3": return 0x14
-        case "4": return 0x15
-        case "5": return 0x17
-        case "6": return 0x16
-        case "7": return 0x1A
-        case "8": return 0x1C
-        case "9": return 0x19
-        case "0": return 0x1D
-        case ",": return 0x2B
-        case ".": return 0x2F
-        case "/": return 0x2C
-        case ";": return 0x29
-        case "'": return 0x27
-        case "[": return 0x21
-        case "]": return 0x1E
-        case "\\": return 0x2A
-        case "-": return 0x1B
-        case "=": return 0x18
-        case "`": return 0x32
-        case " ": return 0x31
-        case "\t": return 0x30
-        case "\n": return 0x24
-        default: return 0x00  // Default to 'a' for unknown characters
-        }
+        // Default to 'a' for unknown characters
+        characterToMacKeyCodeMap[char.lowercased()] ?? 0x00
     }
 }
 #endif

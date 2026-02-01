@@ -51,9 +51,7 @@ extension MirageClientService {
                 availableWindows.removeAll { $0.id == id }
             }
             for window in update.updated {
-                if let index = availableWindows.firstIndex(where: { $0.id == window.id }) {
-                    availableWindows[index] = window
-                }
+                if let index = availableWindows.firstIndex(where: { $0.id == window.id }) { availableWindows[index] = window }
             }
         }
     }
@@ -71,9 +69,7 @@ extension MirageClientService {
                 if let controller = self?.controllersByStream[streamID] {
                     let reassembler = await controller.getReassembler()
                     reassembler.reset()
-                    if let token = dimensionToken {
-                        reassembler.updateExpectedDimensionToken(token)
-                    }
+                    if let token = dimensionToken { reassembler.updateExpectedDimensionToken(token) }
                 }
             }
 
@@ -95,18 +91,14 @@ extension MirageClientService {
                     do {
                         await self.setupControllerForStream(streamID)
                         self.addActiveStreamID(streamID)
-                        if isAppCentricStream {
-                            MirageLogger.client("Controller set up for app-centric stream \(streamID)")
-                        }
+                        if isAppCentricStream { MirageLogger.client("Controller set up for app-centric stream \(streamID)") }
 
                         if let token = dimensionToken, let controller = self.controllersByStream[streamID] {
                             let reassembler = await controller.getReassembler()
                             reassembler.updateExpectedDimensionToken(token)
                         }
 
-                        if self.udpConnection == nil {
-                            try await self.startVideoConnection()
-                        }
+                        if self.udpConnection == nil { try await self.startVideoConnection() }
 
                         try await self.sendStreamRegistration(streamID: streamID)
                     } catch {
@@ -132,11 +124,11 @@ extension MirageClientService {
 
             Task { [weak self] in
                 guard let self else { return }
-                if let controller = self.controllersByStream[streamID] {
+                if let controller = controllersByStream[streamID] {
                     await controller.stop()
-                    self.controllersByStream.removeValue(forKey: streamID)
+                    controllersByStream.removeValue(forKey: streamID)
                 }
-                await self.updateReassemblerSnapshot()
+                await updateReassemblerSnapshot()
             }
         }
     }
@@ -187,9 +179,7 @@ extension MirageClientService {
     }
 
     func handleErrorMessage(_ message: ControlMessage) {
-        if let error = try? message.decode(ErrorMessage.self) {
-            delegate?.clientService(self, didEncounterError: MirageError.protocolError(error.message))
-        }
+        if let error = try? message.decode(ErrorMessage.self) { delegate?.clientService(self, didEncounterError: MirageError.protocolError(error.message)) }
     }
 
     func handleDisconnectMessage(_ message: ControlMessage) async {
@@ -211,9 +201,7 @@ extension MirageClientService {
                 isVisible: update.isVisible
             )
             #if os(iOS) || os(visionOS)
-            if didChange {
-                MirageCursorUpdateRouter.shared.notify(streamID: update.streamID)
-            }
+            if didChange { MirageCursorUpdateRouter.shared.notify(streamID: update.streamID) }
             #endif
             onCursorUpdate?(update.streamID, update.cursorType, update.isVisible)
         }
@@ -233,7 +221,11 @@ extension MirageClientService {
             MirageLogger.client("Host session state: \(update.state), requires username: \(update.requiresUsername)")
             hostSessionState = update.state
             currentSessionToken = update.sessionToken
-            delegate?.clientService(self, hostSessionStateChanged: update.state, requiresUsername: update.requiresUsername)
+            delegate?.clientService(
+                self,
+                hostSessionStateChanged: update.state,
+                requiresUsername: update.requiresUsername
+            )
         } catch {
             MirageLogger.error(.client, "Failed to decode session state update: \(error)")
         }
@@ -245,9 +237,7 @@ extension MirageClientService {
             MirageLogger.client("Unlock response: success=\(response.success)")
             if response.success {
                 hostSessionState = response.newState
-                if let token = response.newSessionToken {
-                    currentSessionToken = token
-                }
+                if let token = response.newSessionToken { currentSessionToken = token }
             }
             delegate?.clientService(
                 self,
@@ -269,7 +259,10 @@ extension MirageClientService {
             let streamID = StreamID(ready.streamID)
             loginDisplayStreamID = streamID
             loginDisplayResolution = CGSize(width: ready.width, height: ready.height)
-            sessionStore.startLoginDisplay(streamID: streamID, resolution: CGSize(width: ready.width, height: ready.height))
+            sessionStore.startLoginDisplay(
+                streamID: streamID,
+                resolution: CGSize(width: ready.width, height: ready.height)
+            )
 
             let dimensionToken = ready.dimensionToken
 
@@ -285,9 +278,7 @@ extension MirageClientService {
                 if !self.registeredStreamIDs.contains(streamID) {
                     self.registeredStreamIDs.insert(streamID)
                     do {
-                        if self.udpConnection == nil {
-                            try await self.startVideoConnection()
-                        }
+                        if self.udpConnection == nil { try await self.startVideoConnection() }
                         try await self.sendStreamRegistration(streamID: streamID)
                         MirageLogger.client("Registered for login display video stream \(streamID)")
                     } catch {
@@ -319,7 +310,8 @@ extension MirageClientService {
             loginDisplayResolution = nil
             sessionStore.stopLoginDisplay()
             if borrowedDesktopStream {
-                MirageLogger.client("Login display stop shares the active desktop stream; desktop stream state remains active")
+                MirageLogger
+                    .client("Login display stop shares the active desktop stream; desktop stream state remains active")
             } else {
                 metricsStore.clear(streamID: streamID)
                 cursorStore.clear(streamID: streamID)

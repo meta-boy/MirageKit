@@ -14,7 +14,12 @@ import Network
 
 extension MirageHostService {
     /// Handle an unlock request from a client
-    func handleUnlockRequest(_ message: ControlMessage, from client: MirageConnectedClient, connection: NWConnection) async {
+    func handleUnlockRequest(
+        _ message: ControlMessage,
+        from client: MirageConnectedClient,
+        connection: NWConnection
+    )
+    async {
         MirageLogger.host("Received unlock request from \(client.name)")
 
         guard let clientContext = clientsByConnection[ObjectIdentifier(connection)] else {
@@ -88,7 +93,7 @@ extension MirageHostService {
         }
 
         // Attempt unlock
-        guard let unlockManager = unlockManager else {
+        guard let unlockManager else {
             MirageLogger.error(.host, "Unlock manager not initialized")
             return
         }
@@ -118,7 +123,7 @@ extension MirageHostService {
             // Send window list after successful unlock
             await sendWindowList(to: clientContext)
 
-        case .failure(let code, let errorMessage):
+        case let .failure(code, errorMessage):
             response = UnlockResponseMessage(
                 success: false,
                 newState: sessionState,

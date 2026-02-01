@@ -7,8 +7,8 @@
 //  Host input controller extensions.
 //
 
-import Foundation
 import CoreGraphics
+import Foundation
 
 #if os(macOS)
 import AppKit
@@ -17,15 +17,14 @@ import ApplicationServices
 extension MirageHostInputController {
     // MARK: - Scroll Event Injection (runs on accessibilityQueue)
 
-    func injectScrollEvent(_ event: MirageScrollEvent, _ windowFrame: CGRect, app: MirageApplication?) {
-        let scrollPoint: CGPoint
-        if let normalizedLocation = event.location {
-            scrollPoint = CGPoint(
+    func injectScrollEvent(_ event: MirageScrollEvent, _ windowFrame: CGRect, app _: MirageApplication?) {
+        let scrollPoint = if let normalizedLocation = event.location {
+            CGPoint(
                 x: windowFrame.origin.x + normalizedLocation.x * windowFrame.width,
                 y: windowFrame.origin.y + normalizedLocation.y * windowFrame.height
             )
         } else {
-            scrollPoint = CGPoint(x: windowFrame.midX, y: windowFrame.midY)
+            CGPoint(x: windowFrame.midX, y: windowFrame.midY)
         }
 
         guard let cgEvent = CGEvent(
@@ -35,14 +34,15 @@ extension MirageHostInputController {
             wheel1: Int32(event.deltaY),
             wheel2: Int32(event.deltaX),
             wheel3: 0
-        ) else { return }
+        ) else {
+            return
+        }
 
         cgEvent.location = scrollPoint
         // Apply modifier flags so CMD+scroll zoom works in Preview/Safari
         cgEvent.flags = event.modifiers.cgEventFlags
         postEvent(cgEvent)
     }
-
 }
 
 #endif

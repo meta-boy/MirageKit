@@ -5,8 +5,8 @@
 //  Created by Ethan Lipnik on 1/23/26.
 //
 
-import Foundation
 import CoreVideo
+import Foundation
 import Metal
 
 // MARK: - Global Frame Cache (iOS Gesture Tracking Support)

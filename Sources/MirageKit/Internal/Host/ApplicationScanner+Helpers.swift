@@ -9,8 +9,8 @@
 
 #if os(macOS)
 import AppKit
-import Foundation
 import CoreServices
+import Foundation
 
 // MARK: - Helpers
 
@@ -23,26 +23,16 @@ extension ApplicationScanner {
     func domainPriority(for url: URL) -> Int {
         let path = url.path
 
-        if path.hasPrefix("/System/Applications/") || path == "/System/Applications" {
-            return 5
-        }
-        if path.hasPrefix("/System/Cryptexes/App/System/Applications/") {
-            return 5
-        }
-        if path.hasPrefix("/Applications/") || path == "/Applications" {
-            return 4
-        }
-        if path.hasPrefix("/System/Library/CoreServices/") {
-            return 3
-        }
+        if path.hasPrefix("/System/Applications/") || path == "/System/Applications" { return 5 }
+        if path.hasPrefix("/System/Cryptexes/App/System/Applications/") { return 5 }
+        if path.hasPrefix("/Applications/") || path == "/Applications" { return 4 }
+        if path.hasPrefix("/System/Library/CoreServices/") { return 3 }
 
         let userApplications = fileManager
             .homeDirectoryForCurrentUser
             .appendingPathComponent("Applications", isDirectory: true)
             .path
-        if path.hasPrefix(userApplications) {
-            return 2
-        }
+        if path.hasPrefix(userApplications) { return 2 }
 
         return 1
     }

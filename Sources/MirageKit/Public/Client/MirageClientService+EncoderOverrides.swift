@@ -38,13 +38,15 @@ extension MirageClientService {
         }
         if let minBitrate = overrides.minBitrate, minBitrate > 0 {
             request.minBitrate = minBitrate
-            let Mbps = Double(minBitrate) / 1_000_000.0
-            MirageLogger.client("Requesting minimum bitrate: \(Mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
+            let mbps = Double(minBitrate) / 1_000_000.0
+            MirageLogger
+                .client("Requesting minimum bitrate: \(mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
         }
         if let maxBitrate = overrides.maxBitrate, maxBitrate > 0 {
             request.maxBitrate = maxBitrate
-            let Mbps = Double(maxBitrate) / 1_000_000.0
-            MirageLogger.client("Requesting maximum bitrate: \(Mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
+            let mbps = Double(maxBitrate) / 1_000_000.0
+            MirageLogger
+                .client("Requesting maximum bitrate: \(mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
         }
     }
 
@@ -75,13 +77,15 @@ extension MirageClientService {
         }
         if let minBitrate = overrides.minBitrate, minBitrate > 0 {
             request.minBitrate = minBitrate
-            let Mbps = Double(minBitrate) / 1_000_000.0
-            MirageLogger.client("Requesting minimum bitrate: \(Mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
+            let mbps = Double(minBitrate) / 1_000_000.0
+            MirageLogger
+                .client("Requesting minimum bitrate: \(mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
         }
         if let maxBitrate = overrides.maxBitrate, maxBitrate > 0 {
             request.maxBitrate = maxBitrate
-            let Mbps = Double(maxBitrate) / 1_000_000.0
-            MirageLogger.client("Requesting maximum bitrate: \(Mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
+            let mbps = Double(maxBitrate) / 1_000_000.0
+            MirageLogger
+                .client("Requesting maximum bitrate: \(mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
         }
     }
 
@@ -112,13 +116,15 @@ extension MirageClientService {
         }
         if let minBitrate = overrides.minBitrate, minBitrate > 0 {
             request.minBitrate = minBitrate
-            let Mbps = Double(minBitrate) / 1_000_000.0
-            MirageLogger.client("Requesting minimum bitrate: \(Mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
+            let mbps = Double(minBitrate) / 1_000_000.0
+            MirageLogger
+                .client("Requesting minimum bitrate: \(mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
         }
         if let maxBitrate = overrides.maxBitrate, maxBitrate > 0 {
             request.maxBitrate = maxBitrate
-            let Mbps = Double(maxBitrate) / 1_000_000.0
-            MirageLogger.client("Requesting maximum bitrate: \(Mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
+            let mbps = Double(maxBitrate) / 1_000_000.0
+            MirageLogger
+                .client("Requesting maximum bitrate: \(mbps.formatted(.number.precision(.fractionLength(1)))) Mbps")
         }
     }
 }

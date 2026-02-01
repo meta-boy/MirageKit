@@ -58,21 +58,21 @@ public enum DeviceType: String, Codable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .mac: return "Mac"
-        case .iPad: return "iPad"
-        case .iPhone: return "iPhone"
-        case .vision: return "Apple Vision"
-        case .unknown: return "Unknown"
+        case .mac: "Mac"
+        case .iPad: "iPad"
+        case .iPhone: "iPhone"
+        case .vision: "Apple Vision"
+        case .unknown: "Unknown"
         }
     }
 
     public var systemImage: String {
         switch self {
-        case .mac: return "desktopcomputer"
-        case .iPad: return "ipad"
-        case .iPhone: return "iphone"
-        case .vision: return "visionpro"
-        case .unknown: return "questionmark.circle"
+        case .mac: "desktopcomputer"
+        case .iPad: "ipad"
+        case .iPhone: "iphone"
+        case .vision: "visionpro"
+        case .unknown: "questionmark.circle"
         }
     }
 }
@@ -127,13 +127,11 @@ public struct MirageHostCapabilities: Codable, Hashable, Sendable {
             "p3": supportsP3ColorSpace ? "1" : "0",
             // "hdr": supportsHDR ? "1" : "0",
             "maxFps": String(maxFrameRate),
-            "proto": String(protocolVersion)
+            "proto": String(protocolVersion),
         ]
 
         // Add device ID for self-filtering
-        if let deviceID {
-            record["did"] = deviceID.uuidString
-        }
+        if let deviceID { record["did"] = deviceID.uuidString }
 
         return record
     }
@@ -142,9 +140,7 @@ public struct MirageHostCapabilities: Codable, Hashable, Sendable {
     public static func from(txtRecord: [String: String]) -> MirageHostCapabilities {
         // Parse device ID if present
         var parsedDeviceID: UUID?
-        if let didString = txtRecord["did"] {
-            parsedDeviceID = UUID(uuidString: didString)
-        }
+        if let didString = txtRecord["did"] { parsedDeviceID = UUID(uuidString: didString) }
 
         return MirageHostCapabilities(
             maxStreams: Int(txtRecord["maxStreams"] ?? "4") ?? 4,
