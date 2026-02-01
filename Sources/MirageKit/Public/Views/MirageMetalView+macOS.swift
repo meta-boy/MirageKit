@@ -26,12 +26,15 @@ public class MirageMetalView: MTKView {
     var streamID: StreamID? {
         didSet {
             renderState.reset()
+            drawScheduled = false
+            inFlightDraws = 0
+            pendingDraw = false
             let previousID = registeredStreamID
-            if let previousID, previousID != streamID { MirageRenderScheduler.shared.unregister(streamID: previousID) }
+            if let previousID, previousID != streamID { MirageClientRenderTrigger.shared.unregister(streamID: previousID) }
             registeredStreamID = streamID
             if let streamID {
-                MirageRenderScheduler.shared.register(view: self, for: streamID)
-                MirageRenderScheduler.shared.signalFrame(for: streamID)
+                MirageClientRenderTrigger.shared.register(view: self, for: streamID)
+                requestDraw()
             }
         }
     }
@@ -41,10 +44,18 @@ public class MirageMetalView: MTKView {
 
     /// Last reported drawable size to avoid redundant callbacks
     private var lastReportedDrawableSize: CGSize = .zero
-    var onDrawCompleted: (@Sendable () -> Void)?
     private var registeredStreamID: StreamID?
     private var renderingSuspended = false
-    private var lastScheduledSignalTime: CFAbsoluteTime = 0
+    private var drawScheduled = false
+    private var inFlightDraws: Int = 0
+    private var pendingDraw = false
+
+    private var maxInFlightDraws: Int {
+        if let metalLayer = layer as? CAMetalLayer {
+            return max(1, min(2, metalLayer.maximumDrawableCount - 1))
+        }
+        return 1
+    }
 
     private static let maxDrawableWidth: CGFloat = 5120
     private static let maxDrawableHeight: CGFloat = 2880
@@ -84,13 +95,13 @@ public class MirageMetalView: MTKView {
     override public func layout() {
         super.layout()
         reportDrawableMetricsIfChanged()
-        if let streamID { MirageRenderScheduler.shared.signalFrame(for: streamID) }
+        requestDraw()
     }
 
     deinit {
         let streamID = registeredStreamID
         Task { @MainActor in
-            if let streamID { MirageRenderScheduler.shared.unregister(streamID: streamID) }
+            if let streamID { MirageClientRenderTrigger.shared.unregister(streamID: streamID) }
         }
         stopObservingPreferences()
     }
@@ -157,12 +168,14 @@ public class MirageMetalView: MTKView {
 
     override public func draw(_: CGRect) {
         // Pull-based frame update to avoid MainActor stalls during menu tracking/dragging.
+        drawScheduled = false
+        inFlightDraws += 1
         guard !renderingSuspended else {
-            onDrawCompleted?()
+            finishDraw()
             return
         }
         guard renderState.updateFrameIfNeeded(streamID: streamID) else {
-            onDrawCompleted?()
+            finishDraw()
             return
         }
 
@@ -170,12 +183,12 @@ public class MirageMetalView: MTKView {
 
         guard let drawable = currentDrawable,
               let pixelBuffer = renderState.currentPixelBuffer else {
-            onDrawCompleted?()
+            finishDraw()
             return
         }
 
         guard let renderer else {
-            onDrawCompleted?()
+            finishDraw()
             return
         }
 
@@ -184,16 +197,16 @@ public class MirageMetalView: MTKView {
             to: drawable,
             contentRect: renderState.currentContentRect,
             outputPixelFormat: colorPixelFormat,
-            completion: onDrawCompleted
+            completion: { [weak self] in
+                self?.finishDraw()
+            }
         )
     }
 
     private func applyRenderPreferences() {
         temporalDitheringEnabled = MirageRenderPreferences.temporalDitheringEnabled()
-        if let streamID {
-            renderState.markNeedsRedraw()
-            MirageRenderScheduler.shared.signalFrame(for: streamID)
-        }
+        renderState.markNeedsRedraw()
+        requestDraw()
     }
 
     func suspendRendering() {
@@ -203,17 +216,31 @@ public class MirageMetalView: MTKView {
     func resumeRendering() {
         renderingSuspended = false
         renderState.markNeedsRedraw()
-        if let streamID { MirageRenderScheduler.shared.signalFrame(for: streamID) }
+        requestDraw()
     }
 
     @MainActor
-    func noteScheduledDraw(signalTime: CFAbsoluteTime) {
-        lastScheduledSignalTime = signalTime
+    func requestDraw() {
+        guard !renderingSuspended else { return }
+        if drawScheduled || inFlightDraws >= maxInFlightDraws {
+            pendingDraw = true
+            return
+        }
+        scheduleDraw()
     }
 
     @MainActor
-    func requestDisplayLinkDraw(signalTime: CFAbsoluteTime) {
-        noteScheduledDraw(signalTime: signalTime)
+    private func finishDraw() {
+        inFlightDraws = max(0, inFlightDraws - 1)
+        if pendingDraw, inFlightDraws < maxInFlightDraws {
+            pendingDraw = false
+            scheduleDraw()
+        }
+    }
+
+    @MainActor
+    private func scheduleDraw() {
+        drawScheduled = true
         draw()
     }
 

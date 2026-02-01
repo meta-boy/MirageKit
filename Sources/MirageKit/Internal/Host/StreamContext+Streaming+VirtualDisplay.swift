@@ -26,10 +26,10 @@ extension StreamContext {
         guard !isRunning else { return }
         isRunning = true
         useVirtualDisplay = true
+        // Keep the virtual display at the target refresh so capture stays aligned.
         let virtualDisplayRefreshRate = SharedVirtualDisplayManager.streamRefreshRate(for: currentFrameRate)
-        captureFrameRateOverride = nil
+        captureFrameRateOverride = currentFrameRate
         captureFrameRate = currentFrameRate
-        updateFrameThrottle()
 
         let application = applicationWrapper.application
         applicationProcessID = application.processID
@@ -80,9 +80,13 @@ extension StreamContext {
         let resolvedAppWrapper = resolvedTargets.application
         let resolvedDisplayWrapper = resolvedTargets.display
 
+        let resolvedDisplayID = resolvedDisplayWrapper.display.displayID
+        if !CGVirtualDisplayBridge.isMirageDisplay(resolvedDisplayID) {
+            MirageLogger.error(.stream, "Expected virtual display capture, got display \(resolvedDisplayID)")
+        }
         MirageLogger
             .stream(
-                "Resolved SCWindow \(scWindow.windowID) on virtual display \(resolvedDisplayWrapper.display.displayID)"
+                "Resolved SCWindow \(scWindow.windowID) on virtual display \(resolvedDisplayID)"
             )
 
         let encoder = HEVCEncoder(
@@ -189,7 +193,8 @@ extension StreamContext {
         let windowCaptureEngine = WindowCaptureEngine(
             configuration: captureConfig,
             latencyMode: latencyMode,
-            captureFrameRate: captureFrameRate
+            captureFrameRate: captureFrameRate,
+            usesDisplayRefreshCadence: true
         )
         captureEngine = windowCaptureEngine
 
@@ -203,8 +208,6 @@ extension StreamContext {
             self?.enqueueCapturedFrame(frame)
         }
         await refreshCaptureCadence()
-
-        startCadenceTaskIfNeeded()
 
         MirageLogger
             .stream("Started stream \(streamID) with virtual display \(vdContext.displayID) for window \(windowID)")
@@ -308,8 +311,6 @@ extension StreamContext {
             self?.enqueueCapturedFrame(frame)
         }
         await refreshCaptureCadence()
-
-        startCadenceTaskIfNeeded()
 
         await encoder?.forceKeyframe()
 

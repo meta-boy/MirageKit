@@ -177,3 +177,10 @@ custom_rules:
     regex: ':\s*ObservableObject\b'
     message: "Use @Observable macro instead of ObservableObject protocol"
     severity: warning
+
+  # Detect recursive computed properties (infinite loops)
+  recursive_computed_property:
+    name: "Recursive Computed Property"
+    regex: '\bvar\s+(\w+)\s*:[^{]+\{\s*(?:return\s+)?(?:self\.)?\1\s*\}'
+    message: "Computed property recursively returns itself, causing infinite loop"
+    severity: error

@@ -18,23 +18,21 @@ extension MirageHostService {
     func handleAppListRequest(
         _ message: ControlMessage,
         from client: MirageConnectedClient,
-        connection: NWConnection
+        connection _: NWConnection
     )
     async {
         do {
             let request = try message.decode(AppListRequestMessage.self)
             MirageLogger.host("Client \(client.name) requested app list (icons: \(request.includeIcons))")
 
-            let includeIcons = request.includeIcons && sessionState == .active
-            if request.includeIcons, !includeIcons { MirageLogger.host("Session is \(sessionState); responding with app list without icons") }
+            updatePendingAppListRequest(clientID: client.id, requestedIcons: request.includeIcons)
 
-            let apps = await appStreamManager.getInstalledApps(includeIcons: includeIcons)
+            if desktopStreamContext != nil {
+                MirageLogger.host("Deferring app list request while desktop stream is active")
+                return
+            }
 
-            let response = AppListMessage(apps: apps)
-            let responseMessage = try ControlMessage(type: .appList, content: response)
-            connection.send(content: responseMessage.serialize(), completion: .idempotent)
-
-            MirageLogger.host("Sent \(apps.count) apps to \(client.name)")
+            sendPendingAppListRequestIfPossible()
         } catch {
             MirageLogger.error(.host, "Failed to handle app list request: \(error)")
         }
@@ -303,6 +301,66 @@ extension MirageHostService {
             }
         } catch {
             MirageLogger.error(.host, "Failed to handle cancel cooldown: \(error)")
+        }
+    }
+
+    func suspendAppListRequestsForDesktopStream() async {
+        if appListRequestTask != nil { MirageLogger.host("Cancelling app list request for desktop streaming") }
+        appListRequestTask?.cancel()
+        appListRequestTask = nil
+        await appStreamManager.cancelAppListScans()
+    }
+
+    func resumePendingAppListRequestIfNeeded() {
+        guard desktopStreamContext == nil else { return }
+        sendPendingAppListRequestIfPossible()
+    }
+
+    private func updatePendingAppListRequest(clientID: UUID, requestedIcons: Bool) {
+        if var pending = pendingAppListRequest, pending.clientID == clientID {
+            pending.requestedIcons = pending.requestedIcons || requestedIcons
+            pendingAppListRequest = pending
+            return
+        }
+        pendingAppListRequest = PendingAppListRequest(clientID: clientID, requestedIcons: requestedIcons)
+    }
+
+    private func sendPendingAppListRequestIfPossible() {
+        guard desktopStreamContext == nil else { return }
+        guard let pending = pendingAppListRequest else { return }
+        guard let clientContext = findClientContext(clientID: pending.clientID) else {
+            pendingAppListRequest = nil
+            return
+        }
+
+        appListRequestTask?.cancel()
+        let includeIcons = pending.requestedIcons && sessionState == .active
+        if pending.requestedIcons, !includeIcons {
+            MirageLogger.host("Session is \(sessionState); responding with app list without icons")
+        }
+        let clientID = pending.clientID
+        let token = UUID()
+        appListRequestToken = token
+
+        appListRequestTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            let apps = await appStreamManager.getInstalledApps(includeIcons: includeIcons)
+            if Task.isCancelled { return }
+
+            do {
+                let response = AppListMessage(apps: apps)
+                try await clientContext.send(.appList, content: response)
+                MirageLogger.host("Sent \(apps.count) apps to \(clientContext.client.name)")
+            } catch {
+                MirageLogger.error(.host, "Failed to handle app list request: \(error)")
+                return
+            }
+
+            if Task.isCancelled { return }
+            if appListRequestToken == token, pendingAppListRequest?.clientID == clientID {
+                pendingAppListRequest = nil
+            }
         }
     }
 }

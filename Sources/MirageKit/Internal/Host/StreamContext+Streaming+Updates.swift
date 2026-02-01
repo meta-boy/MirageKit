@@ -16,6 +16,7 @@ extension StreamContext {
     func updateFrameRate(_ fps: Int) async throws {
         guard isRunning, let captureEngine else { return }
         let clamped = max(1, fps)
+        captureFrameRateOverride = clamped
         let desiredCaptureRate = resolvedCaptureFrameRate(for: clamped)
         if desiredCaptureRate != captureFrameRate { try await captureEngine.updateFrameRate(desiredCaptureRate) }
         currentFrameRate = clamped
@@ -24,8 +25,6 @@ extension StreamContext {
         await encoder?.updateFrameRate(clamped)
         updateKeyframeCadence()
         updateQueueLimits()
-        stopCadenceTask()
-        startCadenceTaskIfNeeded()
         MirageLogger.stream("Stream \(streamID) frame rate updated to \(clamped) fps (capture \(captureFrameRate) fps)")
     }
 
@@ -324,8 +323,6 @@ extension StreamContext {
     func stop() async {
         guard isRunning else { return }
         isRunning = false
-
-        stopCadenceTask()
 
         await captureEngine?.stopCapture()
         captureEngine = nil

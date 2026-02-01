@@ -23,6 +23,8 @@ extension StreamContext {
     async throws {
         guard !isRunning else { return }
         isRunning = true
+        captureFrameRateOverride = currentFrameRate
+        captureFrameRate = currentFrameRate
 
         let window = windowWrapper.window
         let application = applicationWrapper.application
@@ -130,7 +132,8 @@ extension StreamContext {
         let captureEngine = WindowCaptureEngine(
             configuration: captureConfig,
             latencyMode: latencyMode,
-            captureFrameRate: captureFrameRate
+            captureFrameRate: captureFrameRate,
+            usesDisplayRefreshCadence: false
         )
         self.captureEngine = captureEngine
 
@@ -144,8 +147,6 @@ extension StreamContext {
         }
         await refreshCaptureCadence()
 
-        startCadenceTaskIfNeeded()
-
         MirageLogger.stream("Started stream \(streamID) for window \(windowID)")
     }
 
@@ -158,6 +159,8 @@ extension StreamContext {
     async throws {
         guard !isRunning else { return }
         isRunning = true
+        captureFrameRateOverride = currentFrameRate
+        captureFrameRate = currentFrameRate
 
         let display = displayWrapper.display
 
@@ -263,7 +266,8 @@ extension StreamContext {
         let captureEngine = WindowCaptureEngine(
             configuration: captureConfig,
             latencyMode: latencyMode,
-            captureFrameRate: captureFrameRate
+            captureFrameRate: captureFrameRate,
+            usesDisplayRefreshCadence: CGVirtualDisplayBridge.isMirageDisplay(display.displayID)
         )
         self.captureEngine = captureEngine
 
@@ -276,8 +280,6 @@ extension StreamContext {
         }
         await refreshCaptureCadence()
 
-        startCadenceTaskIfNeeded()
-
         MirageLogger.stream("Started login display stream \(streamID) at \(width)x\(height)")
     }
 
@@ -289,9 +291,8 @@ extension StreamContext {
     async throws {
         guard !isRunning else { return }
         isRunning = true
-        captureFrameRateOverride = nil
+        captureFrameRateOverride = currentFrameRate
         captureFrameRate = currentFrameRate
-        updateFrameThrottle()
 
         let display = displayWrapper.display
 
@@ -396,7 +397,8 @@ extension StreamContext {
         let captureEngine = WindowCaptureEngine(
             configuration: captureConfig,
             latencyMode: latencyMode,
-            captureFrameRate: captureFrameRate
+            captureFrameRate: captureFrameRate,
+            usesDisplayRefreshCadence: CGVirtualDisplayBridge.isMirageDisplay(display.displayID)
         )
         self.captureEngine = captureEngine
 
@@ -409,8 +411,6 @@ extension StreamContext {
             self?.enqueueCapturedFrame(frame)
         }
         await refreshCaptureCadence()
-
-        startCadenceTaskIfNeeded()
 
         MirageLogger.stream("Started desktop display stream \(streamID) at \(width)x\(height)")
     }

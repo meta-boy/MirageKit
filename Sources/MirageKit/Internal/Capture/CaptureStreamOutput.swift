@@ -79,6 +79,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         frameGapThreshold: CFAbsoluteTime = 0.100,
         stallThreshold: CFAbsoluteTime = 1.0,
         expectedFrameRate: Double = 0,
+        targetFrameRate: Int = 0,
         poolMinimumBufferCount: Int = 6
     ) {
         self.onFrame = onFrame
@@ -121,7 +122,12 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         watchdogTimer = nil
     }
 
-    func updateExpectations(frameRate: Int, gapThreshold: CFAbsoluteTime, stallThreshold: CFAbsoluteTime) {
+    func updateExpectations(
+        frameRate: Int,
+        gapThreshold: CFAbsoluteTime,
+        stallThreshold: CFAbsoluteTime,
+        targetFrameRate: Int
+    ) {
         expectationLock.withLock {
             expectedFrameRate = Double(frameRate)
             frameGapThreshold = gapThreshold
@@ -272,7 +278,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
                 dirtyPercentage: 100,
                 isIdleFrame: false
             )
-            emitFrame(sampleBuffer: sampleBuffer, sourcePixelBuffer: pixelBuffer, frameInfo: frameInfo)
+            emitFrame(sampleBuffer: sampleBuffer, sourcePixelBuffer: pixelBuffer, frameInfo: frameInfo, captureTime: captureTime)
             return
         }
 
@@ -413,13 +419,14 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             isIdleFrame: isIdleFrame
         )
 
-        emitFrame(sampleBuffer: sampleBuffer, sourcePixelBuffer: pixelBuffer, frameInfo: frameInfo)
+        emitFrame(sampleBuffer: sampleBuffer, sourcePixelBuffer: pixelBuffer, frameInfo: frameInfo, captureTime: captureTime)
     }
 
     private func emitFrame(
         sampleBuffer: CMSampleBuffer,
         sourcePixelBuffer: CVPixelBuffer,
-        frameInfo: CapturedFrameInfo
+        frameInfo: CapturedFrameInfo,
+        captureTime: CFAbsoluteTime
     ) {
         let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         let duration = CMSampleBufferGetDuration(sampleBuffer)
@@ -428,6 +435,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
                 pixelBuffer: pixelBuffer,
                 presentationTime: presentationTime,
                 duration: duration,
+                captureTime: captureTime,
                 info: frameInfo
             )
             onFrame(frame)
@@ -501,6 +509,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             MirageLogger.capture(message)
         }
     }
+
 }
 
 #endif

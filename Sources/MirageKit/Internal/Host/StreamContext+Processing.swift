@@ -7,7 +7,6 @@
 //  Frame processing and adaptive quality control.
 //
 
-import CoreMedia
 import CoreVideo
 import Foundation
 
@@ -16,8 +15,8 @@ extension StreamContext {
     nonisolated func enqueueCapturedFrame(_ frame: CapturedFrame) {
         guard shouldEncodeFrames else { return }
         Task(priority: .userInitiated) { await self.recordCapturedFrame(frame) }
-        if frameThrottle.shouldDrop(frame) {
-            Task(priority: .userInitiated) { await self.recordCaptureDrop() }
+        if frame.info.isIdleFrame {
+            Task(priority: .userInitiated) { await self.recordIdleSkip() }
             return
         }
         if frameInbox.enqueue(frame) {
@@ -26,6 +25,7 @@ extension StreamContext {
     }
 
     func recordCapturedFrame(_ frame: CapturedFrame) {
+        captureIngressIntervalCount += 1
         lastCapturedFrameTime = CFAbsoluteTimeGetCurrent()
         lastCapturedFrame = frame
         lastCapturedDuration = frame.duration
@@ -35,33 +35,8 @@ extension StreamContext {
         }
     }
 
-    func recordCaptureDrop() {
-        captureDroppedIntervalCount += 1
-        droppedFrameCount += 1
-    }
-
-    func startCadenceTaskIfNeeded() {
-        cadenceTask?.cancel()
-        cadenceTask = nil
-    }
-
-    func stopCadenceTask() {
-        cadenceTask?.cancel()
-        cadenceTask = nil
-    }
-
-    func emitCadenceFrameIfNeeded(frameInterval _: TimeInterval) {}
-
-    private func resolvedSyntheticDuration(fallback: CMTime) -> CMTime {
-        if fallback.isValid, CMTimeCompare(fallback, .zero) == 1 { return fallback }
-        let timescale = CMTimeScale(max(1, currentFrameRate))
-        return CMTime(value: 1, timescale: timescale)
-    }
-
-    private func resolvedSyntheticPresentationTime(duration: CMTime, fallback: CMTime) -> CMTime {
-        if lastEncodedPresentationTime.isValid { return CMTimeAdd(lastEncodedPresentationTime, duration) }
-        if fallback.isValid { return CMTimeAdd(fallback, duration) }
-        return CMClockGetTime(CMClockGetHostTimeClock())
+    func recordIdleSkip() {
+        idleSkippedCount += 1
     }
 
     func scheduleProcessingIfNeeded() {
@@ -103,7 +78,6 @@ extension StreamContext {
         lastEncodedPresentationTime = .invalid
         lastSyntheticFrameTime = 0
         lastSyntheticLogTime = 0
-        frameThrottle.reset()
         frameInbox.clear()
     }
 
@@ -205,12 +179,9 @@ extension StreamContext {
 
             let isIdleFrame = frame.info.isIdleFrame
             if isIdleFrame {
-                let shouldEncodeIdle = shouldMaintainIdleFrames && queueBytes < queuePressureBytes
-                if !shouldEncodeIdle {
-                    idleSkippedCount += 1
-                    logStreamStatsIfNeeded()
-                    continue
-                }
+                idleSkippedCount += 1
+                logStreamStatsIfNeeded()
+                continue
             }
 
             setContentRect(frame.info.contentRect)
@@ -317,9 +288,11 @@ extension StreamContext {
         let elapsed = now - lastPipelineStatsLogTime
         guard elapsed >= pipelineStatsInterval else { return }
 
+        let captureIngressFPS = Double(captureIngressIntervalCount) / elapsed
         let captureFPS = Double(captureIntervalCount) / elapsed
         let encodeAttemptFPS = Double(encodeAttemptIntervalCount) / elapsed
         let encodeFPS = Double(encodeAcceptedIntervalCount) / elapsed
+        let ingressText = captureIngressFPS.formatted(.number.precision(.fractionLength(1)))
         let captureText = captureFPS.formatted(.number.precision(.fractionLength(1)))
         let attemptText = encodeAttemptFPS.formatted(.number.precision(.fractionLength(1)))
         let encodeText = encodeFPS.formatted(.number.precision(.fractionLength(1)))
@@ -336,7 +309,7 @@ extension StreamContext {
         let syntheticText = syntheticFPS.formatted(.number.precision(.fractionLength(1)))
 
         MirageLogger.metrics(
-            "Pipeline: capture=\(captureText)fps drop=\(captureDroppedIntervalCount) " +
+            "Pipeline: ingress=\(ingressText)fps capture=\(captureText)fps drop=\(captureDroppedIntervalCount) " +
                 "encode=\(encodeText)fps attempt=\(attemptText)fps reject=\(encodeRejectedIntervalCount) error=\(encodeErrorIntervalCount) " +
                 "synthetic=\(syntheticText)fps gap=\(captureGapText)ms inFlight=\(inFlightCount) buffer=\(pendingCount)/\(frameBufferDepth) " +
                 "queue=\(queueKB)KB encodeAvg=\(encodeAvgText)ms"
@@ -349,6 +322,7 @@ extension StreamContext {
             pendingCount: pendingCount
         )
 
+        captureIngressIntervalCount = 0
         captureIntervalCount = 0
         captureDroppedIntervalCount = 0
         encodeAttemptIntervalCount = 0

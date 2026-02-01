@@ -45,6 +45,7 @@ final class ScrollPhysicsCapturingNSView: NSView {
             updateCursorLockMode()
         }
     }
+
     /// The invisible scroll view for capturing trackpad physics
     private let scrollView: NSScrollView
 
@@ -69,8 +70,8 @@ final class ScrollPhysicsCapturingNSView: NSView {
 
     /// Locked cursor view for secondary display mode
     private let lockedCursorView = NSView(frame: .zero)
-    private var lockedCursorPosition: CGPoint = CGPoint(x: 0.5, y: 0.5)
-    private var lockedCursorTargetPosition: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    private var lockedCursorPosition: CGPoint = .init(x: 0.5, y: 0.5)
+    private var lockedCursorTargetPosition: CGPoint = .init(x: 0.5, y: 0.5)
     private var lockedCursorVisible: Bool = false
     private var lockedCursorTargetVisible: Bool = false
     private var lockedCursorSequence: UInt64 = 0
@@ -399,7 +400,7 @@ final class ScrollPhysicsCapturingNSView: NSView {
             lastMouseLocation = clampedLockedCursorPosition()
         } else {
             let locationInView = convert(event.locationInWindow, from: nil)
-            if bounds.width > 0 && bounds.height > 0 {
+            if bounds.width > 0, bounds.height > 0 {
                 lastMouseLocation = CGPoint(
                     x: locationInView.x / bounds.width,
                     y: 1.0 - (locationInView.y / bounds.height) // Flip Y for normalized coords

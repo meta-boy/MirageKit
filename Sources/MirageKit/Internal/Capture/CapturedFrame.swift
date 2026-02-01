@@ -27,6 +27,8 @@ struct CapturedFrame: @unchecked Sendable {
     let pixelBuffer: CVPixelBuffer
     let presentationTime: CMTime
     let duration: CMTime
+    /// Host wall time when the frame was received from SCK (used for pacing).
+    let captureTime: CFAbsoluteTime
     let info: CapturedFrameInfo
 }
 

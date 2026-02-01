@@ -214,6 +214,8 @@ extension MirageHostService {
         desktopStreamClientContext = clientContext
         streamsByID[streamID] = streamContext
 
+        await suspendAppListRequestsForDesktopStream()
+
         // Register for input handling.
         // For mirrored virtual displays, use the aspect-fit content bounds within the
         // physical display so input matches the mirrored content area.
@@ -346,6 +348,8 @@ extension MirageHostService {
         }
 
         if activeStreams.isEmpty, loginDisplayContext == nil { await PowerAssertionManager.shared.disable() }
+
+        resumePendingAppListRequestIfNeeded()
 
         MirageLogger.host("Desktop stream stopped")
     }

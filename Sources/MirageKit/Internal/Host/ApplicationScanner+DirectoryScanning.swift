@@ -40,10 +40,8 @@ extension ApplicationScanner {
     }
 
     func scanAllDirectories() async -> [AppCandidate] {
-        await Task.detached(priority: .utility) { [weak self] in
-            guard let self else { return [] }
-            return await performDirectoryScan()
-        }.value
+        if Task.isCancelled { return [] }
+        return performDirectoryScan()
     }
 
     func performDirectoryScan() -> [AppCandidate] {
@@ -52,6 +50,7 @@ extension ApplicationScanner {
         var seenPaths = Set<String>()
 
         for directory in scanDirectories {
+            if Task.isCancelled { return Array(byBundle.values) + Array(byPath.values) }
             guard fileManager.fileExists(atPath: directory.path) else { continue }
 
             guard let enumerator = fileManager.enumerator(
@@ -67,6 +66,7 @@ extension ApplicationScanner {
             }
 
             for case let url as URL in enumerator {
+                if Task.isCancelled { return Array(byBundle.values) + Array(byPath.values) }
                 guard let canonicalURL = processCandidate(
                     at: url,
                     allowBundleContents: false,
@@ -131,6 +131,7 @@ extension ApplicationScanner {
         byBundle: inout [String: AppCandidate],
         byPath: inout [String: AppCandidate]
     ) {
+        if Task.isCancelled { return }
         guard currentDepth < maxDepth else { return }
 
         let lowercasedPath = directory.path.lowercased()
@@ -151,6 +152,7 @@ extension ApplicationScanner {
         let nextDepth = currentDepth + 1
 
         for entry in contents {
+            if Task.isCancelled { return }
             let lowercasedName = entry.lastPathComponent.lowercased()
             let pathExtension = entry.pathExtension.lowercased()
 
@@ -220,6 +222,7 @@ extension ApplicationScanner {
         byBundle: inout [String: AppCandidate],
         byPath: inout [String: AppCandidate]
     ) {
+        if Task.isCancelled { return }
         guard currentDepth < maxDepth else { return }
 
         let lowercasedPath = directory.path.lowercased()
@@ -240,6 +243,7 @@ extension ApplicationScanner {
         let nextDepth = currentDepth + 1
 
         for entry in contents {
+            if Task.isCancelled { return }
             let pathExtension = entry.pathExtension.lowercased()
 
             if pathExtension == "app" {

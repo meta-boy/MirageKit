@@ -153,6 +153,11 @@ public final class MirageHostService {
     /// App-centric streaming manager - internal for extension access
     let appStreamManager = AppStreamManager()
 
+    /// Pending app list request to resume after desktop streaming.
+    var pendingAppListRequest: PendingAppListRequest?
+    var appListRequestTask: Task<Void, Never>?
+    var appListRequestToken: UUID = .init()
+
     /// Menu bar passthrough - internal for extension access
     let menuBarMonitor = MenuBarMonitor()
 
@@ -188,6 +193,11 @@ public final class MirageHostService {
         case starting
         case advertising(controlPort: UInt16, dataPort: UInt16)
         case error(String)
+    }
+
+    struct PendingAppListRequest: Equatable {
+        let clientID: UUID
+        var requestedIcons: Bool
     }
 
     public init(

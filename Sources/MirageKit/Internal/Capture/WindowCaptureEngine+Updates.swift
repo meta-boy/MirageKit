@@ -63,10 +63,7 @@ extension WindowCaptureEngine {
             streamConfig.width = newWidth
             streamConfig.height = newHeight
         }
-        streamConfig.minimumFrameInterval = CMTime(
-            value: 1,
-            timescale: CMTimeScale(minimumFrameIntervalRate())
-        )
+        streamConfig.minimumFrameInterval = resolvedMinimumFrameInterval()
         streamConfig.pixelFormat = pixelFormatType
         streamConfig.colorSpaceName = configuration.colorSpace == .displayP3
             ? CGColorSpace.displayP3
@@ -117,10 +114,7 @@ extension WindowCaptureEngine {
         useExplicitCaptureDimensions = true
         streamConfig.width = width
         streamConfig.height = height
-        streamConfig.minimumFrameInterval = CMTime(
-            value: 1,
-            timescale: CMTimeScale(minimumFrameIntervalRate())
-        )
+        streamConfig.minimumFrameInterval = resolvedMinimumFrameInterval()
         streamConfig.pixelFormat = pixelFormatType
         streamConfig.colorSpaceName = configuration.colorSpace == .displayP3
             ? CGColorSpace.displayP3
@@ -173,10 +167,7 @@ extension WindowCaptureEngine {
         useExplicitCaptureDimensions = true
         streamConfig.width = newWidth
         streamConfig.height = newHeight
-        streamConfig.minimumFrameInterval = CMTime(
-            value: 1,
-            timescale: CMTimeScale(minimumFrameIntervalRate())
-        )
+        streamConfig.minimumFrameInterval = resolvedMinimumFrameInterval()
         streamConfig.pixelFormat = pixelFormatType
         streamConfig.colorSpaceName = configuration.colorSpace == .displayP3
             ? CGColorSpace.displayP3
@@ -192,7 +183,8 @@ extension WindowCaptureEngine {
         streamOutput?.updateExpectations(
             frameRate: captureRate,
             gapThreshold: frameGapThreshold(for: captureRate),
-            stallThreshold: stallThreshold(for: captureRate)
+            stallThreshold: stallThreshold(for: captureRate),
+            targetFrameRate: currentFrameRate
         )
 
         MirageLogger.capture("Capture switched to display \(newDisplay.displayID) at \(newWidth)x\(newHeight)")
@@ -211,10 +203,7 @@ extension WindowCaptureEngine {
             streamConfig.width = currentWidth
             streamConfig.height = currentHeight
         }
-        streamConfig.minimumFrameInterval = CMTime(
-            value: 1,
-            timescale: CMTimeScale(minimumFrameIntervalRate())
-        )
+        streamConfig.minimumFrameInterval = resolvedMinimumFrameInterval()
         streamConfig.pixelFormat = pixelFormatType
         streamConfig.colorSpaceName = configuration.colorSpace == .displayP3
             ? CGColorSpace.displayP3
@@ -227,7 +216,8 @@ extension WindowCaptureEngine {
         streamOutput?.updateExpectations(
             frameRate: captureRate,
             gapThreshold: frameGapThreshold(for: captureRate),
-            stallThreshold: stallThreshold(for: captureRate)
+            stallThreshold: stallThreshold(for: captureRate),
+            targetFrameRate: currentFrameRate
         )
         MirageLogger.capture("Frame rate updated to \(fps) fps")
     }

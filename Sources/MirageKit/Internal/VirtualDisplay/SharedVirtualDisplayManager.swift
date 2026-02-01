@@ -120,15 +120,15 @@ actor SharedVirtualDisplayManager {
     /// Handler invoked when the shared display generation changes while streams are active.
     var generationChangeHandler: (@Sendable (DisplaySnapshot, UInt64) -> Void)?
 
-    static let preferredStreamRefreshRate: Int = 120
+    static let preferredStreamRefreshRate: Int = 60
 
-    static func streamRefreshRate(for _: Int) -> Int {
-        preferredStreamRefreshRate
+    static func streamRefreshRate(for requested: Int) -> Int {
+        requested >= 120 ? 120 : preferredStreamRefreshRate
     }
 
     func resolvedRefreshRate(_ requested: Int) -> Int {
         if requested >= 120 { return 120 }
-        return 60
+        return Self.preferredStreamRefreshRate
     }
 }
 

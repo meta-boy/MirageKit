@@ -206,7 +206,7 @@ actor StreamController {
         await decoder.startDecoding { [weak self] (pixelBuffer: CVPixelBuffer, _: CMTime, contentRect: CGRect) in
             // Also store in global cache for iOS gesture tracking compatibility
             MirageFrameCache.shared.store(pixelBuffer, contentRect: contentRect, for: capturedStreamID)
-            MirageRenderScheduler.shared.signalFrame(for: capturedStreamID)
+            MirageClientRenderTrigger.shared.requestDraw(for: capturedStreamID)
 
             if metricsTracker.recordDecodedFrame() {
                 Task { [weak self] in

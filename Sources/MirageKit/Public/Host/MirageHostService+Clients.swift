@@ -16,6 +16,13 @@ extension MirageHostService {
         // Clear any stuck modifier state from this client's session
         inputController.clearAllModifiers()
 
+        if pendingAppListRequest?.clientID == client.id {
+            pendingAppListRequest = nil
+            appListRequestTask?.cancel()
+            appListRequestTask = nil
+            await appStreamManager.cancelAppListScans()
+        }
+
         // Stop all window streams for this client and minimize their windows
         for stream in activeStreams where stream.client.id == client.id {
             await stopStream(stream, minimizeWindow: true)

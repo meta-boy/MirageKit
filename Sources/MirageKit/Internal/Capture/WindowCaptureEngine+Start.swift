@@ -88,10 +88,7 @@ extension WindowCaptureEngine {
             )
 
         // Frame rate
-        streamConfig.minimumFrameInterval = CMTime(
-            value: 1,
-            timescale: CMTimeScale(minimumFrameIntervalRate())
-        )
+        streamConfig.minimumFrameInterval = resolvedMinimumFrameInterval()
 
         // Color and format - configured pixel format (P010, ARGB2101010, BGRA, NV12)
         streamConfig.pixelFormat = pixelFormatType
@@ -146,6 +143,7 @@ extension WindowCaptureEngine {
             frameGapThreshold: frameGapThreshold(for: captureRate),
             stallThreshold: stallThreshold(for: captureRate),
             expectedFrameRate: Double(captureRate),
+            targetFrameRate: currentFrameRate,
             poolMinimumBufferCount: bufferPoolMinimumCount
         )
 
@@ -295,10 +293,7 @@ extension WindowCaptureEngine {
         }
 
         // Frame rate
-        streamConfig.minimumFrameInterval = CMTime(
-            value: 1,
-            timescale: CMTimeScale(minimumFrameIntervalRate())
-        )
+        streamConfig.minimumFrameInterval = resolvedMinimumFrameInterval()
 
         // Color and format
         streamConfig.pixelFormat = pixelFormatType
@@ -362,6 +357,7 @@ extension WindowCaptureEngine {
             frameGapThreshold: frameGapThreshold(for: captureRate),
             stallThreshold: stallThreshold(for: captureRate),
             expectedFrameRate: Double(captureRate),
+            targetFrameRate: currentFrameRate,
             poolMinimumBufferCount: bufferPoolMinimumCount
         )
 

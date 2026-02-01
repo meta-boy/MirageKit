@@ -122,12 +122,15 @@ public actor ApplicationScanner {
         let startTime = Date()
 
         let candidates = await scanAllDirectories()
+        if Task.isCancelled { return [] }
 
         var apps: [MirageInstalledApp] = []
         for candidate in candidates {
+            if Task.isCancelled { return [] }
             guard let bundleIdentifier = candidate.bundleIdentifier else { continue }
 
             let iconData: Data? = includeIcons ? await generateIconPNG(for: candidate.url) : nil
+            if Task.isCancelled { return [] }
 
             let app = MirageInstalledApp(
                 bundleIdentifier: bundleIdentifier,

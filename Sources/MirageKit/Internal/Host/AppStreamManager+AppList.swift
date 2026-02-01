@@ -16,12 +16,21 @@ extension AppStreamManager {
 
     /// Get list of installed apps with streaming status
     public func getInstalledApps(includeIcons: Bool = true) async -> [MirageInstalledApp] {
+        if Task.isCancelled {
+            let cached = includeIcons ? cachedAppsWithIcons : cachedAppsWithoutIcons
+            return await refreshStatuses(for: cached)
+        }
+
         let now = Date()
         let statusSnapshot = snapshotStatus()
 
         if includeIcons {
             if let task = appScanTaskWithIcons {
                 let apps = await task.value
+                let wasCancelled = task.isCancelled
+                if wasCancelled {
+                    return await refreshStatuses(for: cachedAppsWithIcons)
+                }
                 let refreshed = await refreshStatuses(for: apps)
                 cachedAppsWithIcons = refreshed
                 lastAppsScanWithIconsAt = now
@@ -42,8 +51,12 @@ extension AppStreamManager {
             }
             appScanTaskWithIcons = task
             let apps = await task.value
+            let wasCancelled = task.isCancelled
             appScanTaskWithIcons = nil
 
+            if wasCancelled {
+                return await refreshStatuses(for: cachedAppsWithIcons)
+            }
             let refreshed = await refreshStatuses(for: apps)
             cachedAppsWithIcons = refreshed
             lastAppsScanWithIconsAt = now
@@ -52,6 +65,10 @@ extension AppStreamManager {
 
         if let task = appScanTaskWithoutIcons {
             let apps = await task.value
+            let wasCancelled = task.isCancelled
+            if wasCancelled {
+                return await refreshStatuses(for: cachedAppsWithoutIcons)
+            }
             let refreshed = await refreshStatuses(for: apps)
             cachedAppsWithoutIcons = refreshed
             lastAppsScanWithoutIconsAt = now
@@ -72,8 +89,12 @@ extension AppStreamManager {
         }
         appScanTaskWithoutIcons = task
         let apps = await task.value
+        let wasCancelled = task.isCancelled
         appScanTaskWithoutIcons = nil
 
+        if wasCancelled {
+            return await refreshStatuses(for: cachedAppsWithoutIcons)
+        }
         let refreshed = await refreshStatuses(for: apps)
         cachedAppsWithoutIcons = refreshed
         lastAppsScanWithoutIconsAt = now
@@ -85,6 +106,13 @@ extension AppStreamManager {
         cachedAppsWithoutIcons.removeAll()
         lastAppsScanWithIconsAt = nil
         lastAppsScanWithoutIconsAt = nil
+    }
+
+    func cancelAppListScans() {
+        appScanTaskWithIcons?.cancel()
+        appScanTaskWithoutIcons?.cancel()
+        appScanTaskWithIcons = nil
+        appScanTaskWithoutIcons = nil
     }
 
     private func snapshotStatus() -> (runningApps: Set<String>, streamingApps: Set<String>) {

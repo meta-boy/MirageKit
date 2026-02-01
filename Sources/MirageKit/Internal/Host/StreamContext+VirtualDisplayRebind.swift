@@ -174,7 +174,6 @@ extension StreamContext {
         }
         await refreshCaptureCadence()
 
-        startCadenceTaskIfNeeded()
         await encoder?.forceKeyframe()
         MirageLogger.stream("Shared display rebind complete for stream \(streamID)")
     }

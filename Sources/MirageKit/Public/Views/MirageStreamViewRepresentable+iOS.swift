@@ -140,6 +140,7 @@ public final class MirageStreamViewController: UIViewController {
             setNeedsUpdateOfPrefersPointerLocked()
         }
     }
+
     private var pointerLockObserver: NSObjectProtocol?
     private var lastPointerLockActive: Bool?
 
@@ -209,8 +210,8 @@ public final class MirageStreamViewController: UIViewController {
         ) { [weak self] notification in
             guard let self else { return }
             guard let scene = notification.userInfo?[UIPointerLockState.sceneUserInfoKey] as? UIScene else { return }
-            guard scene === self.view.window?.windowScene else { return }
-            self.updatePointerLockState()
+            guard scene === view.window?.windowScene else { return }
+            updatePointerLockState()
         }
         updatePointerLockState()
     }

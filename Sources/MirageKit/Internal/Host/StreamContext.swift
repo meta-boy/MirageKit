@@ -106,6 +106,7 @@ actor StreamContext {
     let inFlightAdjustmentCooldown: CFAbsoluteTime = 1.0
 
     // Pipeline throughput metrics (interval counters)
+    var captureIngressIntervalCount: UInt64 = 0
     var captureIntervalCount: UInt64 = 0
     var captureDroppedIntervalCount: UInt64 = 0
     var encodeAttemptIntervalCount: UInt64 = 0
@@ -115,7 +116,6 @@ actor StreamContext {
     var lastPipelineStatsLogTime: CFAbsoluteTime = 0
     let pipelineStatsInterval: CFAbsoluteTime = 2.0
     var lastCapturedFrameTime: CFAbsoluteTime = 0
-    var cadenceTask: Task<Void, Never>?
     var startupBaseTime: CFAbsoluteTime = 0
     var startupLabel: String = ""
     var startupFirstCaptureLogged = false
@@ -209,12 +209,6 @@ actor StreamContext {
     /// Incremented when the host resets capture or send state.
     nonisolated(unsafe) var epoch: UInt16 = 0
 
-    /// Drops capture frames when capture cadence exceeds the encoder target cadence.
-    nonisolated let frameThrottle = StreamFrameThrottle()
-
-    /// Whether idle frames should be encoded to maintain cadence.
-    let shouldMaintainIdleFrames: Bool
-
     /// Quality preset used to configure latency-sensitive defaults.
     let qualityPreset: MirageQualityPreset?
     /// Latency preference for buffering behavior.
@@ -262,7 +256,6 @@ actor StreamContext {
         requestedStreamScale = clampedScale
         self.adaptiveScaleEnabled = adaptiveScaleEnabled
         baseFrameFlags = additionalFrameFlags
-        shouldMaintainIdleFrames = additionalFrameFlags.contains(.desktopStream)
         maxPayloadSize = miragePayloadSize(maxPacketSize: maxPacketSize)
         currentFrameRate = encoderConfig.targetFrameRate
         captureFrameRateOverride = nil
@@ -308,11 +301,6 @@ actor StreamContext {
         )
         keyframeIntervalSeconds = cadence.interval
         keyframeMaxIntervalSeconds = cadence.maxInterval
-        frameThrottle.configure(
-            targetFrameRate: currentFrameRate,
-            captureFrameRate: captureFrameRate,
-            isPaced: false
-        )
     }
 
     func setStartupBaseTime(_ baseTime: CFAbsoluteTime, label: String) {
@@ -340,19 +328,10 @@ actor StreamContext {
         return targetFrameRate
     }
 
-    func updateFrameThrottle() {
-        frameThrottle.configure(
-            targetFrameRate: currentFrameRate,
-            captureFrameRate: captureFrameRate,
-            isPaced: false
-        )
-    }
-
     func refreshCaptureCadence() async {
         guard let captureEngine else { return }
         let effectiveRate = await captureEngine.effectiveCaptureRate()
         captureFrameRate = effectiveRate
-        updateFrameThrottle()
     }
 
     static func frameBufferDepth(
