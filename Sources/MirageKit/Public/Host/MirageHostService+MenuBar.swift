@@ -94,7 +94,7 @@ extension MirageHostService {
             let request = try message.decode(StartDesktopStreamMessage.self)
             MirageLogger
                 .host(
-                    "Client \(client.name) requested desktop stream: \(request.displayWidth)x\(request.displayHeight)"
+                    "Client \(client.name) requested desktop stream: \(request.displayWidth)x\(request.displayHeight), mode=\(request.mode?.displayName ?? "Full Desktop")"
                 )
 
             guard let clientContext = clientsByConnection[ObjectIdentifier(connection)] else {
@@ -114,6 +114,7 @@ extension MirageHostService {
             try await startDesktopStream(
                 to: clientContext,
                 displayResolution: CGSize(width: request.displayWidth, height: request.displayHeight),
+                mode: request.mode ?? .mirrored,
                 qualityPreset: request.preferredQuality,
                 keyFrameInterval: request.keyFrameInterval,
                 frameQuality: request.frameQuality,

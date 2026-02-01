@@ -30,6 +30,9 @@ actor CursorMonitor {
     /// Callback invoked when cursor changes for a stream
     private var onCursorChange: ((StreamID, MirageCursorType, Bool) -> Void)?
 
+    /// Callback invoked with cursor position updates for a stream
+    private var onCursorPosition: ((StreamID, CGPoint, Bool) -> Void)?
+
     /// Initialize with a polling rate
     /// - Parameter pollingRate: How many times per second to poll (default 30Hz)
     init(pollingRate: Double = 30.0) {
@@ -42,9 +45,11 @@ actor CursorMonitor {
     ///   - onCursorChange: Callback invoked when cursor type changes for a stream
     func start(
         windowFrameProvider: @escaping @MainActor () -> [(StreamID, CGRect)],
-        onCursorChange: @escaping @Sendable (StreamID, MirageCursorType, Bool) -> Void
+        onCursorChange: @escaping @Sendable (StreamID, MirageCursorType, Bool) -> Void,
+        onCursorPosition: (@Sendable (StreamID, CGPoint, Bool) -> Void)? = nil
     ) {
         self.onCursorChange = onCursorChange
+        self.onCursorPosition = onCursorPosition
 
         // Cancel any existing polling task
         pollingTask?.cancel()
@@ -57,7 +62,7 @@ actor CursorMonitor {
                 await self?.pollCursor(streams: streams)
 
                 do {
-                    try await Task.sleep(nanoseconds: UInt64(pollingInterval * 1_000_000_000))
+                    try await Task.sleep(for: .seconds(pollingInterval))
                 } catch {
                     // Task was cancelled
                     break
@@ -73,6 +78,7 @@ actor CursorMonitor {
         lastCursorTypes.removeAll()
         lastVisibility.removeAll()
         onCursorChange = nil
+        onCursorPosition = nil
     }
 
     /// Poll current cursor state and check for changes
@@ -86,6 +92,11 @@ actor CursorMonitor {
             // Note: windowFrame is in screen coordinates with bottom-left origin
             let visibilityFrame = windowFrame.insetBy(dx: -visibilityPadding, dy: -visibilityPadding)
             let isInWindow = visibilityFrame.contains(mouseLocation)
+
+            if let onCursorPosition {
+                let normalized = normalizedPosition(mouseLocation, in: windowFrame)
+                onCursorPosition(streamID, normalized, isInWindow)
+            }
 
             // ALWAYS detect actual system cursor, regardless of mouse position
             // This ensures cursor changes are sent even when mouse is at window edge
@@ -115,6 +126,13 @@ actor CursorMonitor {
             lastCursorTypes.removeValue(forKey: streamID)
             lastVisibility.removeValue(forKey: streamID)
         }
+    }
+
+    private func normalizedPosition(_ location: CGPoint, in frame: CGRect) -> CGPoint {
+        guard frame.width > 0, frame.height > 0 else { return CGPoint(x: 0.5, y: 0.5) }
+        let x = (location.x - frame.minX) / frame.width
+        let y = 1.0 - ((location.y - frame.minY) / frame.height)
+        return CGPoint(x: x, y: y)
     }
 
     /// Force an immediate cursor update for a specific stream

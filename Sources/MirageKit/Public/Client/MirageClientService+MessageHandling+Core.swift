@@ -117,6 +117,7 @@ extension MirageClientService {
             MirageFrameCache.shared.clear(for: streamID)
             metricsStore.clear(streamID: streamID)
             cursorStore.clear(streamID: streamID)
+            cursorPositionStore.clear(streamID: streamID)
 
             removeActiveStreamID(streamID)
             registeredStreamIDs.remove(streamID)
@@ -200,10 +201,20 @@ extension MirageClientService {
                 cursorType: update.cursorType,
                 isVisible: update.isVisible
             )
-            #if os(iOS) || os(visionOS)
             if didChange { MirageCursorUpdateRouter.shared.notify(streamID: update.streamID) }
-            #endif
             onCursorUpdate?(update.streamID, update.cursorType, update.isVisible)
+        }
+    }
+
+    func handleCursorPositionUpdate(_ message: ControlMessage) {
+        if let update = try? message.decode(CursorPositionUpdateMessage.self) {
+            let position = CGPoint(x: CGFloat(update.normalizedX), y: CGFloat(update.normalizedY))
+            let didChange = cursorPositionStore.updatePosition(
+                streamID: update.streamID,
+                position: position,
+                isVisible: update.isVisible
+            )
+            if didChange { MirageCursorUpdateRouter.shared.notify(streamID: update.streamID) }
         }
     }
 

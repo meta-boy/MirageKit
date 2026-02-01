@@ -19,6 +19,7 @@ public struct MirageStreamContentView: View {
     public let sessionStore: MirageClientSessionStore
     public let clientService: MirageClientService
     public let isDesktopStream: Bool
+    public let desktopStreamMode: MirageDesktopStreamMode
     public let onExitDesktopStream: (() -> Void)?
     public let onHardwareKeyboardPresenceChanged: ((Bool) -> Void)?
     public let onSoftwareKeyboardVisibilityChanged: ((Bool) -> Void)?
@@ -47,6 +48,7 @@ public struct MirageStreamContentView: View {
     ///   - sessionStore: Session store that tracks frames, focus, and resize updates.
     ///   - clientService: The client service used to send input and resize events.
     ///   - isDesktopStream: Whether the stream represents a desktop session.
+    ///   - desktopStreamMode: Desktop stream mode (mirrored vs secondary display).
     ///   - onExitDesktopStream: Optional handler for the desktop exit shortcut.
     ///   - onHardwareKeyboardPresenceChanged: Optional handler for hardware keyboard availability.
     ///   - onSoftwareKeyboardVisibilityChanged: Optional handler for software keyboard visibility.
@@ -58,6 +60,7 @@ public struct MirageStreamContentView: View {
         sessionStore: MirageClientSessionStore,
         clientService: MirageClientService,
         isDesktopStream: Bool = false,
+        desktopStreamMode: MirageDesktopStreamMode = .mirrored,
         onExitDesktopStream: (() -> Void)? = nil,
         onHardwareKeyboardPresenceChanged: ((Bool) -> Void)? = nil,
         onSoftwareKeyboardVisibilityChanged: ((Bool) -> Void)? = nil,
@@ -69,6 +72,7 @@ public struct MirageStreamContentView: View {
         self.sessionStore = sessionStore
         self.clientService = clientService
         self.isDesktopStream = isDesktopStream
+        self.desktopStreamMode = desktopStreamMode
         self.onExitDesktopStream = onExitDesktopStream
         self.onHardwareKeyboardPresenceChanged = onHardwareKeyboardPresenceChanged
         self.onSoftwareKeyboardVisibilityChanged = onSoftwareKeyboardVisibilityChanged
@@ -95,6 +99,7 @@ public struct MirageStreamContentView: View {
                     )
                 },
                 cursorStore: clientService.cursorStore,
+                cursorPositionStore: clientService.cursorPositionStore,
                 onBecomeActive: {
                     handleForegroundRecovery()
                 },
@@ -102,7 +107,8 @@ public struct MirageStreamContentView: View {
                 onSoftwareKeyboardVisibilityChanged: onSoftwareKeyboardVisibilityChanged,
                 dockSnapEnabled: dockSnapEnabled,
                 usesVirtualTrackpad: usesVirtualTrackpad,
-                softwareKeyboardVisible: softwareKeyboardVisible
+                softwareKeyboardVisible: softwareKeyboardVisible,
+                cursorLockEnabled: isDesktopStream && desktopStreamMode == .secondary
             )
             .ignoresSafeArea()
             .blur(radius: isResizing ? 20 : 0)
@@ -115,7 +121,10 @@ public struct MirageStreamContentView: View {
                 },
                 onDrawableMetricsChanged: { metrics in
                     handleDrawableMetricsChanged(metrics)
-                }
+                },
+                cursorStore: clientService.cursorStore,
+                cursorPositionStore: clientService.cursorPositionStore,
+                cursorLockEnabled: isDesktopStream && desktopStreamMode == .secondary
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .blur(radius: isResizing ? 20 : 0)

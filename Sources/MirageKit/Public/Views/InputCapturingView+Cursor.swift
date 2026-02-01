@@ -44,6 +44,20 @@ extension InputCapturingView {
         guard snapshot.sequence != cursorSequence else { return }
         cursorSequence = snapshot.sequence
         updateCursor(type: snapshot.cursorType, isVisible: snapshot.isVisible)
+        refreshLockedCursorIfNeeded(force: force)
+    }
+
+    @discardableResult
+    func refreshLockedCursorIfNeeded(force: Bool = false) -> Bool {
+        guard cursorLockEnabled, let cursorPositionStore, let streamID else { return false }
+        let now = CACurrentMediaTime()
+        if !force, now - lastLockedCursorRefreshTime < lockedCursorRefreshInterval { return false }
+        lastLockedCursorRefreshTime = now
+        guard let snapshot = cursorPositionStore.snapshot(for: streamID) else { return false }
+        guard force || snapshot.sequence != lockedCursorSequence else { return false }
+        lockedCursorSequence = snapshot.sequence
+        applyLockedCursorHostUpdate(position: snapshot.position, isVisible: snapshot.isVisible)
+        return true
     }
 }
 
@@ -52,11 +66,26 @@ extension InputCapturingView {
 extension InputCapturingView: UIPointerInteractionDelegate {
     public func pointerInteraction(_: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
         // Return appropriate pointer style based on host cursor state
+        if cursorLockEnabled {
+            return .hidden()
+        }
         guard cursorIsVisible else {
             // Cursor is outside the host window, use default pointer
             return nil
         }
         return currentCursorType.pointerStyle(for: region)
+    }
+}
+
+extension InputCapturingView: MirageCursorUpdateHandling {
+    func refreshCursorUpdates(force: Bool) {
+        refreshCursorIfNeeded(force: force)
+        let updatedFromPosition = refreshLockedCursorIfNeeded(force: force)
+        if cursorLockEnabled, !updatedFromPosition,
+           let cursorStore, let streamID,
+           let snapshot = cursorStore.snapshot(for: streamID) {
+            setLockedCursorVisible(snapshot.isVisible)
+        }
     }
 }
 #endif

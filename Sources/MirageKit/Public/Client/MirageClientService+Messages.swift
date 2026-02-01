@@ -47,6 +47,8 @@ extension MirageClientService {
             await handleDisconnectMessage(message)
         case .cursorUpdate:
             handleCursorUpdate(message)
+        case .cursorPositionUpdate:
+            handleCursorPositionUpdate(message)
         case .contentBoundsUpdate:
             handleContentBoundsUpdate(message)
         case .sessionStateUpdate:

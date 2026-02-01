@@ -60,9 +60,9 @@ MirageKit/
 ## Public API (`Sources/MirageKit/Public/`)
 - Host services and delegates: `Host/`.
 - Host frame-rate helpers: `Host/MirageHostService+FrameRate.swift`.
-- Client services, delegates, session stores, metrics, cursor snapshots: `Client/`.
+- Client services, delegates, session stores, metrics, cursor snapshots, cursor position snapshots: `Client/`.
 - Input event types: `Input/`.
-- Shared types and configuration: `Types/`.
+- Shared types and configuration (including `MirageDesktopStreamMode`): `Types/`.
 - Stream rendering views: `Views/` (Metal-backed stream view, input capture, and representables).
 - Software keyboard input helpers: `Views/InputCapturingView+SoftwareKeyboard.swift`.
 - Utilities: `Utilities/`.
@@ -101,6 +101,7 @@ MirageKit/
 - Host input clears stuck modifiers after 0.5s of modifier inactivity.
 - iPad modifier input uses flags snapshots with gesture resync to avoid stuck keys.
 - Client cursor state is read from `MirageClientCursorStore` inside input views to avoid SwiftUI-driven cursor churn.
+- Secondary display cursor position is read from `MirageClientCursorPositionStore` for locked cursor rendering.
 
 ## Network Configuration
 - Service type: `_mirage._tcp` (Bonjour).

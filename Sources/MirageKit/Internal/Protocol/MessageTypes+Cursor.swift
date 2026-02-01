@@ -20,3 +20,14 @@ struct CursorUpdateMessage: Codable {
     /// Whether the cursor is currently within the streamed window bounds
     let isVisible: Bool
 }
+
+/// Cursor position update sent from host to client for secondary display sync
+struct CursorPositionUpdateMessage: Codable {
+    /// The stream this cursor position applies to
+    let streamID: StreamID
+    /// Normalized cursor position (0-1, top-left origin)
+    let normalizedX: Float
+    let normalizedY: Float
+    /// Whether the cursor is currently within the streamed window bounds
+    let isVisible: Bool
+}

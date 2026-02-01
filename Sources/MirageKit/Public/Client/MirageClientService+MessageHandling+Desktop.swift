@@ -78,8 +78,10 @@ extension MirageClientService {
 
             desktopStreamID = nil
             desktopStreamResolution = nil
+            desktopStreamMode = nil
             metricsStore.clear(streamID: streamID)
             cursorStore.clear(streamID: streamID)
+            cursorPositionStore.clear(streamID: streamID)
             clearStreamRefreshRateOverride(streamID: streamID)
 
             removeActiveStreamID(streamID)

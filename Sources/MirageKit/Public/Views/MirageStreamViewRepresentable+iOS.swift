@@ -10,7 +10,7 @@ import SwiftUI
 
 // MARK: - SwiftUI Representable (iOS)
 
-public struct MirageStreamViewRepresentable: UIViewRepresentable {
+public struct MirageStreamViewRepresentable: UIViewControllerRepresentable {
     public let streamID: StreamID
 
     /// Callback for sending input events to the host
@@ -24,6 +24,9 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
 
     /// Cursor store for pointer updates (decoupled from SwiftUI observation).
     public var cursorStore: MirageClientCursorStore?
+
+    /// Cursor position store for secondary display sync.
+    public var cursorPositionStore: MirageClientCursorPositionStore?
 
     /// Callback when app becomes active (returns from background).
     /// Used to trigger stream recovery after app switching.
@@ -44,30 +47,37 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
     /// Whether the software keyboard should be visible.
     public var softwareKeyboardVisible: Bool
 
+    /// Whether the system cursor should be locked/hidden.
+    public var cursorLockEnabled: Bool
+
     public init(
         streamID: StreamID,
         onInputEvent: ((MirageInputEvent) -> Void)? = nil,
         onDrawableMetricsChanged: ((MirageDrawableMetrics) -> Void)? = nil,
         onRefreshRateOverrideChange: ((Int) -> Void)? = nil,
         cursorStore: MirageClientCursorStore? = nil,
+        cursorPositionStore: MirageClientCursorPositionStore? = nil,
         onBecomeActive: (() -> Void)? = nil,
         onHardwareKeyboardPresenceChanged: ((Bool) -> Void)? = nil,
         onSoftwareKeyboardVisibilityChanged: ((Bool) -> Void)? = nil,
         dockSnapEnabled: Bool = false,
         usesVirtualTrackpad: Bool = false,
-        softwareKeyboardVisible: Bool = false
+        softwareKeyboardVisible: Bool = false,
+        cursorLockEnabled: Bool = false
     ) {
         self.streamID = streamID
         self.onInputEvent = onInputEvent
         self.onDrawableMetricsChanged = onDrawableMetricsChanged
         self.onRefreshRateOverrideChange = onRefreshRateOverrideChange
         self.cursorStore = cursorStore
+        self.cursorPositionStore = cursorPositionStore
         self.onBecomeActive = onBecomeActive
         self.onHardwareKeyboardPresenceChanged = onHardwareKeyboardPresenceChanged
         self.onSoftwareKeyboardVisibilityChanged = onSoftwareKeyboardVisibilityChanged
         self.dockSnapEnabled = dockSnapEnabled
         self.usesVirtualTrackpad = usesVirtualTrackpad
         self.softwareKeyboardVisible = softwareKeyboardVisible
+        self.cursorLockEnabled = cursorLockEnabled
     }
 
     public func makeCoordinator() -> MirageStreamViewCoordinator {
@@ -78,41 +88,149 @@ public struct MirageStreamViewRepresentable: UIViewRepresentable {
         )
     }
 
-    public func makeUIView(context: Context) -> InputCapturingView {
-        let view = InputCapturingView(frame: .zero)
-        view.onInputEvent = context.coordinator.handleInputEvent
-        view.onDrawableMetricsChanged = context.coordinator.handleDrawableMetricsChanged
-        view.onRefreshRateOverrideChange = onRefreshRateOverrideChange
-        view.onBecomeActive = context.coordinator.handleBecomeActive
-        view.onHardwareKeyboardPresenceChanged = onHardwareKeyboardPresenceChanged
-        view.onSoftwareKeyboardVisibilityChanged = onSoftwareKeyboardVisibilityChanged
-        view.dockSnapEnabled = dockSnapEnabled
-        view.usesVirtualTrackpad = usesVirtualTrackpad
-        view.softwareKeyboardVisible = softwareKeyboardVisible
-        view.cursorStore = cursorStore
-        // Set stream ID for direct frame cache access (bypasses all actor machinery)
-        view.streamID = streamID
-        return view
+    public func makeUIViewController(context: Context) -> MirageStreamViewController {
+        let controller = MirageStreamViewController()
+        controller.update(
+            streamID: streamID,
+            onInputEvent: context.coordinator.handleInputEvent,
+            onDrawableMetricsChanged: context.coordinator.handleDrawableMetricsChanged,
+            onRefreshRateOverrideChange: onRefreshRateOverrideChange,
+            onBecomeActive: context.coordinator.handleBecomeActive,
+            onHardwareKeyboardPresenceChanged: onHardwareKeyboardPresenceChanged,
+            onSoftwareKeyboardVisibilityChanged: onSoftwareKeyboardVisibilityChanged,
+            dockSnapEnabled: dockSnapEnabled,
+            usesVirtualTrackpad: usesVirtualTrackpad,
+            softwareKeyboardVisible: softwareKeyboardVisible,
+            cursorStore: cursorStore,
+            cursorPositionStore: cursorPositionStore,
+            cursorLockEnabled: cursorLockEnabled
+        )
+        return controller
     }
 
-    public func updateUIView(_ uiView: InputCapturingView, context: Context) {
+    public func updateUIViewController(_ uiViewController: MirageStreamViewController, context: Context) {
         // Update coordinator's callbacks in case they changed
         context.coordinator.onInputEvent = onInputEvent
         context.coordinator.onDrawableMetricsChanged = onDrawableMetricsChanged
         context.coordinator.onBecomeActive = onBecomeActive
 
-        // Update stream ID for direct frame cache access
-        // CRITICAL: This allows Metal view to read frames without any Swift actor overhead
-        uiView.streamID = streamID
+        uiViewController.update(
+            streamID: streamID,
+            onInputEvent: context.coordinator.handleInputEvent,
+            onDrawableMetricsChanged: context.coordinator.handleDrawableMetricsChanged,
+            onRefreshRateOverrideChange: onRefreshRateOverrideChange,
+            onBecomeActive: context.coordinator.handleBecomeActive,
+            onHardwareKeyboardPresenceChanged: onHardwareKeyboardPresenceChanged,
+            onSoftwareKeyboardVisibilityChanged: onSoftwareKeyboardVisibilityChanged,
+            dockSnapEnabled: dockSnapEnabled,
+            usesVirtualTrackpad: usesVirtualTrackpad,
+            softwareKeyboardVisible: softwareKeyboardVisible,
+            cursorStore: cursorStore,
+            cursorPositionStore: cursorPositionStore,
+            cursorLockEnabled: cursorLockEnabled
+        )
+    }
+}
 
-        uiView.dockSnapEnabled = dockSnapEnabled
-        uiView.usesVirtualTrackpad = usesVirtualTrackpad
-        uiView.softwareKeyboardVisible = softwareKeyboardVisible
-        uiView.cursorStore = cursorStore
-        uiView.onDrawableMetricsChanged = context.coordinator.handleDrawableMetricsChanged
-        uiView.onRefreshRateOverrideChange = onRefreshRateOverrideChange
-        uiView.onHardwareKeyboardPresenceChanged = onHardwareKeyboardPresenceChanged
-        uiView.onSoftwareKeyboardVisibilityChanged = onSoftwareKeyboardVisibilityChanged
+public final class MirageStreamViewController: UIViewController {
+    private let captureView = InputCapturingView(frame: .zero)
+    private var pointerLockRequested: Bool = false {
+        didSet {
+            guard pointerLockRequested != oldValue else { return }
+            setNeedsUpdateOfPrefersPointerLocked()
+        }
+    }
+    private var pointerLockObserver: NSObjectProtocol?
+    private var lastPointerLockActive: Bool?
+
+    override public func loadView() {
+        view = captureView
+    }
+
+    override public var prefersPointerLocked: Bool {
+        pointerLockRequested
+    }
+
+    override public func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        setNeedsUpdateOfPrefersPointerLocked()
+        startPointerLockObserverIfNeeded()
+    }
+
+    override public func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopPointerLockObserver()
+    }
+
+    func update(
+        streamID: StreamID,
+        onInputEvent: ((MirageInputEvent) -> Void)?,
+        onDrawableMetricsChanged: ((MirageDrawableMetrics) -> Void)?,
+        onRefreshRateOverrideChange: ((Int) -> Void)?,
+        onBecomeActive: (() -> Void)?,
+        onHardwareKeyboardPresenceChanged: ((Bool) -> Void)?,
+        onSoftwareKeyboardVisibilityChanged: ((Bool) -> Void)?,
+        dockSnapEnabled: Bool,
+        usesVirtualTrackpad: Bool,
+        softwareKeyboardVisible: Bool,
+        cursorStore: MirageClientCursorStore?,
+        cursorPositionStore: MirageClientCursorPositionStore?,
+        cursorLockEnabled: Bool
+    ) {
+        captureView.onInputEvent = onInputEvent
+        captureView.onDrawableMetricsChanged = onDrawableMetricsChanged
+        captureView.onRefreshRateOverrideChange = onRefreshRateOverrideChange
+        captureView.onBecomeActive = onBecomeActive
+        captureView.onHardwareKeyboardPresenceChanged = onHardwareKeyboardPresenceChanged
+        captureView.onSoftwareKeyboardVisibilityChanged = onSoftwareKeyboardVisibilityChanged
+        captureView.dockSnapEnabled = dockSnapEnabled
+        captureView.usesVirtualTrackpad = usesVirtualTrackpad
+        captureView.softwareKeyboardVisible = softwareKeyboardVisible
+        captureView.cursorStore = cursorStore
+        captureView.cursorPositionStore = cursorPositionStore
+        captureView.cursorLockEnabled = cursorLockEnabled
+        // Set stream ID for direct frame cache access (bypasses all actor machinery)
+        captureView.streamID = streamID
+
+        pointerLockRequested = cursorLockEnabled
+        updatePointerLockState()
+    }
+
+    deinit {
+        stopPointerLockObserver()
+    }
+
+    private func startPointerLockObserverIfNeeded() {
+        guard pointerLockObserver == nil else { return }
+        pointerLockObserver = NotificationCenter.default.addObserver(
+            forName: UIPointerLockState.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            guard let scene = notification.userInfo?[UIPointerLockState.sceneUserInfoKey] as? UIScene else { return }
+            guard scene === self.view.window?.windowScene else { return }
+            self.updatePointerLockState()
+        }
+        updatePointerLockState()
+    }
+
+    private func stopPointerLockObserver() {
+        if let pointerLockObserver {
+            NotificationCenter.default.removeObserver(pointerLockObserver)
+            self.pointerLockObserver = nil
+        }
+    }
+
+    private func updatePointerLockState() {
+        let isLocked = view.window?.windowScene?.pointerLockState?.isLocked ?? false
+        captureView.pointerLockActive = isLocked
+        if lastPointerLockActive != isLocked {
+            lastPointerLockActive = isLocked
+            if pointerLockRequested, !isLocked {
+                MirageLogger.client("Pointer lock not active for scene.")
+            }
+        }
     }
 }
 #endif

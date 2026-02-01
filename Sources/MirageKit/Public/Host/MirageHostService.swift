@@ -123,8 +123,10 @@ public final class MirageHostService {
     var desktopStreamID: StreamID?
     var desktopStreamClientContext: ClientContext?
     var desktopDisplayBounds: CGRect?
+    var desktopVirtualDisplayID: CGDirectDisplayID?
     var desktopUsesVirtualDisplay = false
     var desktopCaptureSource: MirageDesktopCaptureSource = .virtualDisplay
+    var desktopStreamMode: MirageDesktopStreamMode = .mirrored
 
     /// Physical displays that were mirrored during desktop streaming (for restoration)
     var mirroredPhysicalDisplayIDs: Set<CGDirectDisplayID> = []
@@ -231,6 +233,8 @@ public final class MirageHostService {
         virtualResolution: CGSize?
     )
     -> CGRect {
+        if desktopStreamMode == .secondary, let bounds = resolveDesktopDisplayBounds() { return bounds }
+
         guard desktopUsesVirtualDisplay,
               let virtualResolution,
               virtualResolution.width > 0,
@@ -257,6 +261,39 @@ public final class MirageHostService {
             y: physicalBounds.origin.y + verticalInset
         )
         return CGRect(origin: origin, size: fittedSize)
+    }
+
+    /// Resolve the current virtual display bounds for secondary desktop streaming.
+    /// Uses CoreGraphics coordinates for input injection.
+    func resolveDesktopDisplayBounds() -> CGRect? {
+        guard let displayID = desktopVirtualDisplayID else { return desktopDisplayBounds }
+        let bounds = CGDisplayBounds(displayID)
+        if bounds.width > 0, bounds.height > 0 { return bounds }
+        if let mode = CGDisplayCopyDisplayMode(displayID) {
+            let size = CGSize(width: CGFloat(mode.width), height: CGFloat(mode.height))
+            return CGRect(origin: bounds.origin, size: size)
+        }
+        return desktopDisplayBounds
+    }
+
+    /// Resolve the current virtual display bounds for cursor monitoring (Cocoa coordinates).
+    func resolveDesktopDisplayBoundsForCursorMonitor() -> CGRect? {
+        if let displayID = desktopVirtualDisplayID,
+           let screen = NSScreen.screens.first(where: {
+               ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
+           }) {
+            return screen.frame
+        }
+        let bounds: CGRect?
+        if let displayID = desktopVirtualDisplayID {
+            let cgBounds = CGDisplayBounds(displayID)
+            bounds = (cgBounds.width > 0 && cgBounds.height > 0) ? cgBounds : nil
+        } else {
+            bounds = desktopDisplayBounds
+        }
+        guard let bounds, let mainScreen = NSScreen.main else { return nil }
+        let cocoaY = mainScreen.frame.height - bounds.origin.y - bounds.height
+        return CGRect(x: bounds.origin.x, y: cocoaY, width: bounds.width, height: bounds.height)
     }
 
     /// Refresh cached physical display bounds after mirroring changes.

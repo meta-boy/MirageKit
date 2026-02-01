@@ -44,8 +44,12 @@ extension MirageHostService {
 
                     // Include desktop stream if active
                     // Desktop stream uses NSScreen.main frame since it mirrors the main display
-                    if let desktopID = desktopStreamID, desktopDisplayBounds != nil {
-                        if let screen = NSScreen.main {
+                    if let desktopID = desktopStreamID {
+                        if desktopStreamMode == .secondary {
+                            if let bounds = resolveDesktopDisplayBoundsForCursorMonitor() {
+                                streams.append((desktopID, bounds))
+                            }
+                        } else if let screen = NSScreen.main {
                             // Use the main screen's frame in Cocoa coordinates (already bottom-left origin)
                             streams.append((desktopID, screen.frame))
                         }
@@ -56,6 +60,13 @@ extension MirageHostService {
                 onCursorChange: { [weak self] streamID, cursorType, isVisible in
                     Task { @MainActor [weak self] in
                         await self?.sendCursorUpdate(streamID: streamID, cursorType: cursorType, isVisible: isVisible)
+                    }
+                },
+                onCursorPosition: { [weak self] streamID, position, isVisible in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        guard streamID == desktopStreamID, desktopStreamMode == .secondary else { return }
+                        await sendCursorPositionUpdate(streamID: streamID, position: position, isVisible: isVisible)
                     }
                 }
             )
@@ -87,6 +98,27 @@ extension MirageHostService {
             MirageLogger.host("Cursor update sent: \(cursorType) (visible: \(isVisible))")
         } catch {
             MirageLogger.error(.host, "Failed to send cursor update: \(error)")
+        }
+    }
+
+    /// Send cursor position update to the client for a specific stream
+    func sendCursorPositionUpdate(streamID: StreamID, position: CGPoint, isVisible: Bool) async {
+        guard streamID == desktopStreamID else { return }
+        guard let clientContext = desktopStreamClientContext else { return }
+
+        let clampedX = Float(min(max(position.x, 0), 1))
+        let clampedY = Float(min(max(position.y, 0), 1))
+        let message = CursorPositionUpdateMessage(
+            streamID: streamID,
+            normalizedX: clampedX,
+            normalizedY: clampedY,
+            isVisible: isVisible
+        )
+
+        do {
+            try await clientContext.send(.cursorPositionUpdate, content: message)
+        } catch {
+            MirageLogger.error(.host, "Failed to send cursor position update: \(error)")
         }
     }
 

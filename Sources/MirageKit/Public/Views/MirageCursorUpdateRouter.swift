@@ -7,28 +7,33 @@
 //  Cursor update routing for input capture views.
 //
 
-#if os(iOS) || os(visionOS)
+#if os(iOS) || os(visionOS) || os(macOS)
 import Foundation
+
+@MainActor
+protocol MirageCursorUpdateHandling: AnyObject {
+    func refreshCursorUpdates(force: Bool)
+}
 
 final class MirageCursorUpdateRouter: @unchecked Sendable {
     static let shared = MirageCursorUpdateRouter()
 
-    private final class WeakInputView {
-        weak var value: InputCapturingView?
+    private final class WeakCursorView {
+        weak var value: (any MirageCursorUpdateHandling)?
 
-        init(_ value: InputCapturingView) {
+        init(_ value: any MirageCursorUpdateHandling) {
             self.value = value
         }
     }
 
     private let lock = NSLock()
-    private var viewsByStream: [StreamID: WeakInputView] = [:]
+    private var viewsByStream: [StreamID: WeakCursorView] = [:]
 
     private init() {}
 
-    func register(view: InputCapturingView, for streamID: StreamID) {
+    func register(view: any MirageCursorUpdateHandling, for streamID: StreamID) {
         lock.lock()
-        viewsByStream[streamID] = WeakInputView(view)
+        viewsByStream[streamID] = WeakCursorView(view)
         lock.unlock()
     }
 
@@ -47,7 +52,7 @@ final class MirageCursorUpdateRouter: @unchecked Sendable {
         guard let view else { return }
 
         Task { @MainActor [weak view] in
-            view?.refreshCursorIfNeeded(force: true)
+            view?.refreshCursorUpdates(force: true)
         }
     }
 }

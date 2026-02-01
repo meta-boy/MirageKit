@@ -41,6 +41,7 @@ enum ControlMessageType: UInt8, Codable {
 
     /// Cursor updates
     case cursorUpdate = 0x50
+    case cursorPositionUpdate = 0x51
 
     // Virtual display updates
     case contentBoundsUpdate = 0x60

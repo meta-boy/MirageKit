@@ -52,6 +52,9 @@ public final class MirageClientService {
     /// Desktop stream resolution
     public internal(set) var desktopStreamResolution: CGSize?
 
+    /// Desktop stream mode (mirrored vs secondary display)
+    public internal(set) var desktopStreamMode: MirageDesktopStreamMode?
+
     /// Stream scale for post-capture downscaling
     /// 1.0 = native resolution, lower values reduce encoded size
     public var resolutionScale: CGFloat = 1.0
@@ -76,6 +79,9 @@ public final class MirageClientService {
 
     /// Handler for cursor updates from the host
     public var onCursorUpdate: ((StreamID, MirageCursorType, Bool) -> Void)?
+
+    /// Thread-safe cursor position store for secondary display cursor sync
+    public let cursorPositionStore = MirageClientCursorPositionStore()
 
     /// Callback for content bounds updates (when menus, sheets appear on virtual display)
     public var onContentBoundsUpdate: ((StreamID, CGRect) -> Void)?

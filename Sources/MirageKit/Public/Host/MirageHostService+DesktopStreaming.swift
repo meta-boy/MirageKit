@@ -14,12 +14,13 @@ import ScreenCaptureKit
 // MARK: - Desktop Streaming
 
 extension MirageHostService {
-    /// Start streaming the full desktop (virtual display mirroring mode)
+    /// Start streaming the desktop (mirrored or secondary display mode)
     /// This stops any active app/window streams for mutual exclusivity
     // TODO: HDR support - add hdr: Bool = false parameter when EDR configuration is figured out
     func startDesktopStream(
         to clientContext: ClientContext,
         displayResolution: CGSize,
+        mode: MirageDesktopStreamMode,
         qualityPreset: MirageQualityPreset,
         keyFrameInterval: Int?,
         frameQuality: Float?,
@@ -56,7 +57,10 @@ extension MirageHostService {
             MirageLogger.host("Desktop start: \(step) (+\(deltaMs)ms)")
         }
 
-        MirageLogger.host("Starting desktop stream at \(Int(displayResolution.width))x\(Int(displayResolution.height))")
+        MirageLogger
+            .host(
+                "Starting desktop stream at \(Int(displayResolution.width))x\(Int(displayResolution.height)) (\(mode.displayName))"
+            )
         logDesktopStartStep("request accepted")
 
         // Stop all active app/window streams (mutual exclusivity)
@@ -65,6 +69,7 @@ extension MirageHostService {
 
         // Clear any stuck modifiers from previous streams
         inputController.clearAllModifiers()
+        desktopStreamMode = mode
 
         // Configure encoder with quality preset and optional overrides
         var config = encoderConfig
@@ -122,7 +127,14 @@ extension MirageHostService {
         logDesktopStartStep("SCDisplay resolved (\(captureDisplay.display.displayID))")
         let captureResolution = context.resolution
 
-        guard let bounds = await SharedVirtualDisplayManager.shared.getDisplayBounds() else { throw MirageError.protocolError("Desktop stream display exists but couldn't get bounds") }
+        desktopVirtualDisplayID = context.displayID
+        var resolvedBounds = resolveDesktopDisplayBounds()
+        if resolvedBounds == nil {
+            resolvedBounds = await SharedVirtualDisplayManager.shared.getDisplayBounds()
+        }
+        guard let bounds = resolvedBounds else {
+            throw MirageError.protocolError("Desktop stream display exists but couldn't get bounds")
+        }
         desktopDisplayBounds = bounds
         desktopUsesVirtualDisplay = true
         sharedVirtualDisplayGeneration = await SharedVirtualDisplayManager.shared.getDisplayGeneration()
@@ -138,10 +150,14 @@ extension MirageHostService {
                 )
         }
 
-        // Set up display mirroring so physical displays mirror the virtual display.
-        // This lets the virtual display drive the streamed resolution.
-        await setupDisplayMirroring(targetDisplayID: context.displayID)
-        logDesktopStartStep("display mirroring configured")
+        if mode == .mirrored {
+            // Set up display mirroring so physical displays mirror the virtual display.
+            // This lets the virtual display drive the streamed resolution.
+            await setupDisplayMirroring(targetDisplayID: context.displayID)
+            logDesktopStartStep("display mirroring configured")
+        } else {
+            logDesktopStartStep("display mirroring skipped (secondary display)")
+        }
 
         let streamID = nextStreamID
         nextStreamID += 1
@@ -277,7 +293,9 @@ extension MirageHostService {
 
         if let context = desktopStreamContext { await context.stop() }
 
-        if let sharedDisplayID { await disableDisplayMirroring(displayID: sharedDisplayID) }
+        if desktopStreamMode == .mirrored, let sharedDisplayID {
+            await disableDisplayMirroring(displayID: sharedDisplayID)
+        }
 
         if let clientContext = desktopStreamClientContext {
             let message = DesktopStreamStoppedMessage(streamID: streamID, reason: reason)
@@ -289,10 +307,12 @@ extension MirageHostService {
         desktopStreamID = nil
         desktopStreamClientContext = nil
         desktopDisplayBounds = nil
+        desktopVirtualDisplayID = nil
         desktopPrimaryPhysicalDisplayID = nil
         desktopPrimaryPhysicalBounds = nil
         desktopUsesVirtualDisplay = false
         desktopCaptureSource = .virtualDisplay
+        desktopStreamMode = .mirrored
         streamsByID.removeValue(forKey: streamID)
         streamStartupBaseTimes.removeValue(forKey: streamID)
         streamStartupRegistrationLogged.remove(streamID)

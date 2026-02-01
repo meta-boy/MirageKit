@@ -205,6 +205,7 @@ extension MirageClientService {
         if let loginDisplayStreamID { MirageFrameCache.shared.clear(for: loginDisplayStreamID) }
         metricsStore.clearAll()
         cursorStore.clearAll()
+        cursorPositionStore.clearAll()
         sessionStore.clearLoginDisplayState()
 
         // Clean up video resources.
@@ -239,6 +240,7 @@ extension MirageClientService {
         loginDisplayResolution = nil
         desktopStreamID = nil
         desktopStreamResolution = nil
+        desktopStreamMode = nil
         connectionState = state
 
         if notifyDelegate { delegate?.clientService(self, didDisconnectFromHost: reason) }

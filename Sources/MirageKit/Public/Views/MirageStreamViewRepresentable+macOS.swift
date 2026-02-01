@@ -17,14 +17,29 @@ public struct MirageStreamViewRepresentable: NSViewRepresentable {
     /// Callback when drawable metrics change - reports pixel size and scale factor
     public var onDrawableMetricsChanged: ((MirageDrawableMetrics) -> Void)?
 
+    /// Cursor store for pointer updates.
+    public var cursorStore: MirageClientCursorStore?
+
+    /// Cursor position store for secondary display sync.
+    public var cursorPositionStore: MirageClientCursorPositionStore?
+
+    /// Whether the system cursor should be locked/hidden.
+    public var cursorLockEnabled: Bool
+
     public init(
         streamID: StreamID,
         onInputEvent: ((MirageInputEvent) -> Void)? = nil,
-        onDrawableMetricsChanged: ((MirageDrawableMetrics) -> Void)? = nil
+        onDrawableMetricsChanged: ((MirageDrawableMetrics) -> Void)? = nil,
+        cursorStore: MirageClientCursorStore? = nil,
+        cursorPositionStore: MirageClientCursorPositionStore? = nil,
+        cursorLockEnabled: Bool = false
     ) {
         self.streamID = streamID
         self.onInputEvent = onInputEvent
         self.onDrawableMetricsChanged = onDrawableMetricsChanged
+        self.cursorStore = cursorStore
+        self.cursorPositionStore = cursorPositionStore
+        self.cursorLockEnabled = cursorLockEnabled
     }
 
     public func makeCoordinator() -> MirageStreamViewCoordinator {
@@ -54,6 +69,11 @@ public struct MirageStreamViewRepresentable: NSViewRepresentable {
         metalView.onDrawableMetricsChanged = context.coordinator.handleDrawableMetricsChanged
         metalView.streamID = streamID
 
+        wrapper.cursorStore = cursorStore
+        wrapper.cursorPositionStore = cursorPositionStore
+        wrapper.cursorLockEnabled = cursorLockEnabled
+        wrapper.streamID = streamID
+
         // Configure scroll callback for native trackpad physics
         wrapper
             .onScroll = { [weak coordinator = context.coordinator] deltaX, deltaY, location, phase, momentumPhase, isPrecise in
@@ -77,11 +97,18 @@ public struct MirageStreamViewRepresentable: NSViewRepresentable {
         return wrapper
     }
 
-    public func updateNSView(_: NSView, context: Context) {
+    public func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.onDrawableMetricsChanged = onDrawableMetricsChanged
         context.coordinator.onInputEvent = onInputEvent
 
         if let metalView = context.coordinator.metalView { metalView.streamID = streamID }
+
+        if let wrapper = nsView as? ScrollPhysicsCapturingNSView {
+            wrapper.cursorStore = cursorStore
+            wrapper.cursorPositionStore = cursorPositionStore
+            wrapper.cursorLockEnabled = cursorLockEnabled
+            wrapper.streamID = streamID
+        }
     }
 }
 #endif

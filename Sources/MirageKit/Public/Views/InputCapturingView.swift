@@ -65,6 +65,22 @@ public class InputCapturingView: UIView {
         }
     }
 
+    /// Cursor position store for secondary display sync.
+    public var cursorPositionStore: MirageClientCursorPositionStore? {
+        didSet {
+            lockedCursorSequence = 0
+            refreshLockedCursorIfNeeded(force: true)
+        }
+    }
+
+    /// Whether the system cursor should be locked/hidden.
+    public var cursorLockEnabled: Bool = false {
+        didSet {
+            guard cursorLockEnabled != oldValue else { return }
+            updateCursorLockMode()
+        }
+    }
+
     /// Callback when app becomes active (returns from background).
     /// Used to trigger stream recovery after app switching.
     public var onBecomeActive: (() -> Void)?
@@ -97,6 +113,9 @@ public class InputCapturingView: UIView {
     var cursorSequence: UInt64 = 0
     var lastCursorRefreshTime: CFTimeInterval = 0
     let cursorRefreshInterval: CFTimeInterval = 1.0 / 30.0
+    var lockedCursorSequence: UInt64 = 0
+    var lastLockedCursorRefreshTime: CFTimeInterval = 0
+    let lockedCursorRefreshInterval: CFTimeInterval = 1.0 / 30.0
     // nonisolated(unsafe) allows access from deinit for cleanup
     private nonisolated(unsafe) var registeredCursorStreamID: StreamID?
     private(set) var hardwareKeyboardPresent: Bool = false
@@ -107,11 +126,34 @@ public class InputCapturingView: UIView {
     #else
     private let virtualCursorView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
     #endif
+    #if os(iOS)
+    private let lockedCursorView = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+    #else
+    private let lockedCursorView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    #endif
     var virtualCursorPosition: CGPoint = .init(x: 0.5, y: 0.5)
     private let virtualCursorSize: CGFloat = 14
     var virtualCursorVelocity: CGPoint = .zero
     var virtualCursorDecelerationLink: CADisplayLink?
     var virtualDragActive: Bool = false
+    var lockedCursorPosition: CGPoint = .init(x: 0.5, y: 0.5)
+    var lockedCursorTargetPosition: CGPoint = .init(x: 0.5, y: 0.5)
+    private let lockedCursorSize: CGFloat = 12
+    var lockedCursorVisible: Bool = false
+    var lockedCursorTargetVisible: Bool = false
+    var lockedPointerButtonDown: Bool = false
+    var lockedCursorLocalInputTime: CFTimeInterval = 0
+    private let lockedCursorLocalHoldInterval: CFTimeInterval = 0.12
+    private let lockedCursorLerpAlpha: CGFloat = 0.25
+    private let lockedCursorSnapThreshold: CGFloat = 0.08
+    private let lockedCursorStopThreshold: CGFloat = 0.002
+    var lockedCursorDisplayLink: CADisplayLink?
+    var lockedPointerLastHoverLocation: CGPoint?
+    var usesMouseInputDeltas: Bool = false
+    var pointerLockActive: Bool = false
+    #if canImport(GameController)
+    private var mouseInput: GCMouseInput?
+    #endif
     var touchScrollDecelerationVelocity: CGPoint = .zero
     var touchScrollDecelerationLink: CADisplayLink?
     var touchScrollDecelerationLocation: CGPoint = .zero
@@ -138,6 +180,8 @@ public class InputCapturingView: UIView {
     var virtualCursorTapGesture: UITapGestureRecognizer!
     var virtualCursorRightTapGesture: UITapGestureRecognizer!
     var virtualCursorLongPressGesture: UILongPressGestureRecognizer!
+    var lockedPointerPanGesture: UIPanGestureRecognizer!
+    var lockedPointerPressGesture: UILongPressGestureRecognizer!
 
     // Track drag state
     var isDragging = false
@@ -462,8 +506,10 @@ public class InputCapturingView: UIView {
         setupGestureRecognizers()
         setupPointerInteraction()
         setupVirtualCursorView()
+        setupLockedCursorView()
         setupSoftwareKeyboardField()
         updateVirtualTrackpadMode()
+        updateCursorLockMode()
         setupSceneLifecycleObservers()
     }
 
@@ -486,11 +532,39 @@ public class InputCapturingView: UIView {
         addSubview(virtualCursorView)
     }
 
+    private func setupLockedCursorView() {
+        lockedCursorView.bounds = CGRect(
+            origin: .zero,
+            size: CGSize(width: lockedCursorSize, height: lockedCursorSize)
+        )
+        lockedCursorView.contentView.backgroundColor = UIColor.white.withAlphaComponent(0.2)
+        lockedCursorView.clipsToBounds = true
+        lockedCursorView.layer.cornerRadius = lockedCursorSize / 2
+        lockedCursorView.layer.borderColor = UIColor.black.withAlphaComponent(0.35).cgColor
+        lockedCursorView.layer.borderWidth = 1
+        lockedCursorView.layer.shadowColor = UIColor.black.cgColor
+        lockedCursorView.layer.shadowOpacity = 0.2
+        lockedCursorView.layer.shadowRadius = 2
+        lockedCursorView.layer.shadowOffset = CGSize(width: 0, height: 1)
+        lockedCursorView.isUserInteractionEnabled = false
+        lockedCursorView.isHidden = true
+        addSubview(lockedCursorView)
+    }
+
     func updateVirtualTrackpadMode() {
         let directTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         let indirectTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
 
-        if usesVirtualTrackpad {
+        if cursorLockEnabled {
+            longPressGesture.allowedTouchTypes = directTouchTypes
+            virtualCursorPanGesture.isEnabled = false
+            virtualCursorTapGesture.isEnabled = false
+            virtualCursorRightTapGesture.isEnabled = false
+            virtualCursorLongPressGesture.isEnabled = false
+            virtualDragActive = false
+            stopVirtualCursorDeceleration()
+            setVirtualCursorVisible(false)
+        } else if usesVirtualTrackpad {
             longPressGesture.allowedTouchTypes = indirectTouchTypes
             virtualCursorPanGesture.isEnabled = true
             virtualCursorTapGesture.isEnabled = true
@@ -528,6 +602,181 @@ public class InputCapturingView: UIView {
         )
     }
 
+    func updateCursorLockMode() {
+        updateVirtualTrackpadMode()
+        let directTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        if cursorLockEnabled {
+            longPressGesture.allowedTouchTypes = directTouchTypes
+            updateMouseInputHandler()
+            hoverGesture.isEnabled = !usesMouseInputDeltas
+            lockedPointerPanGesture.isEnabled = !usesMouseInputDeltas
+            lockedPointerPressGesture.isEnabled = true
+            lockedPointerLastHoverLocation = nil
+            startLockedCursorSmoothingIfNeeded()
+            refreshLockedCursorIfNeeded(force: true)
+            setLockedCursorVisible(lockedCursorVisible)
+        } else {
+            updateMouseInputHandler()
+            hoverGesture.isEnabled = true
+            lockedPointerPanGesture.isEnabled = false
+            lockedPointerPressGesture.isEnabled = false
+            lockedPointerButtonDown = false
+            lockedPointerLastHoverLocation = nil
+            stopLockedCursorSmoothing()
+            setLockedCursorVisible(false)
+        }
+    }
+
+    func setLockedCursorVisible(_ isVisible: Bool) {
+        lockedCursorVisible = isVisible
+        lockedCursorView.isHidden = !(cursorLockEnabled && isVisible)
+        updateLockedCursorViewPosition()
+    }
+
+    func updateLockedCursorViewPosition() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        guard !lockedCursorView.isHidden else { return }
+        let clamped = CGPoint(
+            x: min(max(lockedCursorPosition.x, 0), 1),
+            y: min(max(lockedCursorPosition.y, 0), 1)
+        )
+        lockedCursorView.center = CGPoint(
+            x: clamped.x * bounds.width,
+            y: clamped.y * bounds.height
+        )
+    }
+
+    func applyLockedCursorDelta(_ translation: CGPoint) {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        lockedCursorPosition.x += translation.x / bounds.width
+        lockedCursorPosition.y += translation.y / bounds.height
+        lockedCursorPosition = CGPoint(
+            x: min(max(lockedCursorPosition.x, 0), 1),
+            y: min(max(lockedCursorPosition.y, 0), 1)
+        )
+        noteLockedCursorLocalInput()
+        setLockedCursorVisible(true)
+        lastCursorPosition = CGPoint(
+            x: min(max(lockedCursorPosition.x, 0), 1),
+            y: min(max(lockedCursorPosition.y, 0), 1)
+        )
+    }
+
+    func applyLockedCursorHostUpdate(position: CGPoint, isVisible: Bool) {
+        lockedCursorTargetPosition = position
+        lockedCursorTargetVisible = isVisible
+        guard cursorLockEnabled else { return }
+        guard !isLockedCursorLocalInputActive() else { return }
+        setLockedCursorVisible(isVisible)
+        guard isVisible else { return }
+        applyLockedCursorTargetStep()
+    }
+
+    private func applyLockedCursorTargetStep() {
+        let deltaX = lockedCursorTargetPosition.x - lockedCursorPosition.x
+        let deltaY = lockedCursorTargetPosition.y - lockedCursorPosition.y
+        let distance = hypot(deltaX, deltaY)
+        if distance < lockedCursorStopThreshold { return }
+        if distance > lockedCursorSnapThreshold {
+            lockedCursorPosition = lockedCursorTargetPosition
+        } else {
+            lockedCursorPosition = CGPoint(
+                x: lockedCursorPosition.x + deltaX * lockedCursorLerpAlpha,
+                y: lockedCursorPosition.y + deltaY * lockedCursorLerpAlpha
+            )
+        }
+        lastCursorPosition = CGPoint(
+            x: min(max(lockedCursorPosition.x, 0), 1),
+            y: min(max(lockedCursorPosition.y, 0), 1)
+        )
+        updateLockedCursorViewPosition()
+    }
+
+    func noteLockedCursorLocalInput() {
+        lockedCursorLocalInputTime = CACurrentMediaTime()
+        lockedCursorTargetPosition = lockedCursorPosition
+        lockedCursorTargetVisible = true
+    }
+
+    private func isLockedCursorLocalInputActive() -> Bool {
+        let now = CACurrentMediaTime()
+        return now - lockedCursorLocalInputTime < lockedCursorLocalHoldInterval
+    }
+
+    private func startLockedCursorSmoothingIfNeeded() {
+        guard lockedCursorDisplayLink == nil else { return }
+        let displayLink = CADisplayLink(target: self, selector: #selector(handleLockedCursorSmoothing(_:)))
+        displayLink.add(to: .main, forMode: .common)
+        lockedCursorDisplayLink = displayLink
+    }
+
+    private func stopLockedCursorSmoothing() {
+        lockedCursorDisplayLink?.invalidate()
+        lockedCursorDisplayLink = nil
+    }
+
+    @objc
+    private func handleLockedCursorSmoothing(_: CADisplayLink) {
+        guard cursorLockEnabled else {
+            stopLockedCursorSmoothing()
+            return
+        }
+        guard !isLockedCursorLocalInputActive() else { return }
+        guard lockedCursorTargetVisible else {
+            setLockedCursorVisible(false)
+            return
+        }
+        applyLockedCursorTargetStep()
+    }
+
+    private func updateMouseInputHandler() {
+        #if canImport(GameController)
+        if cursorLockEnabled,
+           let mouse = GCMouse.mice().first,
+           let input = mouse.mouseInput {
+            if mouseInput !== input {
+                mouseInput?.mouseMovedHandler = nil
+                mouseInput = input
+            }
+            usesMouseInputDeltas = true
+            input.mouseMovedHandler = { [weak self] (_: GCMouseInput, deltaX: Float, deltaY: Float) in
+                Task { @MainActor [weak self] in
+                    self?.handleLockedMouseDelta(deltaX: deltaX, deltaY: deltaY)
+                }
+            }
+        } else {
+            usesMouseInputDeltas = false
+            mouseInput?.mouseMovedHandler = nil
+            mouseInput = nil
+        }
+        if cursorLockEnabled {
+            hoverGesture.isEnabled = !usesMouseInputDeltas
+            lockedPointerPanGesture.isEnabled = !usesMouseInputDeltas
+            lockedPointerPressGesture.isEnabled = true
+        }
+        #else
+        usesMouseInputDeltas = false
+        #endif
+    }
+
+    private func handleLockedMouseDelta(deltaX: Float, deltaY: Float) {
+        guard cursorLockEnabled else { return }
+        guard deltaX != 0 || deltaY != 0 else { return }
+        _ = refreshModifiersForInput()
+        let translation = CGPoint(x: CGFloat(deltaX), y: CGFloat(-deltaY))
+        applyLockedCursorDelta(translation)
+        let mouseEvent = MirageMouseEvent(
+            button: .left,
+            location: lockedCursorPosition,
+            modifiers: keyboardModifiers
+        )
+        if lockedPointerButtonDown {
+            onInputEvent?(.mouseDragged(mouseEvent))
+        } else {
+            onInputEvent?(.mouseMoved(mouseEvent))
+        }
+    }
+
     private func setupSceneLifecycleObservers() {
         // Clear modifiers when app goes to background to prevent stuck modifiers
         NotificationCenter.default.addObserver(
@@ -558,6 +807,18 @@ public class InputCapturingView: UIView {
             name: .GCKeyboardDidDisconnect,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(mouseDidConnect(_:)),
+            name: .GCMouseDidConnect,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(mouseDidDisconnect(_:)),
+            name: .GCMouseDidDisconnect,
+            object: nil
+        )
 
         installHardwareKeyboardHandler()
         updateHardwareKeyboardPresence(GCKeyboard.coalesced != nil)
@@ -585,6 +846,7 @@ public class InputCapturingView: UIView {
         #if canImport(GameController)
         installHardwareKeyboardHandler()
         updateHardwareKeyboardPresence(GCKeyboard.coalesced != nil)
+        updateMouseInputHandler()
         #endif
 
         // Notify SwiftUI layer to trigger stream recovery
@@ -612,6 +874,16 @@ public class InputCapturingView: UIView {
         lastSentModifiers = []
         onInputEvent?(.flagsChanged([]))
     }
+
+    @objc
+    private func mouseDidConnect(_: Notification) {
+        updateMouseInputHandler()
+    }
+
+    @objc
+    private func mouseDidDisconnect(_: Notification) {
+        updateMouseInputHandler()
+    }
     #endif
 
     override public var canBecomeFirstResponder: Bool { true }
@@ -624,6 +896,7 @@ public class InputCapturingView: UIView {
     override public func layoutSubviews() {
         super.layoutSubviews()
         updateVirtualCursorViewPosition()
+        updateLockedCursorViewPosition()
     }
 
     override public func resignFirstResponder() -> Bool {
@@ -637,7 +910,11 @@ public class InputCapturingView: UIView {
         stopModifierRefresh()
         stopVirtualCursorDeceleration()
         stopTouchScrollDeceleration()
+        stopLockedCursorSmoothing()
         #if canImport(GameController)
+        MainActor.assumeIsolated {
+            mouseInput?.mouseMovedHandler = nil
+        }
         uninstallHardwareKeyboardHandler()
         #endif
         if let registeredCursorStreamID { MirageCursorUpdateRouter.shared.unregister(streamID: registeredCursorStreamID) }

@@ -19,7 +19,7 @@ final class StreamFrameInbox: @unchecked Sendable {
     private var tailIndex: Int = 0
     private var count: Int = 0
     // Requires lock.
-    private var isEmpty: Bool { isEmpty }
+    private var isEmpty: Bool { count == 0 }
     private var enqueuedCount: UInt64 = 0
     private var droppedCount: UInt64 = 0
     private var isScheduled: Bool = false

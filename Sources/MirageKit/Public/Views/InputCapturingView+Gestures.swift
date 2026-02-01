@@ -43,6 +43,26 @@ extension InputCapturingView {
         hoverGesture = UIHoverGestureRecognizer(target: self, action: #selector(handleHover(_:)))
         addGestureRecognizer(hoverGesture)
 
+        // Locked pointer gestures (indirect pointer only)
+        lockedPointerPanGesture = UIPanGestureRecognizer(target: self, action: #selector(handleLockedPointerPan(_:)))
+        lockedPointerPanGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
+        lockedPointerPanGesture.allowedScrollTypesMask = []
+        lockedPointerPanGesture.minimumNumberOfTouches = 1
+        lockedPointerPanGesture.maximumNumberOfTouches = 1
+        lockedPointerPanGesture.delegate = self
+        lockedPointerPanGesture.isEnabled = false
+        addGestureRecognizer(lockedPointerPanGesture)
+
+        lockedPointerPressGesture = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(handleLockedPointerPress(_:))
+        )
+        lockedPointerPressGesture.minimumPressDuration = 0
+        lockedPointerPressGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
+        lockedPointerPressGesture.delegate = self
+        lockedPointerPressGesture.isEnabled = false
+        addGestureRecognizer(lockedPointerPressGesture)
+
         // Virtual cursor gestures (direct touch trackpad mode)
         virtualCursorPanGesture = UIPanGestureRecognizer(target: self, action: #selector(handleVirtualCursorPan(_:)))
         virtualCursorPanGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -137,6 +157,13 @@ extension InputCapturingView {
         let location = normalizedLocation(rawLocation)
         let eventModifiers = modifiers(from: gesture)
 
+        if cursorLockEnabled {
+            lockedCursorPosition = location
+            noteLockedCursorLocalInput()
+            setLockedCursorVisible(true)
+            updateLockedCursorViewPosition()
+        }
+
         if usesVirtualTrackpad {
             setVirtualCursorVisible(false)
             updateVirtualCursorPosition(location, updateVisibility: false)
@@ -209,7 +236,13 @@ extension InputCapturingView {
 
     @objc
     func handleRightClick(_ gesture: UITapGestureRecognizer) {
-        let location = normalizedLocation(gesture.location(in: self))
+        let location: CGPoint
+        if cursorLockEnabled {
+            setLockedCursorVisible(true)
+            location = lockedCursorPosition
+        } else {
+            location = normalizedLocation(gesture.location(in: self))
+        }
         let now = CACurrentMediaTime()
 
         // Detect multi-click for right button
@@ -277,6 +310,40 @@ extension InputCapturingView {
 
     @objc
     func handleHover(_ gesture: UIHoverGestureRecognizer) {
+        if cursorLockEnabled {
+            guard !usesMouseInputDeltas else { return }
+            let location = gesture.location(in: self)
+            switch gesture.state {
+            case .began:
+                lockedPointerLastHoverLocation = location
+                noteLockedCursorLocalInput()
+                setLockedCursorVisible(true)
+                updateLockedCursorViewPosition()
+                return
+            case .changed:
+                if lockedPointerButtonDown {
+                    lockedPointerLastHoverLocation = location
+                    return
+                }
+                if let lastLocation = lockedPointerLastHoverLocation {
+                    let translation = CGPoint(x: location.x - lastLocation.x, y: location.y - lastLocation.y)
+                    if translation != .zero {
+                        applyLockedCursorDelta(translation)
+                        let eventModifiers = modifiers(from: gesture)
+                        let mouseEvent = MirageMouseEvent(
+                            button: .left,
+                            location: lockedCursorPosition,
+                            modifiers: eventModifiers
+                        )
+                        onInputEvent?(.mouseMoved(mouseEvent))
+                    }
+                }
+                lockedPointerLastHoverLocation = location
+            default:
+                lockedPointerLastHoverLocation = nil
+            }
+            return
+        }
         let location = normalizedLocation(gesture.location(in: self))
 
         switch gesture.state {
@@ -296,6 +363,72 @@ extension InputCapturingView {
                 let mouseEvent = MirageMouseEvent(button: .left, location: location, modifiers: eventModifiers)
                 onInputEvent?(.mouseMoved(mouseEvent))
             }
+        default:
+            break
+        }
+    }
+
+    // MARK: - Locked Pointer Handlers
+
+    @objc
+    func handleLockedPointerPan(_ gesture: UIPanGestureRecognizer) {
+        guard cursorLockEnabled else { return }
+        let translation = gesture.translation(in: self)
+        gesture.setTranslation(.zero, in: self)
+
+        switch gesture.state {
+        case .began,
+             .changed:
+            applyLockedCursorDelta(translation)
+            let eventModifiers = modifiers(from: gesture)
+            let mouseEvent = MirageMouseEvent(button: .left, location: lockedCursorPosition, modifiers: eventModifiers)
+            if lockedPointerButtonDown { onInputEvent?(.mouseDragged(mouseEvent)) } else {
+                onInputEvent?(.mouseMoved(mouseEvent))
+            }
+        default:
+            break
+        }
+    }
+
+    @objc
+    func handleLockedPointerPress(_ gesture: UILongPressGestureRecognizer) {
+        guard cursorLockEnabled else { return }
+        setLockedCursorVisible(true)
+        let location = lockedCursorPosition
+        let eventModifiers = modifiers(from: gesture)
+
+        switch gesture.state {
+        case .began:
+            noteLockedCursorLocalInput()
+            let now = CACurrentMediaTime()
+            let timeSinceLastTap = now - lastTapTime
+            let distance = hypot(location.x - lastTapLocation.x, location.y - lastTapLocation.y)
+
+            if timeSinceLastTap < Self.multiClickTimeThreshold, distance < Self.multiClickDistanceThreshold { currentClickCount += 1 } else {
+                currentClickCount = 1
+            }
+
+            lastTapTime = now
+            lastTapLocation = location
+            lockedPointerButtonDown = true
+
+            let mouseEvent = MirageMouseEvent(
+                button: .left,
+                location: location,
+                clickCount: currentClickCount,
+                modifiers: eventModifiers
+            )
+            onInputEvent?(.mouseDown(mouseEvent))
+        case .ended, .cancelled:
+            noteLockedCursorLocalInput()
+            let mouseEvent = MirageMouseEvent(
+                button: .left,
+                location: location,
+                clickCount: currentClickCount,
+                modifiers: eventModifiers
+            )
+            onInputEvent?(.mouseUp(mouseEvent))
+            lockedPointerButtonDown = false
         default:
             break
         }
@@ -639,6 +772,11 @@ extension InputCapturingView: UIGestureRecognizerDelegate {
 
         if (gestureRecognizer == virtualCursorPanGesture && otherGestureRecognizer == virtualCursorLongPressGesture) ||
             (gestureRecognizer == virtualCursorLongPressGesture && otherGestureRecognizer == virtualCursorPanGesture) {
+            return true
+        }
+
+        if (gestureRecognizer == lockedPointerPanGesture && otherGestureRecognizer == lockedPointerPressGesture) ||
+            (gestureRecognizer == lockedPointerPressGesture && otherGestureRecognizer == lockedPointerPanGesture) {
             return true
         }
 

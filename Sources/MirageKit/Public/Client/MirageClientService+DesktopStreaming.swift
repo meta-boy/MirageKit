@@ -12,11 +12,12 @@ import Foundation
 
 @MainActor
 public extension MirageClientService {
-    /// Start streaming the full desktop (virtual display mirroring mode).
+    /// Start streaming the desktop (mirrored or secondary display mode).
     /// - Parameters:
     ///   - quality: Quality preset for the stream.
     ///   - scaleFactor: Optional display scale factor.
     ///   - displayResolution: Client's display resolution for virtual display sizing.
+    ///   - mode: Desktop stream mode (mirrored vs secondary display).
     ///   - keyFrameInterval: Optional keyframe interval in frames.
     ///   - keyframeQuality: Optional inter-frame quality (0.0-1.0).
     ///   - encoderOverrides: Optional per-stream encoder overrides.
@@ -27,6 +28,7 @@ public extension MirageClientService {
         quality: MirageQualityPreset = .medium,
         scaleFactor: CGFloat? = nil,
         displayResolution: CGSize? = nil,
+        mode: MirageDesktopStreamMode = .mirrored,
         keyFrameInterval: Int? = nil,
         keyframeQuality: Float? = nil,
         encoderOverrides: MirageEncoderOverrides? = nil,
@@ -41,6 +43,8 @@ public extension MirageClientService {
 
         guard effectiveDisplayResolution.width > 0, effectiveDisplayResolution.height > 0 else { throw MirageError.protocolError("Invalid display resolution") }
 
+        desktopStreamMode = mode
+
         var request = StartDesktopStreamMessage(
             preferredQuality: quality,
             scaleFactor: scaleFactor,
@@ -52,6 +56,7 @@ public extension MirageClientService {
             pixelFormat: nil,
             colorSpace: nil,
             captureSource: captureSource,
+            mode: mode,
             minBitrate: nil,
             maxBitrate: nil,
             streamScale: clampedStreamScale(),

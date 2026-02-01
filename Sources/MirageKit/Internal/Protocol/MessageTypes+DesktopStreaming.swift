@@ -12,8 +12,8 @@ import Foundation
 
 // MARK: - Desktop Streaming Messages
 
-/// Request to start streaming the full desktop (Client → Host)
-/// This mirrors all physical displays to a single virtual display
+/// Request to start streaming the desktop (Client → Host)
+/// This can mirror all physical displays or run as a secondary display
 struct StartDesktopStreamMessage: Codable {
     /// Preferred quality preset
     let preferredQuality: MirageQualityPreset
@@ -37,6 +37,8 @@ struct StartDesktopStreamMessage: Codable {
     var captureQueueDepth: Int?
     /// Client-requested capture source for desktop streams
     var captureSource: MirageDesktopCaptureSource?
+    /// Desktop stream mode (mirrored vs secondary display)
+    var mode: MirageDesktopStreamMode?
     /// Client-requested minimum target bitrate (bits per second)
     var minBitrate: Int?
     /// Client-requested maximum target bitrate (bits per second)
@@ -68,6 +70,7 @@ struct StartDesktopStreamMessage: Codable {
         case colorSpace
         case captureQueueDepth
         case captureSource
+        case mode
         case minBitrate
         case maxBitrate
         case streamScale
