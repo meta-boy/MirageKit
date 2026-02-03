@@ -21,20 +21,15 @@ extension MirageHostService {
         to clientContext: ClientContext,
         displayResolution: CGSize,
         mode: MirageDesktopStreamMode,
-        qualityPreset: MirageQualityPreset,
         keyFrameInterval: Int?,
-        frameQuality: Float?,
-        keyframeQuality: Float?,
         pixelFormat: MiragePixelFormat?,
         colorSpace: MirageColorSpace?,
         captureQueueDepth: Int?,
         minBitrate: Int?,
         maxBitrate: Int?,
         streamScale: CGFloat?,
-        adaptiveScaleEnabled: Bool?,
         latencyMode: MirageStreamLatencyMode = .smoothest,
         dataPort _: UInt16?,
-        captureSource: MirageDesktopCaptureSource?,
         targetFrameRate: Int? = nil
     )
     async throws {
@@ -71,28 +66,24 @@ extension MirageHostService {
         inputController.clearAllModifiers()
         desktopStreamMode = mode
 
-        // Configure encoder with quality preset and optional overrides
+        // Configure encoder with optional overrides
         var config = encoderConfig
-        let presetFrameRate = targetFrameRate ?? 60
-        let presetConfig = qualityPreset.encoderConfiguration(for: presetFrameRate)
-        config.keyFrameInterval = presetConfig.keyFrameInterval
-        config.frameQuality = presetConfig.frameQuality
-        config.keyframeQuality = presetConfig.keyframeQuality
-        config.pixelFormat = presetConfig.pixelFormat
-        config.colorSpace = presetConfig.colorSpace
-        config.minBitrate = presetConfig.minBitrate
-        config.maxBitrate = presetConfig.maxBitrate
-
         config = config.withOverrides(
             keyFrameInterval: keyFrameInterval,
-            frameQuality: frameQuality,
-            keyframeQuality: keyframeQuality,
             pixelFormat: pixelFormat,
             colorSpace: colorSpace,
             captureQueueDepth: captureQueueDepth,
             minBitrate: minBitrate,
             maxBitrate: maxBitrate
         )
+
+        if let normalized = MirageBitrateQualityMapper.normalizedTargetBitrate(
+            minBitrate: config.minBitrate,
+            maxBitrate: config.maxBitrate
+        ) {
+            config.minBitrate = normalized
+            config.maxBitrate = normalized
+        }
 
         if let targetFrameRate { config = config.withTargetFrameRate(targetFrameRate) }
         // TODO: HDR support - requires proper virtual display EDR configuration
@@ -101,29 +92,37 @@ extension MirageHostService {
         //     MirageLogger.host("Desktop stream HDR enabled (Rec. 2020 + PQ)")
         // }
 
-        let selectedCaptureSource = captureSource ?? .virtualDisplay
-        desktopCaptureSource = selectedCaptureSource
+        desktopBaseDisplayResolution = displayResolution
+        let clampedStreamScale = StreamContext.clampStreamScale(streamScale ?? 1.0)
+        desktopRequestedStreamScale = clampedStreamScale
+        desktopUsesScaledVirtualDisplay = true
+        let virtualDisplayResolution = resolvedDesktopVirtualDisplayResolution(
+            baseResolution: displayResolution,
+            streamScale: clampedStreamScale
+        )
+        let effectiveStreamScale: CGFloat = 1.0
 
-        // Acquire virtual display at client's full requested resolution
-        // The 5K cap is applied at the encoding layer, not the virtual display
-        // Pass the target frame rate to enable 120Hz when appropriate
+        if clampedStreamScale < 1.0 {
+            MirageLogger.host(
+                "Desktop scale \(clampedStreamScale) → virtual display \(Int(virtualDisplayResolution.width))x\(Int(virtualDisplayResolution.height)); encoder scale forced to 1.0"
+            )
+        }
+
+        // Acquire virtual display at the resolved streaming resolution.
+        // The 5K cap is applied at the encoding layer, not the virtual display.
+        // Pass the target frame rate to enable 120Hz when appropriate.
         let virtualDisplayRefreshRate = SharedVirtualDisplayManager.streamRefreshRate(
             for: targetFrameRate ?? 60
         )
         let context = try await SharedVirtualDisplayManager.shared.acquireDisplayForConsumer(
             .desktopStream,
-            resolution: displayResolution,
+            resolution: virtualDisplayResolution,
             refreshRate: virtualDisplayRefreshRate,
             colorSpace: config.colorSpace
         )
         logDesktopStartStep("virtual display acquired (\(context.displayID))")
 
-        let captureDisplay: SCDisplayWrapper = switch selectedCaptureSource {
-        case .mainDisplay:
-            try await findMainSCDisplayWithRetry(maxAttempts: 5, delayMs: 40)
-        case .virtualDisplay:
-            try await findSCDisplayWithRetry(maxAttempts: 5, delayMs: 40)
-        }
+        let captureDisplay = try await findSCDisplayWithRetry(maxAttempts: 5, delayMs: 40)
         logDesktopStartStep("SCDisplay resolved (\(captureDisplay.display.displayID))")
         let captureResolution = context.resolution
 
@@ -164,8 +163,7 @@ extension MirageHostService {
         streamStartupBaseTimes[streamID] = desktopStartTime
         streamStartupRegistrationLogged.remove(streamID)
         streamStartupFirstPacketSent.remove(streamID)
-        if selectedCaptureSource == .virtualDisplay,
-           captureDisplay.display.displayID != context.displayID {
+        if captureDisplay.display.displayID != context.displayID {
             MirageLogger.error(
                 .host,
                 "Desktop capture display mismatch: capture=\(captureDisplay.display.displayID), virtual=\(context.displayID)"
@@ -173,20 +171,18 @@ extension MirageHostService {
         }
         MirageLogger
             .host(
-                "Desktop capture source: \(selectedCaptureSource.displayName) (capture display \(captureDisplay.display.displayID), virtual \(context.displayID), color=\(config.colorSpace.displayName))"
+                "Desktop capture source: Virtual Display (capture display \(captureDisplay.display.displayID), virtual \(context.displayID), color=\(config.colorSpace.displayName))"
             )
 
-        let effectiveScale = streamScale ?? 1.0
+        let effectiveScale = effectiveStreamScale
 
         let streamContext = StreamContext(
             streamID: streamID,
             windowID: 0,
             encoderConfig: config,
-            qualityPreset: qualityPreset,
             streamScale: effectiveScale,
             maxPacketSize: networkConfig.maxPacketSize,
             additionalFrameFlags: [.desktopStream],
-            adaptiveScaleEnabled: adaptiveScaleEnabled ?? true,
             latencyMode: latencyMode
         )
         await streamContext.setStartupBaseTime(desktopStartTime, label: "desktop stream \(streamID)")
@@ -203,11 +199,6 @@ extension MirageHostService {
                 }
             }
         }
-        await streamContext.setStreamScaleUpdateHandler { [weak self] streamID in
-            Task { @MainActor [weak self] in
-                await self?.sendStreamScaleUpdate(streamID: streamID)
-            }
-        }
 
         desktopStreamContext = streamContext
         desktopStreamID = streamID
@@ -222,7 +213,7 @@ extension MirageHostService {
         let mainDisplayBounds = refreshDesktopPrimaryPhysicalBounds()
         let inputBounds = resolvedDesktopInputBounds(
             physicalBounds: mainDisplayBounds,
-            virtualResolution: displayResolution
+            virtualResolution: captureResolution
         )
         let desktopWindow = MirageWindow(
             id: 0,
@@ -313,8 +304,10 @@ extension MirageHostService {
         desktopPrimaryPhysicalDisplayID = nil
         desktopPrimaryPhysicalBounds = nil
         desktopUsesVirtualDisplay = false
-        desktopCaptureSource = .virtualDisplay
         desktopStreamMode = .mirrored
+        desktopBaseDisplayResolution = nil
+        desktopRequestedStreamScale = 1.0
+        desktopUsesScaledVirtualDisplay = false
         streamsByID.removeValue(forKey: streamID)
         streamStartupBaseTimes.removeValue(forKey: streamID)
         streamStartupRegistrationLogged.remove(streamID)

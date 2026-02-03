@@ -25,7 +25,7 @@ flowchart LR
 - `MirageClientService` manages discovery, connection, and stream sessions.
 - `MirageStreamViewRepresentable` renders streams and forwards input.
 - `MirageStreamContentView` and `MirageClientSessionStore` handle UI state, focus, and resize flows.
-- `MirageEncoderConfiguration`, `MirageNetworkConfiguration`, `MirageQualityPreset` configure quality and transport.
+- `MirageEncoderConfiguration`, `MirageEncoderOverrides`, and `MirageNetworkConfiguration` configure quality and transport.
 - `MirageHostWindowController` + `MirageHostInputController` encapsulate host-side window/input integration.
 - `MirageTrustStore`, `MirageAppPreferences`, and `MirageStreamingSettings` provide opinionated settings helpers.
 
@@ -108,9 +108,9 @@ flowchart LR
 
 ## Quality and Performance Tuning
 
-### Quality Presets
+### Encoder Overrides
 
-`MirageQualityPreset` configures encoder quality per 60/120Hz target. For low-latency use cases, combine any preset with `MirageStreamLatencyMode.lowestLatency`.
+`MirageEncoderConfiguration` provides host defaults for codec, frame rate, and encoder settings. Clients can supply `MirageEncoderOverrides` per stream to adjust keyframe interval, pixel format, color space, capture queue depth, and bitrate. For low-latency use cases, combine overrides with `MirageStreamLatencyMode.lowestLatency`.
 
 ### Backpressure
 
@@ -144,4 +144,4 @@ flowchart LR
 
 - Host-only features are gated by `#if os(macOS)`.
 - Most internal types are not public; mirror patterns from existing services.
-- Prefer using `MirageQualityPreset` defaults and extend overrides if needed.
+- Prefer using host defaults and extend overrides if needed.

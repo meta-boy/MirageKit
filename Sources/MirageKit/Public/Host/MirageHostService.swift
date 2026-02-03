@@ -73,6 +73,7 @@ public final class MirageHostService {
     var nextStreamID: StreamID = 1
     var streamsByID: [StreamID: StreamContext] = [:]
     var clientsByConnection: [ObjectIdentifier: ClientContext] = [:]
+    var clientsByID: [UUID: ClientContext] = [:]
     var singleClientConnectionID: ObjectIdentifier?
 
     // UDP connections by stream ID (received from client registrations)
@@ -82,10 +83,18 @@ public final class MirageHostService {
     var streamStartupRegistrationLogged: Set<StreamID> = []
     var streamStartupFirstPacketSent: Set<StreamID> = []
 
+    // Quality test connections and tasks
+    var qualityTestConnectionsByClientID: [UUID: NWConnection] = [:]
+    var qualityTestTasksByClientID: [UUID: Task<Void, Never>] = [:]
+    var qualityTestBenchmarkIDsByClientID: [UUID: UUID] = [:]
+
     // Track first error time per client for graceful disconnect on persistent errors
-    // If errors persist for 5+ seconds, disconnect the client
+    // If errors persist past the timeout, disconnect the client.
     var clientFirstErrorTime: [ObjectIdentifier: CFAbsoluteTime] = [:]
-    let clientErrorTimeoutSeconds: CFAbsoluteTime = 5.0
+    let clientErrorTimeoutSeconds: CFAbsoluteTime = 2.0
+
+    /// Approval timeout to avoid wedging the single-client slot.
+    let connectionApprovalTimeoutSeconds: CFAbsoluteTime = 15.0
 
     // Shared virtual display bounds for synchronous access from AppState
     // Single bounds since all windows share one virtual display
@@ -125,8 +134,10 @@ public final class MirageHostService {
     var desktopDisplayBounds: CGRect?
     var desktopVirtualDisplayID: CGDirectDisplayID?
     var desktopUsesVirtualDisplay = false
-    var desktopCaptureSource: MirageDesktopCaptureSource = .virtualDisplay
     var desktopStreamMode: MirageDesktopStreamMode = .mirrored
+    var desktopBaseDisplayResolution: CGSize?
+    var desktopRequestedStreamScale: CGFloat = 1.0
+    var desktopUsesScaledVirtualDisplay = false
 
     /// Physical displays that were mirrored during desktop streaming (for restoration)
     var mirroredPhysicalDisplayIDs: Set<CGDirectDisplayID> = []
@@ -273,6 +284,18 @@ public final class MirageHostService {
         return CGRect(origin: origin, size: fittedSize)
     }
 
+    func resolvedDesktopVirtualDisplayResolution(
+        baseResolution: CGSize,
+        streamScale: CGFloat
+    )
+    -> CGSize {
+        guard baseResolution.width > 0, baseResolution.height > 0 else { return baseResolution }
+        let clampedScale = StreamContext.clampStreamScale(streamScale)
+        let width = StreamContext.alignedEvenPixel(baseResolution.width * clampedScale)
+        let height = StreamContext.alignedEvenPixel(baseResolution.height * clampedScale)
+        return CGSize(width: width, height: height)
+    }
+
     /// Resolve the current virtual display bounds for secondary desktop streaming.
     /// Uses CoreGraphics coordinates for input injection.
     func resolveDesktopDisplayBounds() -> CGRect? {
@@ -340,16 +363,12 @@ public final class MirageHostService {
     ///   - dataPort: Optional UDP port for video data
     ///   - clientDisplayResolution: Client's display resolution for virtual display sizing
     ///   - keyFrameInterval: Optional client-requested keyframe interval (in frames)
-    ///   - frameQuality: Optional client-requested inter-frame quality (0.0-1.0)
-    ///   - keyframeQuality: Optional client-requested keyframe quality (0.0-1.0)
-    ///   - qualityPreset: Optional preset for latency-sensitive defaults
     ///   - colorSpace: Optional color space override for capture and encode
     ///   - captureQueueDepth: Optional ScreenCaptureKit queue depth override
     ///   - minBitrate: Optional minimum target bitrate (bits per second)
     ///   - maxBitrate: Optional maximum target bitrate (bits per second)
     ///   - targetFrameRate: Optional frame rate override (60/120 based on client capability)
     ///   - pixelFormat: Optional pixel format override for capture and encode
-    ///   - adaptiveScaleEnabled: Optional toggle for adaptive stream scaling
     // TODO: HDR support - requires proper virtual display EDR configuration
     // ///   - hdr: Whether to enable HDR streaming (Rec. 2020 with PQ transfer function)
 

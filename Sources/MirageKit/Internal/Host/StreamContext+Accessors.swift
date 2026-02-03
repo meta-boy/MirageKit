@@ -13,8 +13,6 @@ import Foundation
 #if os(macOS)
 struct EncoderSettingsSnapshot: Sendable {
     let keyFrameInterval: Int
-    let frameQuality: Float
-    let keyframeQuality: Float
     let pixelFormat: MiragePixelFormat
     let colorSpace: MirageColorSpace
     let captureQueueDepth: Int?
@@ -29,10 +27,6 @@ extension StreamContext {
 
     func setMetricsUpdateHandler(_ handler: (@Sendable (StreamMetricsMessage) -> Void)?) {
         metricsUpdateHandler = handler
-    }
-
-    func setStreamScaleUpdateHandler(_ handler: (@Sendable (StreamID) -> Void)?) {
-        streamScaleUpdateHandler = handler
     }
 
     func isUsingVirtualDisplay() -> Bool {
@@ -81,27 +75,9 @@ extension StreamContext {
         streamScale
     }
 
-    func getQualityPreset() -> MirageQualityPreset? {
-        qualityPreset
-    }
-
-    func getAdaptiveScaleEnabled() -> Bool {
-        adaptiveScaleEnabled
-    }
-
-    func setAdaptiveScaleEnabled(_ enabled: Bool) {
-        adaptiveScaleEnabled = enabled
-        adaptiveScale = 1.0
-        adaptiveScaleLowStreak = 0
-        adaptiveScaleHighStreak = 0
-        lastAdaptiveScaleChangeTime = 0
-    }
-
     func getEncoderSettings() -> EncoderSettingsSnapshot {
         EncoderSettingsSnapshot(
             keyFrameInterval: encoderConfig.keyFrameInterval,
-            frameQuality: encoderConfig.frameQuality,
-            keyframeQuality: encoderConfig.keyframeQuality,
             pixelFormat: activePixelFormat,
             colorSpace: encoderConfig.colorSpace,
             captureQueueDepth: encoderConfig.captureQueueDepth,

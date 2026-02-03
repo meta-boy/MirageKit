@@ -60,7 +60,7 @@ extension MirageHostService {
                 Bool,
                 NWError?
             ) = await withCheckedContinuation { continuation in
-                connection.receive(minimumIncompleteLength: 22, maximumLength: 64) { data, context, isComplete, error in
+                connection.receive(minimumIncompleteLength: 20, maximumLength: 64) { data, context, isComplete, error in
                     continuation.resume(returning: (data, context, isComplete, error))
                 }
             }
@@ -70,7 +70,7 @@ extension MirageHostService {
                 break
             }
 
-            guard let data = result.0, data.count >= 22 else {
+            guard let data = result.0, data.count >= 20 else {
                 if result.2 {
                     MirageLogger.host("UDP connection closed (no more data)")
                     break
@@ -80,6 +80,17 @@ extension MirageHostService {
             }
 
             let magic = data.prefix(4)
+            if magic.elementsEqual([0x4D, 0x49, 0x52, 0x51]) {
+                let uuidBytes: uuid_t = data.withUnsafeBytes { ptr in
+                    ptr.loadUnaligned(fromByteOffset: 4, as: uuid_t.self)
+                }
+                let deviceID = UUID(uuid: uuidBytes)
+                qualityTestConnectionsByClientID[deviceID] = connection
+                let pathText = connection.currentPath.map(describeNetworkPath) ?? "unknown"
+                MirageLogger.host("Registered quality test UDP connection for device \(deviceID.uuidString) (\(pathText))")
+                continue
+            }
+
             guard magic.elementsEqual([0x4D, 0x49, 0x52, 0x47]) else {
                 MirageLogger.host("Invalid video registration magic")
                 continue
@@ -89,7 +100,8 @@ extension MirageHostService {
                 ptr.loadUnaligned(fromByteOffset: 0, as: StreamID.self).littleEndian
             }
 
-            MirageLogger.host("Received video registration for stream \(streamID)")
+            let pathText = connection.currentPath.map(describeNetworkPath) ?? "unknown"
+            MirageLogger.host("Received video registration for stream \(streamID) (\(pathText))")
 
             guard streamsByID[streamID] != nil else {
                 MirageLogger.host("Stream \(streamID) not found, may be pending")
@@ -136,5 +148,20 @@ extension MirageHostService {
             connection.send(content: data, completion: .idempotent)
         }
     }
+}
+
+private func describeNetworkPath(_ path: NWPath) -> String {
+    var interfaces: [String] = []
+    if path.usesInterfaceType(.wifi) { interfaces.append("wifi") }
+    if path.usesInterfaceType(.wiredEthernet) { interfaces.append("wired") }
+    if path.usesInterfaceType(.cellular) { interfaces.append("cellular") }
+    if path.usesInterfaceType(.loopback) { interfaces.append("loopback") }
+    if path.usesInterfaceType(.other) { interfaces.append("other") }
+    let interfaceText = interfaces.isEmpty ? "unknown" : interfaces.joined(separator: ",")
+    let available = path.availableInterfaces
+        .map { "\($0.name)(\(String(describing: $0.type)))" }
+        .joined(separator: ",")
+    let availableText = available.isEmpty ? "none" : available
+    return "status=\(path.status), interfaces=\(interfaceText), available=\(availableText), expensive=\(path.isExpensive), constrained=\(path.isConstrained), ipv4=\(path.supportsIPv4), ipv6=\(path.supportsIPv6)"
 }
 #endif

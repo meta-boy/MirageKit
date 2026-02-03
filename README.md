@@ -9,7 +9,7 @@ MirageKit is a window and desktop streaming framework for Apple platforms. It pr
 - Window, app, and full desktop streaming from macOS hosts
 - Bonjour discovery with TCP control + UDP video transport
 - Peer-to-peer connections over AWDL
-- Preset-based quality profiles and encoder configuration helpers
+- Encoder configuration helpers and per-stream overrides
 - Input forwarding (mouse, keyboard, scroll, gestures)
 - SwiftUI stream view for macOS, iOS, and visionOS
 - Session store + streaming content view for UI state
@@ -137,22 +137,17 @@ For a deeper dive into modules and data flows, see `Architecture.md`.
 
 ## Configuration
 
-### Quality Presets
+### Encoder Overrides
 
-`MirageQualityPreset` provides ready-made profiles with encoder quality targets for 60/120Hz.
+Clients can supply per-stream overrides with `MirageEncoderOverrides` (keyframe interval, pixel format, color space, capture queue depth, and bitrate). The host applies overrides on top of its `MirageEncoderConfiguration`.
 
-- `.ultra` / `.high`: highest quality targets for 60/120Hz
-- `.medium`: balanced quality with a lower target at 120Hz
-- `.low`: higher compression with a lower target at 120Hz
-- `.custom`: user-defined overrides on top of a medium baseline
-
-Each preset can be overridden per stream with `MirageEncoderOverrides` (keyframe interval, inter-frame quality, keyframe quality, pixel format, color space, and bitrate). The `keyFrameInterval` and `keyframeQuality` parameters on stream-start APIs provide interval and inter-frame quality overrides.
+`MirageClientService.runQualityTest()` returns a `MirageQualityTestSummary` that can be used to choose bitrate, pixel format, and resolution limits for your UX.
 
 ### Encoder Settings
 
 `MirageEncoderConfiguration` lets you control codec, frame rate, encoder quality, and color space.
 
-- Use `.highQuality` or `.balanced` presets.
+- Use `.highQuality` or `.balanced` defaults.
 - Use `withOverrides` to apply client-specific intervals or encoder quality.
 - Use `withTargetFrameRate` to request the client’s target FPS (60/120 based on display capabilities).
 - `frameQuality` targets inter-frame quality and maps to QP bounds when supported.

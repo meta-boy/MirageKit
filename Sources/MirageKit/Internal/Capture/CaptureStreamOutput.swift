@@ -30,9 +30,15 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
     private var lastFrameTime: CFAbsoluteTime = 0
     private var maxFrameGap: CFAbsoluteTime = 0
     private var lastFPSLogTime: CFAbsoluteTime = 0
+    private var presentationWindowCount: UInt64 = 0
+    private var presentationWindowStartTime: Double = 0
     private var deliveredFrameCount: UInt64 = 0
     private var deliveredCompleteCount: UInt64 = 0
     private var deliveredIdleCount: UInt64 = 0
+    private var callbackDurationTotalMs: Double = 0
+    private var callbackDurationMaxMs: Double = 0
+    private var callbackSampleCount: UInt64 = 0
+    private var lastCallbackLogTime: CFAbsoluteTime = 0
     private var stallSignaled: Bool = false
     private var lastStallTime: CFAbsoluteTime = 0
     private var lastContentRect: CGRect = .zero
@@ -43,6 +49,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
     private let watchdogQueue = DispatchQueue(label: "com.mirage.capture.watchdog", qos: .userInteractive)
     private var windowID: CGWindowID = 0
     private var lastDeliveredFrameTime: CFAbsoluteTime = 0
+    private var lastCompleteFrameTime: CFAbsoluteTime = 0
     private var frameGapThreshold: CFAbsoluteTime
     private var stallThreshold: CFAbsoluteTime
     private var expectedFrameRate: Double
@@ -79,7 +86,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         frameGapThreshold: CFAbsoluteTime = 0.100,
         stallThreshold: CFAbsoluteTime = 1.0,
         expectedFrameRate: Double = 0,
-        targetFrameRate: Int = 0,
+        targetFrameRate _: Int = 0,
         poolMinimumBufferCount: Int = 6
     ) {
         self.onFrame = onFrame
@@ -126,7 +133,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         frameRate: Int,
         gapThreshold: CFAbsoluteTime,
         stallThreshold: CFAbsoluteTime,
-        targetFrameRate: Int
+        targetFrameRate _: Int
     ) {
         expectationLock.withLock {
             expectedFrameRate = Double(frameRate)
@@ -152,10 +159,14 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         let now = CFAbsoluteTimeGetCurrent()
         guard lastDeliveredFrameTime > 0 else { return }
 
-        let gap = now - lastDeliveredFrameTime
         let (gapThreshold, stallLimit) = expectationLock.withLock {
             (frameGapThreshold, stallThreshold)
         }
+        let recentActivityWindow = max(2.0, min(6.0, stallLimit * 2.0))
+        let anyGap = now - lastDeliveredFrameTime
+        let completeGap = lastCompleteFrameTime > 0 ? now - lastCompleteFrameTime : anyGap
+        let useCompleteGap = lastCompleteFrameTime > 0 && completeGap <= recentActivityWindow
+        let gap = useCompleteGap ? completeGap : anyGap
         guard gap > gapThreshold else { return }
 
         // SCK has stopped delivering - mark fallback mode
@@ -165,7 +176,10 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             stallSignaled = true
             lastStallTime = now
             let gapMs = (gap * 1000).formatted(.number.precision(.fractionLength(1)))
-            onCaptureStall("frame gap \(gapMs)ms")
+            let completeGapMs = (completeGap * 1000).formatted(.number.precision(.fractionLength(1)))
+            let anyGapMs = (anyGap * 1000).formatted(.number.precision(.fractionLength(1)))
+            let mode = useCompleteGap ? "content" : "any"
+            onCaptureStall("frame gap \(gapMs)ms (complete \(completeGapMs)ms, any \(anyGapMs)ms, mode=\(mode))")
         }
     }
 
@@ -182,38 +196,52 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         fallbackLock.unlock()
     }
 
-    func stream(_: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        let wallTime = CFAbsoluteTimeGetCurrent() // Timing: when SCK delivered the frame
-        let captureTime = wallTime
+    private func updateDeliveryState(captureTime: CFAbsoluteTime, isComplete: Bool) {
+        lastDeliveredFrameTime = captureTime
+        stallSignaled = false
+        if isComplete {
+            lastCompleteFrameTime = captureTime
+            handleFallbackResumeIfNeeded()
+        }
+    }
 
-        // NOTE: lastDeliveredFrameTime is updated ONLY for .complete frames (below)
-        // This allows the watchdog to continue firing during drags when SCK only sends .idle frames
-
-        let diagnosticsEnabled = MirageLogger.isEnabled(.capture)
-
-        // Check if we're resuming from fallback mode
-        // Only request keyframe if fallback lasted long enough to cause decode issues
+    private func handleFallbackResumeIfNeeded() {
+        // Only request keyframe if fallback lasted long enough to cause decode issues.
         fallbackLock.lock()
-        if wasInFallbackMode {
-            let fallbackDuration = CFAbsoluteTimeGetCurrent() - fallbackStartTime
-            wasInFallbackMode = false
+        guard wasInFallbackMode else {
+            fallbackLock.unlock()
+            return
+        }
+        let fallbackDuration = CFAbsoluteTimeGetCurrent() - fallbackStartTime
+        wasInFallbackMode = false
+        fallbackLock.unlock()
 
-            // Only request keyframe for long fallbacks (>200ms)
-            // Brief fallbacks don't cause decoder reference frame issues
-            if fallbackDuration > keyframeThreshold {
-                onKeyframeRequest()
-                MirageLogger
-                    .capture(
-                        "SCK resumed after long fallback (\(Int(fallbackDuration * 1000))ms) - scheduling keyframe"
-                    )
-            } else {
-                MirageLogger
-                    .capture(
-                        "SCK resumed after brief fallback (\(Int(fallbackDuration * 1000))ms) - no keyframe needed"
-                    )
+        if fallbackDuration > keyframeThreshold {
+            onKeyframeRequest()
+            MirageLogger
+                .capture(
+                    "SCK resumed after long fallback (\(Int(fallbackDuration * 1000))ms) - scheduling keyframe"
+                )
+        } else {
+            MirageLogger
+                .capture(
+                    "SCK resumed after brief fallback (\(Int(fallbackDuration * 1000))ms) - no keyframe needed"
+                )
+        }
+    }
+
+    func stream(_: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        let diagnosticsEnabled = MirageLogger.isEnabled(.capture)
+        let callbackStartTime = diagnosticsEnabled ? CFAbsoluteTimeGetCurrent() : 0
+        defer {
+            if diagnosticsEnabled {
+                let durationMs = (CFAbsoluteTimeGetCurrent() - callbackStartTime) * 1000
+                recordCallbackDuration(durationMs)
             }
         }
-        fallbackLock.unlock()
+
+        let wallTime = CFAbsoluteTimeGetCurrent() // Timing: when SCK delivered the frame
+        let captureTime = wallTime
 
         // DIAGNOSTIC: Track frame delivery gaps to detect drag/menu freeze
         if lastFrameTime > 0 {
@@ -253,9 +281,12 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             return
         }
 
+        if diagnosticsEnabled {
+            updatePresentationFPS(presentationTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        }
+
         if !tracksFrameStatus {
-            lastDeliveredFrameTime = captureTime
-            stallSignaled = false
+            updateDeliveryState(captureTime: captureTime, isComplete: true)
             if diagnosticsEnabled {
                 deliveredFrameCount += 1
                 if lastFPSLogTime == 0 { lastFPSLogTime = captureTime } else if captureTime - lastFPSLogTime > 2.0 {
@@ -331,10 +362,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         guard effectiveStatus == .complete || effectiveStatus == .idle else { return }
         if effectiveStatus == .idle { isIdleFrame = true }
 
-        // Update watchdog timer for any delivered frame so fallback only runs
-        // when SCK stops delivering frames entirely.
-        lastDeliveredFrameTime = captureTime
-        stallSignaled = false
+        updateDeliveryState(captureTime: captureTime, isComplete: effectiveStatus == .complete)
         if diagnosticsEnabled {
             deliveredFrameCount += 1
             if effectiveStatus == .idle { deliveredIdleCount += 1 } else {
@@ -420,6 +448,44 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         )
 
         emitFrame(sampleBuffer: sampleBuffer, sourcePixelBuffer: pixelBuffer, frameInfo: frameInfo, captureTime: captureTime)
+    }
+
+    private func updatePresentationFPS(presentationTime: CMTime) {
+        guard presentationTime.isValid else { return }
+        let seconds = CMTimeGetSeconds(presentationTime)
+        guard seconds.isFinite, seconds >= 0 else { return }
+        presentationWindowCount += 1
+        if presentationWindowStartTime == 0 {
+            presentationWindowStartTime = seconds
+            return
+        }
+        let window = seconds - presentationWindowStartTime
+        guard window > 2.0 else { return }
+        let fps = Double(presentationWindowCount) / window
+        let fpsText = fps.formatted(.number.precision(.fractionLength(1)))
+        MirageLogger.capture("Capture PTS fps: \(fpsText) (window \(window.formatted(.number.precision(.fractionLength(2))))s)")
+        presentationWindowCount = 0
+        presentationWindowStartTime = seconds
+    }
+
+    private func recordCallbackDuration(_ durationMs: Double) {
+        callbackDurationTotalMs += durationMs
+        callbackDurationMaxMs = max(callbackDurationMaxMs, durationMs)
+        callbackSampleCount += 1
+        let now = CFAbsoluteTimeGetCurrent()
+        if lastCallbackLogTime == 0 {
+            lastCallbackLogTime = now
+            return
+        }
+        guard now - lastCallbackLogTime > 2.0 else { return }
+        let avgMs = callbackSampleCount > 0 ? callbackDurationTotalMs / Double(callbackSampleCount) : 0
+        let avgText = avgMs.formatted(.number.precision(.fractionLength(2)))
+        let maxText = callbackDurationMaxMs.formatted(.number.precision(.fractionLength(2)))
+        MirageLogger.capture("Capture callback: avg=\(avgText)ms max=\(maxText)ms")
+        callbackDurationTotalMs = 0
+        callbackDurationMaxMs = 0
+        callbackSampleCount = 0
+        lastCallbackLogTime = now
     }
 
     private func emitFrame(
@@ -509,7 +575,6 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             MirageLogger.capture(message)
         }
     }
-
 }
 
 #endif

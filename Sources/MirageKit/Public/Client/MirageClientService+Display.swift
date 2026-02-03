@@ -33,7 +33,7 @@ extension MirageClientService {
         return max(0.1, min(1.0, scale))
     }
 
-    func getMainDisplayResolution() -> CGSize {
+    public func getMainDisplayResolution() -> CGSize {
         #if os(macOS)
         guard let mainScreen = NSScreen.main else { return CGSize(width: 2560, height: 1600) }
         let scale = mainScreen.backingScaleFactor
@@ -116,8 +116,7 @@ extension MirageClientService {
 
     public func sendStreamScaleChange(
         streamID: StreamID,
-        scale: CGFloat,
-        adaptiveScaleEnabled: Bool? = nil
+        scale: CGFloat
     )
     async throws {
         guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
@@ -125,8 +124,7 @@ extension MirageClientService {
         let clampedScale = max(0.1, min(1.0, scale))
         let request = StreamScaleChangeMessage(
             streamID: streamID,
-            streamScale: clampedScale,
-            adaptiveScaleEnabled: adaptiveScaleEnabled
+            streamScale: clampedScale
         )
         let message = try ControlMessage(type: .streamScaleChange, content: request)
 

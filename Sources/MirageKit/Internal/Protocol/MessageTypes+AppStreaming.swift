@@ -27,8 +27,6 @@ struct AppListMessage: Codable {
 struct SelectAppMessage: Codable {
     /// Bundle identifier of the app to stream
     let bundleIdentifier: String
-    /// Quality preset for initial streams
-    let preferredQuality: MirageQualityPreset
     /// Client's data port for video
     let dataPort: UInt16?
     /// Client's display scale factor
@@ -41,10 +39,6 @@ struct SelectAppMessage: Codable {
     let maxRefreshRate: Int
     /// Client-requested keyframe interval in frames
     var keyFrameInterval: Int?
-    /// Client-requested inter-frame quality (0.0-1.0)
-    var frameQuality: Float?
-    /// Client-requested keyframe quality (0.0-1.0)
-    var keyframeQuality: Float?
     /// Client-requested pixel format (capture + encode)
     var pixelFormat: MiragePixelFormat?
     /// Client-requested color space
@@ -57,8 +51,6 @@ struct SelectAppMessage: Codable {
     var maxBitrate: Int?
     /// Client-requested stream scale (0.1-1.0)
     let streamScale: CGFloat?
-    /// Client toggle for adaptive stream scaling (host may reduce streamScale to recover FPS)
-    let adaptiveScaleEnabled: Bool?
     /// Client latency preference for buffering behavior
     let latencyMode: MirageStreamLatencyMode?
     // TODO: HDR support - requires proper virtual display EDR configuration
@@ -67,22 +59,18 @@ struct SelectAppMessage: Codable {
 
     enum CodingKeys: String, CodingKey {
         case bundleIdentifier
-        case preferredQuality
         case dataPort
         case scaleFactor
         case displayWidth
         case displayHeight
         case maxRefreshRate
         case keyFrameInterval
-        case frameQuality = "keyframeQuality"
-        case keyframeQuality = "keyframeQualityOverride"
         case pixelFormat
         case colorSpace
         case captureQueueDepth
         case minBitrate
         case maxBitrate
         case streamScale
-        case adaptiveScaleEnabled
         case latencyMode
     }
 }

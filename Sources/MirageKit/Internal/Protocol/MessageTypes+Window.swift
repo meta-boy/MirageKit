@@ -24,7 +24,6 @@ struct WindowUpdateMessage: Codable {
 
 struct StartStreamMessage: Codable {
     let windowID: WindowID
-    let preferredQuality: MirageQualityPreset
     /// UDP port the client is listening on for video data
     let dataPort: UInt16?
     /// Client's display scale factor (e.g., 2.0 for Retina Mac, ~1.72 for iPad Pro)
@@ -42,13 +41,6 @@ struct StartStreamMessage: Codable {
     /// Higher values (e.g., 600 = 10 seconds @ 60fps) reduce periodic lag spikes
     /// If nil, host uses default from encoder configuration
     var keyFrameInterval: Int?
-    /// Client-requested inter-frame quality (0.0-1.0)
-    /// Lower values reduce frame size with minimal visual impact
-    /// If nil, host uses default from encoder configuration
-    var frameQuality: Float?
-    /// Client-requested keyframe quality (0.0-1.0)
-    /// If nil, host uses default from encoder configuration
-    var keyframeQuality: Float?
     /// Client-requested pixel format (capture + encode)
     var pixelFormat: MiragePixelFormat?
     /// Client-requested color space
@@ -62,8 +54,6 @@ struct StartStreamMessage: Codable {
     /// Client-requested stream scale (0.1-1.0)
     /// Applies post-capture downscaling without resizing the host window
     var streamScale: CGFloat?
-    /// Client toggle for adaptive stream scaling (host may reduce streamScale to recover FPS)
-    var adaptiveScaleEnabled: Bool?
     /// Client latency preference for buffering behavior
     var latencyMode: MirageStreamLatencyMode?
     /// Client refresh rate override in Hz (60/120 based on client capability).
@@ -75,7 +65,6 @@ struct StartStreamMessage: Codable {
 
     enum CodingKeys: String, CodingKey {
         case windowID
-        case preferredQuality
         case dataPort
         case scaleFactor
         case pixelWidth
@@ -83,15 +72,12 @@ struct StartStreamMessage: Codable {
         case displayWidth
         case displayHeight
         case keyFrameInterval
-        case frameQuality = "keyframeQuality"
-        case keyframeQuality = "keyframeQualityOverride"
         case pixelFormat
         case colorSpace
         case captureQueueDepth
         case minBitrate
         case maxBitrate
         case streamScale
-        case adaptiveScaleEnabled
         case latencyMode
         case maxRefreshRate
     }

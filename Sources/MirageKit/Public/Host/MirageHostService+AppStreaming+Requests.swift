@@ -53,19 +53,15 @@ extension MirageHostService {
             let targetFrameRate = resolvedTargetFrameRate(clientMaxRefreshRate)
             MirageLogger
                 .host(
-                    "Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)"
+                    "Frame rate: \(targetFrameRate)fps (client max=\(clientMaxRefreshRate)Hz)"
                 )
 
-            let presetConfig = request.preferredQuality.encoderConfiguration(for: targetFrameRate)
-            let keyFrameInterval = request.keyFrameInterval ?? presetConfig.keyFrameInterval
-            let frameQuality = request.frameQuality ?? presetConfig.frameQuality
-            let keyframeQuality = request.keyframeQuality ?? presetConfig.keyframeQuality
-            let pixelFormat = request.pixelFormat ?? presetConfig.pixelFormat
-            let colorSpace = request.colorSpace ?? presetConfig.colorSpace
-            let minBitrate = request.minBitrate ?? presetConfig.minBitrate
-            let maxBitrate = request.maxBitrate ?? presetConfig.maxBitrate
+            let keyFrameInterval = request.keyFrameInterval
+            let pixelFormat = request.pixelFormat
+            let colorSpace = request.colorSpace
+            let minBitrate = request.minBitrate
+            let maxBitrate = request.maxBitrate
             let streamScale = request.streamScale ?? 1.0
-            let adaptiveScaleEnabled = request.adaptiveScaleEnabled ?? true
             let latencyMode = request.latencyMode ?? .smoothest
 
             // Check if app is available for streaming
@@ -136,12 +132,8 @@ extension MirageHostService {
                             ? CGSize(width: request.displayWidth!, height: request.displayHeight!)
                             : nil,
                         keyFrameInterval: keyFrameInterval,
-                        frameQuality: frameQuality,
-                        keyframeQuality: keyframeQuality,
                         streamScale: streamScale,
-                        adaptiveScaleEnabled: adaptiveScaleEnabled,
                         latencyMode: latencyMode,
-                        qualityPreset: request.preferredQuality,
                         targetFrameRate: targetFrameRate,
                         pixelFormat: pixelFormat,
                         colorSpace: colorSpace,

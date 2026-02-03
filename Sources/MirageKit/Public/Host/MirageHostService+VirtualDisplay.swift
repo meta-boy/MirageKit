@@ -48,10 +48,8 @@ extension MirageHostService {
         }
 
         let streamScale = await originalContext.getStreamScale()
-        let adaptiveScaleEnabled = await originalContext.getAdaptiveScaleEnabled()
         let encoderSettings = await originalContext.getEncoderSettings()
         let targetFrameRate = await originalContext.getTargetFrameRate()
-        let qualityPreset = await originalContext.getQualityPreset()
 
         // Auto-start a new stream for this window
         do {
@@ -61,11 +59,7 @@ extension MirageHostService {
                 dataPort: nil,
                 clientDisplayResolution: displayResolution,
                 keyFrameInterval: encoderSettings.keyFrameInterval,
-                frameQuality: encoderSettings.frameQuality,
-                keyframeQuality: encoderSettings.keyframeQuality,
                 streamScale: streamScale,
-                adaptiveScaleEnabled: adaptiveScaleEnabled,
-                qualityPreset: qualityPreset,
                 targetFrameRate: targetFrameRate,
                 pixelFormat: encoderSettings.pixelFormat,
                 colorSpace: encoderSettings.colorSpace,
@@ -79,15 +73,35 @@ extension MirageHostService {
         }
     }
 
-    func handleStreamScaleChange(streamID: StreamID, streamScale: CGFloat, adaptiveScaleEnabled: Bool?) async {
+    func handleStreamScaleChange(streamID: StreamID, streamScale: CGFloat) async {
         let clampedScale = max(0.1, min(1.0, streamScale))
+        if streamID == desktopStreamID, desktopUsesScaledVirtualDisplay {
+            desktopRequestedStreamScale = clampedScale
+            let baseResolution: CGSize
+            if let stored = desktopBaseDisplayResolution {
+                baseResolution = stored
+            } else if let desktopContext = desktopStreamContext {
+                let encoded = await desktopContext.getEncodedDimensions()
+                baseResolution = CGSize(width: encoded.width, height: encoded.height)
+                desktopBaseDisplayResolution = baseResolution
+            } else {
+                baseResolution = .zero
+            }
+
+            let scaledResolution = resolvedDesktopVirtualDisplayResolution(
+                baseResolution: baseResolution,
+                streamScale: clampedScale
+            )
+            await handleDisplayResolutionChange(streamID: streamID, newResolution: scaledResolution)
+            return
+        }
+
         guard let context = streamsByID[streamID] else {
             MirageLogger.debug(.host, "No stream found for stream scale change: \(streamID)")
             return
         }
 
         do {
-            if let adaptiveScaleEnabled { await context.setAdaptiveScaleEnabled(adaptiveScaleEnabled) }
             try await context.updateStreamScale(clampedScale)
             await sendStreamScaleUpdate(streamID: streamID)
         } catch {
@@ -239,7 +253,13 @@ extension MirageHostService {
                 )
 
                 // Re-apply mirroring after mode changes (display updates can drop mirror state).
-                if let displayID = await SharedVirtualDisplayManager.shared.getDisplayID() { await setupDisplayMirroring(targetDisplayID: displayID) }
+                if let displayID = await SharedVirtualDisplayManager.shared.getDisplayID() {
+                    if desktopStreamMode == .mirrored {
+                        await setupDisplayMirroring(targetDisplayID: displayID)
+                    } else if !mirroredPhysicalDisplayIDs.isEmpty || !desktopMirroringSnapshot.isEmpty {
+                        await disableDisplayMirroring(displayID: displayID)
+                    }
+                }
 
                 // 2. Update the capture/encoder dimensions to match new resolution
                 //    Since displayID doesn't change, we just need to update the stream config

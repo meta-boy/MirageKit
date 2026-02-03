@@ -35,18 +35,11 @@ extension StreamContext {
         self.packetSender = packetSender
         await packetSender.start()
 
-        let encoder = HEVCEncoder(
-            configuration: encoderConfig,
-            latencyMode: latencyMode,
-            inFlightLimit: maxInFlightFrames
-        )
-        self.encoder = encoder
-
         let captureTarget = streamTargetDimensions(windowFrame: window.frame)
         baseCaptureSize = CGSize(width: captureTarget.width, height: captureTarget.height)
         streamScale = resolvedStreamScale(
             for: baseCaptureSize,
-            requestedScale: requestedStreamScale * adaptiveScale,
+            requestedScale: requestedStreamScale,
             logLabel: "Resolution cap"
         )
         let outputSize = scaledOutputSize(for: baseCaptureSize)
@@ -55,10 +48,17 @@ extension StreamContext {
         captureMode = .window
         lastWindowFrame = window.frame
         updateQueueLimits()
+        await applyDerivedQuality(for: outputSize, logLabel: "Stream init")
         MirageLogger
             .stream(
                 "Stream init: latency=\(latencyMode.displayName), scale=\(streamScale), encoded=\(Int(outputSize.width))x\(Int(outputSize.height)), queue=\(maxQueuedBytes / 1024)KB, buffer=\(frameBufferDepth)"
             )
+        let encoder = HEVCEncoder(
+            configuration: encoderConfig,
+            latencyMode: latencyMode,
+            inFlightLimit: maxInFlightFrames
+        )
+        self.encoder = encoder
         try await encoder.createSession(width: Int(outputSize.width), height: Int(outputSize.height))
         activePixelFormat = await encoder.getActivePixelFormat()
 
@@ -169,18 +169,11 @@ extension StreamContext {
         self.packetSender = packetSender
         await packetSender.start()
 
-        let encoder = HEVCEncoder(
-            configuration: encoderConfig,
-            latencyMode: latencyMode,
-            inFlightLimit: maxInFlightFrames
-        )
-        self.encoder = encoder
-
         let captureResolution = resolution ?? CGSize(width: display.width, height: display.height)
         baseCaptureSize = captureResolution
         streamScale = resolvedStreamScale(
             for: baseCaptureSize,
-            requestedScale: requestedStreamScale * adaptiveScale,
+            requestedScale: requestedStreamScale,
             logLabel: "Resolution cap"
         )
         let outputSize = scaledOutputSize(for: baseCaptureSize)
@@ -190,10 +183,17 @@ extension StreamContext {
         updateQueueLimits()
         let width = max(1, Int(outputSize.width))
         let height = max(1, Int(outputSize.height))
+        await applyDerivedQuality(for: outputSize, logLabel: "Display init")
         MirageLogger
             .stream(
                 "Display init: latency=\(latencyMode.displayName), scale=\(streamScale), encoded=\(width)x\(height), queue=\(maxQueuedBytes / 1024)KB, buffer=\(frameBufferDepth)"
             )
+        let encoder = HEVCEncoder(
+            configuration: encoderConfig,
+            latencyMode: latencyMode,
+            inFlightLimit: maxInFlightFrames
+        )
+        self.encoder = encoder
         try await encoder.createSession(width: width, height: height)
 
         try await encoder.preheat()
@@ -312,7 +312,7 @@ extension StreamContext {
         baseCaptureSize = captureResolution
         streamScale = resolvedStreamScale(
             for: baseCaptureSize,
-            requestedScale: requestedStreamScale * adaptiveScale,
+            requestedScale: requestedStreamScale,
             logLabel: "Resolution cap"
         )
         let outputSize = scaledOutputSize(for: baseCaptureSize)

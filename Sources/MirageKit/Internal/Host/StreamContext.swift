@@ -84,9 +84,11 @@ actor StreamContext {
     var lastStreamStatsLogTime: CFAbsoluteTime = 0
     var metricsUpdateHandler: (@Sendable (StreamMetricsMessage) -> Void)?
     var activeQuality: Float
-    let qualityFloor: Float
-    let qualityCeiling: Float
-    let keyframeQualityFloor: Float
+    var qualityFloor: Float
+    var qualityCeiling: Float
+    var keyframeQualityFloor: Float
+    let qualityFloorFactor: Float = 0.6
+    let keyframeFloorFactor: Float = 0.6
     var pendingKeyframeReason: String?
     var pendingKeyframeDeadline: CFAbsoluteTime = 0
     var isKeyframeEncoding: Bool = false
@@ -113,6 +115,11 @@ actor StreamContext {
     var encodeAcceptedIntervalCount: UInt64 = 0
     var encodeRejectedIntervalCount: UInt64 = 0
     var encodeErrorIntervalCount: UInt64 = 0
+    var backpressureDropIntervalCount: UInt64 = 0
+    var encodeSkipQueueFullIntervalCount: UInt64 = 0
+    var encodeSkipDimensionIntervalCount: UInt64 = 0
+    var encodeSkipInactiveIntervalCount: UInt64 = 0
+    var encodeSkipNoSessionIntervalCount: UInt64 = 0
     var lastPipelineStatsLogTime: CFAbsoluteTime = 0
     let pipelineStatsInterval: CFAbsoluteTime = 2.0
     var lastCapturedFrameTime: CFAbsoluteTime = 0
@@ -209,52 +216,29 @@ actor StreamContext {
     /// Incremented when the host resets capture or send state.
     nonisolated(unsafe) var epoch: UInt16 = 0
 
-    /// Quality preset used to configure latency-sensitive defaults.
-    let qualityPreset: MirageQualityPreset?
     /// Latency preference for buffering behavior.
     let latencyMode: MirageStreamLatencyMode
-    /// When true, force low-latency buffering regardless of preset.
+    /// When true, force low-latency buffering regardless of overrides.
     let useLowLatencyPipeline: Bool
-    /// Client-requested stream scale (before adaptive adjustments).
+    /// Client-requested stream scale.
     var requestedStreamScale: CGFloat
-    /// Whether adaptive stream scaling is allowed for this stream.
-    var adaptiveScaleEnabled: Bool
-    /// Adaptive multiplier applied when capture FPS falls below target.
-    var adaptiveScale: CGFloat = 1.0
-    /// Adaptive stream scale update handler (host sends dimension update to client).
-    var streamScaleUpdateHandler: (@Sendable (StreamID) -> Void)?
-    var adaptiveScaleLowStreak: Int = 0
-    var adaptiveScaleHighStreak: Int = 0
-    var lastAdaptiveScaleChangeTime: CFAbsoluteTime = 0
-    let adaptiveScaleCooldown: CFAbsoluteTime = 6.0
-    let adaptiveScaleLowThreshold: Double = 0.85
-    let adaptiveScaleHighThreshold: Double = 0.97
-    let adaptiveScaleDownSamples: Int = 2
-    let adaptiveScaleUpSamples: Int = 4
-    let adaptiveScaleDownStep: CGFloat = 0.9
-    let adaptiveScaleUpStep: CGFloat = 1.05
-    let adaptiveScaleMin: CGFloat = 0.7
 
     init(
         streamID: StreamID,
         windowID: WindowID,
         encoderConfig: MirageEncoderConfiguration,
-        qualityPreset: MirageQualityPreset? = nil,
         streamScale: CGFloat = 1.0,
         maxPacketSize: Int = mirageDefaultMaxPacketSize,
         additionalFrameFlags: FrameFlags = [],
-        adaptiveScaleEnabled: Bool = true,
         latencyMode: MirageStreamLatencyMode = .smoothest
     ) {
         self.streamID = streamID
         self.windowID = windowID
         self.encoderConfig = encoderConfig
-        self.qualityPreset = qualityPreset
         self.latencyMode = latencyMode
         let clampedScale = StreamContext.clampStreamScale(streamScale)
         self.streamScale = clampedScale
         requestedStreamScale = clampedScale
-        self.adaptiveScaleEnabled = adaptiveScaleEnabled
         baseFrameFlags = additionalFrameFlags
         maxPayloadSize = miragePayloadSize(maxPacketSize: maxPacketSize)
         currentFrameRate = encoderConfig.targetFrameRate
@@ -289,8 +273,6 @@ actor StreamContext {
         frameInbox = StreamFrameInbox(capacity: bufferDepth)
         maxEncodeTimeMs = encoderConfig.targetFrameRate >= 120 ? 900 : 600
         shouldEncodeFrames = false
-        let qualityFloorFactor: Float = 0.6
-        let keyframeFloorFactor: Float = 0.6
         qualityCeiling = encoderConfig.frameQuality
         qualityFloor = max(0.1, encoderConfig.frameQuality * qualityFloorFactor)
         activeQuality = encoderConfig.frameQuality
@@ -348,7 +330,7 @@ actor StreamContext {
             return 3
         case .balanced:
             if frameRate >= 120 { return 4 }
-            if frameRate >= 60 { return 3 }
+            if frameRate >= 60 { return 4 }
             return 2
         case .lowestLatency:
             if frameRate >= 120 { return 2 }
@@ -371,7 +353,7 @@ actor StreamContext {
             return 2
         case .balanced:
             if frameRate >= 120 { return 3 }
-            if frameRate >= 60 { return 2 }
+            if frameRate >= 60 { return 3 }
             return 1
         case .lowestLatency:
             if frameRate >= 120 { return 2 }

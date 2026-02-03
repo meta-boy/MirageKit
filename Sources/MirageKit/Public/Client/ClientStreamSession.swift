@@ -10,11 +10,9 @@
 public struct ClientStreamSession: Identifiable, Sendable {
     public let id: StreamID
     public let window: MirageWindow
-    public let quality: MirageQualityPreset
 
-    public init(id: StreamID, window: MirageWindow, quality: MirageQualityPreset) {
+    public init(id: StreamID, window: MirageWindow) {
         self.id = id
         self.window = window
-        self.quality = quality
     }
 }

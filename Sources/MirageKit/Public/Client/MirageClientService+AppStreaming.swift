@@ -27,21 +27,17 @@ public extension MirageClientService {
     /// Select an app to stream (streams all of its windows).
     /// - Parameters:
     ///   - bundleIdentifier: Bundle identifier of the app to stream.
-    ///   - quality: Quality preset for the streams.
     ///   - scaleFactor: Optional display scale factor (e.g., 2.0 for Retina).
     ///   - displayResolution: Client's display resolution for virtual display sizing.
     ///   - keyFrameInterval: Optional keyframe interval in frames.
-    ///   - keyframeQuality: Optional inter-frame quality (0.0-1.0).
     ///   - encoderOverrides: Optional per-stream encoder overrides.
     // TODO: HDR support - requires proper virtual display EDR configuration.
     // ///   - preferHDR: Whether to request HDR streaming (Rec. 2020 with PQ).
     func selectApp(
         bundleIdentifier: String,
-        quality: MirageQualityPreset = .medium,
         scaleFactor: CGFloat? = nil,
         displayResolution: CGSize? = nil,
         keyFrameInterval: Int? = nil,
-        keyframeQuality: Float? = nil,
         encoderOverrides: MirageEncoderOverrides? = nil
         // preferHDR: Bool = false
     )
@@ -53,21 +49,17 @@ public extension MirageClientService {
 
         var request = SelectAppMessage(
             bundleIdentifier: bundleIdentifier,
-            preferredQuality: quality,
             dataPort: nil,
             scaleFactor: scaleFactor,
             displayWidth: effectiveDisplayResolution.width > 0 ? Int(effectiveDisplayResolution.width) : nil,
             displayHeight: effectiveDisplayResolution.height > 0 ? Int(effectiveDisplayResolution.height) : nil,
             maxRefreshRate: getScreenMaxRefreshRate(),
             keyFrameInterval: nil,
-            frameQuality: nil,
-            keyframeQuality: nil,
             pixelFormat: nil,
             colorSpace: nil,
             minBitrate: nil,
             maxBitrate: nil,
             streamScale: clampedStreamScale(),
-            adaptiveScaleEnabled: adaptiveScaleEnabled,
             latencyMode: latencyMode
         )
         // TODO: HDR support - requires proper virtual display EDR configuration.
@@ -75,7 +67,6 @@ public extension MirageClientService {
 
         var overrides = encoderOverrides ?? MirageEncoderOverrides()
         if overrides.keyFrameInterval == nil { overrides.keyFrameInterval = keyFrameInterval }
-        if overrides.frameQuality == nil { overrides.frameQuality = keyframeQuality }
         applyEncoderOverrides(overrides, to: &request)
 
         let message = try ControlMessage(type: .selectApp, content: request)

@@ -61,20 +61,16 @@ extension MirageHostService {
                 let clientMaxRefreshRate = request.maxRefreshRate
                 let targetFrameRate = resolvedTargetFrameRate(clientMaxRefreshRate)
 
-                let presetConfig = request.preferredQuality.encoderConfiguration(for: targetFrameRate)
-                let keyFrameInterval = request.keyFrameInterval ?? presetConfig.keyFrameInterval
-                let frameQuality = request.frameQuality ?? presetConfig.frameQuality
-                let keyframeQuality = request.keyframeQuality ?? presetConfig.keyframeQuality
-                let pixelFormat = request.pixelFormat ?? presetConfig.pixelFormat
-                let colorSpace = request.colorSpace ?? presetConfig.colorSpace
-                let minBitrate = request.minBitrate ?? presetConfig.minBitrate
-                let maxBitrate = request.maxBitrate ?? presetConfig.maxBitrate
+                let keyFrameInterval = request.keyFrameInterval
+                let pixelFormat = request.pixelFormat
+                let colorSpace = request.colorSpace
+                let minBitrate = request.minBitrate
+                let maxBitrate = request.maxBitrate
                 let requestedScale = request.streamScale ?? 1.0
-                let adaptiveScaleEnabled = request.adaptiveScaleEnabled ?? true
                 let latencyMode = request.latencyMode ?? .smoothest
                 MirageLogger
                     .host(
-                        "Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)"
+                        "Frame rate: \(targetFrameRate)fps (client max=\(clientMaxRefreshRate)Hz)"
                     )
 
                 try await startStream(
@@ -83,12 +79,8 @@ extension MirageHostService {
                     dataPort: request.dataPort,
                     clientDisplayResolution: clientDisplayResolution,
                     keyFrameInterval: keyFrameInterval,
-                    frameQuality: frameQuality,
-                    keyframeQuality: keyframeQuality,
                     streamScale: requestedScale,
-                    adaptiveScaleEnabled: adaptiveScaleEnabled,
                     latencyMode: latencyMode,
-                    qualityPreset: request.preferredQuality,
                     targetFrameRate: targetFrameRate,
                     pixelFormat: pixelFormat,
                     colorSpace: colorSpace,
@@ -107,10 +99,23 @@ extension MirageHostService {
                     .host(
                         "Client requested display resolution change for stream \(request.streamID): \(request.displayWidth)x\(request.displayHeight)"
                     )
-                await handleDisplayResolutionChange(
-                    streamID: request.streamID,
-                    newResolution: CGSize(width: request.displayWidth, height: request.displayHeight)
-                )
+                let baseResolution = CGSize(width: request.displayWidth, height: request.displayHeight)
+                if request.streamID == desktopStreamID, desktopUsesScaledVirtualDisplay {
+                    desktopBaseDisplayResolution = baseResolution
+                    let scaledResolution = resolvedDesktopVirtualDisplayResolution(
+                        baseResolution: baseResolution,
+                        streamScale: desktopRequestedStreamScale
+                    )
+                    await handleDisplayResolutionChange(
+                        streamID: request.streamID,
+                        newResolution: scaledResolution
+                    )
+                } else {
+                    await handleDisplayResolutionChange(
+                        streamID: request.streamID,
+                        newResolution: baseResolution
+                    )
+                }
             } catch {
                 MirageLogger.error(.host, "Failed to handle displayResolutionChange: \(error)")
             }
@@ -120,11 +125,7 @@ extension MirageHostService {
                 let request = try message.decode(StreamScaleChangeMessage.self)
                 MirageLogger
                     .host("Client requested stream scale change for stream \(request.streamID): \(request.streamScale)")
-                await handleStreamScaleChange(
-                    streamID: request.streamID,
-                    streamScale: request.streamScale,
-                    adaptiveScaleEnabled: request.adaptiveScaleEnabled
-                )
+                await handleStreamScaleChange(streamID: request.streamID, streamScale: request.streamScale)
             } catch {
                 MirageLogger.error(.host, "Failed to handle streamScaleChange: \(error)")
             }
@@ -219,6 +220,9 @@ extension MirageHostService {
 
         case .stopDesktopStream:
             await handleStopDesktopStream(message)
+
+        case .qualityTestRequest:
+            await handleQualityTestRequest(message, from: client, connection: connection)
 
         default:
             MirageLogger.host("Unhandled message type: \(message.type)")

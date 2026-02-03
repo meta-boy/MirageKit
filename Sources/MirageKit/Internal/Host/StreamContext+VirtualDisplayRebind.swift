@@ -136,7 +136,7 @@ extension StreamContext {
         baseCaptureSize = CGSize(width: captureTarget.width, height: captureTarget.height)
         streamScale = resolvedStreamScale(
             for: baseCaptureSize,
-            requestedScale: requestedStreamScale * adaptiveScale,
+            requestedScale: requestedStreamScale,
             logLabel: "Resolution cap"
         )
         let outputSize = scaledOutputSize(for: baseCaptureSize)
@@ -154,6 +154,8 @@ extension StreamContext {
             let resolvedPixelFormat = await encoder.getActivePixelFormat()
             activePixelFormat = resolvedPixelFormat
         }
+
+        await applyDerivedQuality(for: outputSize, logLabel: "Shared display rebind")
 
         let captureConfig = encoderConfig.withOverrides(pixelFormat: activePixelFormat)
         let newCaptureEngine = WindowCaptureEngine(

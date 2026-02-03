@@ -15,8 +15,6 @@ import Foundation
 /// Request to start streaming the desktop (Client → Host)
 /// This can mirror all physical displays or run as a secondary display
 struct StartDesktopStreamMessage: Codable {
-    /// Preferred quality preset
-    let preferredQuality: MirageQualityPreset
     /// Client's display scale factor
     let scaleFactor: CGFloat?
     /// Client's display width in pixels
@@ -25,18 +23,12 @@ struct StartDesktopStreamMessage: Codable {
     let displayHeight: Int
     /// Client-requested keyframe interval in frames
     var keyFrameInterval: Int?
-    /// Client-requested inter-frame quality (0.0-1.0)
-    var frameQuality: Float?
-    /// Client-requested keyframe quality (0.0-1.0)
-    var keyframeQuality: Float?
     /// Client-requested pixel format (capture + encode)
     var pixelFormat: MiragePixelFormat?
     /// Client-requested color space
     var colorSpace: MirageColorSpace?
     /// Client-requested ScreenCaptureKit queue depth
     var captureQueueDepth: Int?
-    /// Client-requested capture source for desktop streams
-    var captureSource: MirageDesktopCaptureSource?
     /// Desktop stream mode (mirrored vs secondary display)
     var mode: MirageDesktopStreamMode?
     /// Client-requested minimum target bitrate (bits per second)
@@ -45,8 +37,6 @@ struct StartDesktopStreamMessage: Codable {
     var maxBitrate: Int?
     /// Client-requested stream scale (0.1-1.0)
     let streamScale: CGFloat?
-    /// Client toggle for adaptive stream scaling (host may reduce streamScale to recover FPS)
-    let adaptiveScaleEnabled: Bool?
     /// Client latency preference for buffering behavior
     let latencyMode: MirageStreamLatencyMode?
     /// UDP port the client is listening on for video data
@@ -59,22 +49,17 @@ struct StartDesktopStreamMessage: Codable {
     // var preferHDR: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case preferredQuality
         case scaleFactor
         case displayWidth
         case displayHeight
         case keyFrameInterval
-        case frameQuality = "keyframeQuality"
-        case keyframeQuality = "keyframeQualityOverride"
         case pixelFormat
         case colorSpace
         case captureQueueDepth
-        case captureSource
         case mode
         case minBitrate
         case maxBitrate
         case streamScale
-        case adaptiveScaleEnabled
         case latencyMode
         case dataPort
         case maxRefreshRate
