@@ -15,8 +15,6 @@ import Foundation
 /// Request to start streaming the desktop (Client → Host)
 /// This can mirror all physical displays or run as a secondary display
 struct StartDesktopStreamMessage: Codable {
-    /// Preferred quality preset
-    let preferredQuality: MirageQualityPreset
     /// Client's display scale factor
     let scaleFactor: CGFloat?
     /// Client's display width in pixels
@@ -53,7 +51,6 @@ struct StartDesktopStreamMessage: Codable {
     // var preferHDR: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case preferredQuality
         case scaleFactor
         case displayWidth
         case displayHeight

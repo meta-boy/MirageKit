@@ -75,10 +75,6 @@ extension StreamContext {
         streamScale
     }
 
-    func getQualityPreset() -> MirageQualityPreset? {
-        qualityPreset
-    }
-
     func getEncoderSettings() -> EncoderSettingsSnapshot {
         EncoderSettingsSnapshot(
             keyFrameInterval: encoderConfig.keyFrameInterval,

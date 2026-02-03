@@ -260,10 +260,10 @@ extension MirageClientService {
         approvalWaitTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(1.5))
             guard let self else { return }
-            guard !self.hasReceivedHelloResponse else { return }
+            guard !hasReceivedHelloResponse else { return }
 
-            if case .connected = self.connectionState {
-                self.isAwaitingManualApproval = true
+            if case .connected = connectionState {
+                isAwaitingManualApproval = true
             }
         }
     }

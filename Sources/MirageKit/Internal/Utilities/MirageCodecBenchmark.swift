@@ -12,16 +12,16 @@ import CoreVideo
 import Foundation
 import VideoToolbox
 
-struct MirageCodecBenchmark {
+enum MirageCodecBenchmark {
     static let benchmarkWidth = 1920
     static let benchmarkHeight = 1080
     static let benchmarkFrameRate = 60
     static let benchmarkFrameCount = 120
 
     static func runEncodeBenchmark() async throws -> Double {
-#if os(macOS)
+        #if os(macOS)
         try await runEncoderThroughputBenchmark()
-#else
+        #else
         let encoder = BenchmarkEncoder(
             width: benchmarkWidth,
             height: benchmarkHeight,
@@ -31,7 +31,7 @@ struct MirageCodecBenchmark {
         let result = try await encoder.encodeFrames(frameCount: benchmarkFrameCount, collectSamples: false)
         let trimmed = result.encodeTimes.dropFirst(5)
         return average(Array(trimmed))
-#endif
+        #endif
     }
 
     static func runDecodeBenchmark() async throws -> Double {
@@ -60,7 +60,7 @@ struct MirageCodecBenchmark {
         return total / Double(values.count)
     }
 
-#if os(macOS)
+    #if os(macOS)
     private static func runEncoderThroughputBenchmark() async throws -> Double {
         let targetBitrate = benchmarkBitrateBps(pixelFormat: kCVPixelFormatType_420YpCbCr10BiPlanarFullRange)
         let config = MirageEncoderConfiguration(
@@ -192,7 +192,7 @@ struct MirageCodecBenchmark {
         CVPixelBufferUnlockBaseAddress(buffer, [])
         return buffer
     }
-#endif
+    #endif
 
     private final class BenchmarkEncoder {
         struct Result {
@@ -387,7 +387,7 @@ struct MirageCodecBenchmark {
         }
     }
 
-    private final class BenchmarkDecoder {
+    private enum BenchmarkDecoder {
         static func decodeSamples(
             _ samples: [CMSampleBuffer],
             formatDescription: CMFormatDescription

@@ -61,17 +61,16 @@ extension MirageHostService {
                 let clientMaxRefreshRate = request.maxRefreshRate
                 let targetFrameRate = resolvedTargetFrameRate(clientMaxRefreshRate)
 
-                let presetConfig = request.preferredQuality.encoderConfiguration(for: targetFrameRate)
-                let keyFrameInterval = request.keyFrameInterval ?? presetConfig.keyFrameInterval
-                let pixelFormat = request.pixelFormat ?? presetConfig.pixelFormat
-                let colorSpace = request.colorSpace ?? presetConfig.colorSpace
-                let minBitrate = request.minBitrate ?? presetConfig.minBitrate
-                let maxBitrate = request.maxBitrate ?? presetConfig.maxBitrate
+                let keyFrameInterval = request.keyFrameInterval
+                let pixelFormat = request.pixelFormat
+                let colorSpace = request.colorSpace
+                let minBitrate = request.minBitrate
+                let maxBitrate = request.maxBitrate
                 let requestedScale = request.streamScale ?? 1.0
                 let latencyMode = request.latencyMode ?? .smoothest
                 MirageLogger
                     .host(
-                        "Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)"
+                        "Frame rate: \(targetFrameRate)fps (client max=\(clientMaxRefreshRate)Hz)"
                     )
 
                 try await startStream(
@@ -82,7 +81,6 @@ extension MirageHostService {
                     keyFrameInterval: keyFrameInterval,
                     streamScale: requestedScale,
                     latencyMode: latencyMode,
-                    qualityPreset: request.preferredQuality,
                     targetFrameRate: targetFrameRate,
                     pixelFormat: pixelFormat,
                     colorSpace: colorSpace,
@@ -222,6 +220,7 @@ extension MirageHostService {
 
         case .stopDesktopStream:
             await handleStopDesktopStream(message)
+
         case .qualityTestRequest:
             await handleQualityTestRequest(message, from: client, connection: connection)
 

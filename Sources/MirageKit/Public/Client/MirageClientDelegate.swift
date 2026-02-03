@@ -30,14 +30,6 @@ public protocol MirageClientDelegate: AnyObject, Sendable {
     @MainActor
     func clientService(_ service: MirageClientService, didEncounterError error: Error)
 
-    /// Called when stream quality changes
-    @MainActor
-    func clientService(
-        _ service: MirageClientService,
-        streamQualityChanged streamID: StreamID,
-        newQuality: MirageQualityPreset
-    )
-
     /// Called when content bounds change (menus, sheets appear on virtual display)
     @MainActor
     func clientService(
@@ -107,7 +99,6 @@ public extension MirageClientDelegate {
     func clientService(_: MirageClientService, didReceiveVideoPacket _: Data, forStream _: StreamID) {}
     func clientService(_: MirageClientService, didDisconnectFromHost _: String) {}
     func clientService(_: MirageClientService, didEncounterError _: Error) {}
-    func clientService(_: MirageClientService, streamQualityChanged _: StreamID, newQuality _: MirageQualityPreset) {}
     func clientService(_: MirageClientService, didReceiveContentBoundsUpdate _: CGRect, forStream _: StreamID) {}
     func clientService(_: MirageClientService, hostSessionStateChanged _: HostSessionState, requiresUsername _: Bool) {}
     func clientService(

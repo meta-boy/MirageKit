@@ -21,7 +21,6 @@ extension MirageHostService {
         to clientContext: ClientContext,
         displayResolution: CGSize,
         mode: MirageDesktopStreamMode,
-        qualityPreset: MirageQualityPreset,
         keyFrameInterval: Int?,
         pixelFormat: MiragePixelFormat?,
         colorSpace: MirageColorSpace?,
@@ -68,16 +67,8 @@ extension MirageHostService {
         inputController.clearAllModifiers()
         desktopStreamMode = mode
 
-        // Configure encoder with quality preset and optional overrides
+        // Configure encoder with optional overrides
         var config = encoderConfig
-        let presetFrameRate = targetFrameRate ?? 60
-        let presetConfig = qualityPreset.encoderConfiguration(for: presetFrameRate)
-        config.keyFrameInterval = presetConfig.keyFrameInterval
-        config.pixelFormat = presetConfig.pixelFormat
-        config.colorSpace = presetConfig.colorSpace
-        config.minBitrate = presetConfig.minBitrate
-        config.maxBitrate = presetConfig.maxBitrate
-
         config = config.withOverrides(
             keyFrameInterval: keyFrameInterval,
             pixelFormat: pixelFormat,
@@ -200,7 +191,6 @@ extension MirageHostService {
             streamID: streamID,
             windowID: 0,
             encoderConfig: config,
-            qualityPreset: qualityPreset,
             streamScale: effectiveScale,
             maxPacketSize: networkConfig.maxPacketSize,
             additionalFrameFlags: [.desktopStream],

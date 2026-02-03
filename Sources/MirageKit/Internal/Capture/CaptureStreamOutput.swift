@@ -86,7 +86,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         frameGapThreshold: CFAbsoluteTime = 0.100,
         stallThreshold: CFAbsoluteTime = 1.0,
         expectedFrameRate: Double = 0,
-        targetFrameRate: Int = 0,
+        targetFrameRate _: Int = 0,
         poolMinimumBufferCount: Int = 6
     ) {
         self.onFrame = onFrame
@@ -133,7 +133,7 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
         frameRate: Int,
         gapThreshold: CFAbsoluteTime,
         stallThreshold: CFAbsoluteTime,
-        targetFrameRate: Int
+        targetFrameRate _: Int
     ) {
         expectationLock.withLock {
             expectedFrameRate = Double(frameRate)
@@ -575,7 +575,6 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             MirageLogger.capture(message)
         }
     }
-
 }
 
 #endif

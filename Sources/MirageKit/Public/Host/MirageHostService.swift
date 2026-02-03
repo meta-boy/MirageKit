@@ -93,7 +93,7 @@ public final class MirageHostService {
     var clientFirstErrorTime: [ObjectIdentifier: CFAbsoluteTime] = [:]
     let clientErrorTimeoutSeconds: CFAbsoluteTime = 2.0
 
-    // Approval timeout to avoid wedging the single-client slot.
+    /// Approval timeout to avoid wedging the single-client slot.
     let connectionApprovalTimeoutSeconds: CFAbsoluteTime = 15.0
 
     // Shared virtual display bounds for synchronous access from AppState
@@ -364,7 +364,6 @@ public final class MirageHostService {
     ///   - dataPort: Optional UDP port for video data
     ///   - clientDisplayResolution: Client's display resolution for virtual display sizing
     ///   - keyFrameInterval: Optional client-requested keyframe interval (in frames)
-    ///   - qualityPreset: Optional preset for latency-sensitive defaults
     ///   - colorSpace: Optional color space override for capture and encode
     ///   - captureQueueDepth: Optional ScreenCaptureKit queue depth override
     ///   - minBitrate: Optional minimum target bitrate (bits per second)

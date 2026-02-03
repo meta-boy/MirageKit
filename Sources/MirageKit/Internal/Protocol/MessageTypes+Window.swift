@@ -24,7 +24,6 @@ struct WindowUpdateMessage: Codable {
 
 struct StartStreamMessage: Codable {
     let windowID: WindowID
-    let preferredQuality: MirageQualityPreset
     /// UDP port the client is listening on for video data
     let dataPort: UInt16?
     /// Client's display scale factor (e.g., 2.0 for Retina Mac, ~1.72 for iPad Pro)
@@ -66,7 +65,6 @@ struct StartStreamMessage: Codable {
 
     enum CodingKeys: String, CodingKey {
         case windowID
-        case preferredQuality
         case dataPort
         case scaleFactor
         case pixelWidth

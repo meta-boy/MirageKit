@@ -216,11 +216,9 @@ actor StreamContext {
     /// Incremented when the host resets capture or send state.
     nonisolated(unsafe) var epoch: UInt16 = 0
 
-    /// Quality preset used to configure latency-sensitive defaults.
-    let qualityPreset: MirageQualityPreset?
     /// Latency preference for buffering behavior.
     let latencyMode: MirageStreamLatencyMode
-    /// When true, force low-latency buffering regardless of preset.
+    /// When true, force low-latency buffering regardless of overrides.
     let useLowLatencyPipeline: Bool
     /// Client-requested stream scale.
     var requestedStreamScale: CGFloat
@@ -229,7 +227,6 @@ actor StreamContext {
         streamID: StreamID,
         windowID: WindowID,
         encoderConfig: MirageEncoderConfiguration,
-        qualityPreset: MirageQualityPreset? = nil,
         streamScale: CGFloat = 1.0,
         maxPacketSize: Int = mirageDefaultMaxPacketSize,
         additionalFrameFlags: FrameFlags = [],
@@ -238,7 +235,6 @@ actor StreamContext {
         self.streamID = streamID
         self.windowID = windowID
         self.encoderConfig = encoderConfig
-        self.qualityPreset = qualityPreset
         self.latencyMode = latencyMode
         let clampedScale = StreamContext.clampStreamScale(streamScale)
         self.streamScale = clampedScale

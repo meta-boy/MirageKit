@@ -53,15 +53,14 @@ extension MirageHostService {
             let targetFrameRate = resolvedTargetFrameRate(clientMaxRefreshRate)
             MirageLogger
                 .host(
-                    "Frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)"
+                    "Frame rate: \(targetFrameRate)fps (client max=\(clientMaxRefreshRate)Hz)"
                 )
 
-            let presetConfig = request.preferredQuality.encoderConfiguration(for: targetFrameRate)
-            let keyFrameInterval = request.keyFrameInterval ?? presetConfig.keyFrameInterval
-            let pixelFormat = request.pixelFormat ?? presetConfig.pixelFormat
-            let colorSpace = request.colorSpace ?? presetConfig.colorSpace
-            let minBitrate = request.minBitrate ?? presetConfig.minBitrate
-            let maxBitrate = request.maxBitrate ?? presetConfig.maxBitrate
+            let keyFrameInterval = request.keyFrameInterval
+            let pixelFormat = request.pixelFormat
+            let colorSpace = request.colorSpace
+            let minBitrate = request.minBitrate
+            let maxBitrate = request.maxBitrate
             let streamScale = request.streamScale ?? 1.0
             let latencyMode = request.latencyMode ?? .smoothest
 
@@ -135,7 +134,6 @@ extension MirageHostService {
                         keyFrameInterval: keyFrameInterval,
                         streamScale: streamScale,
                         latencyMode: latencyMode,
-                        qualityPreset: request.preferredQuality,
                         targetFrameRate: targetFrameRate,
                         pixelFormat: pixelFormat,
                         colorSpace: colorSpace,

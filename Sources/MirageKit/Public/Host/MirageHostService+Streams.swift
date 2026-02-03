@@ -22,7 +22,6 @@ public extension MirageHostService {
         keyFrameInterval: Int? = nil,
         streamScale: CGFloat? = nil,
         latencyMode: MirageStreamLatencyMode = .smoothest,
-        qualityPreset: MirageQualityPreset? = nil,
         targetFrameRate: Int? = nil,
         pixelFormat: MiragePixelFormat? = nil,
         colorSpace: MirageColorSpace? = nil,
@@ -90,7 +89,6 @@ public extension MirageHostService {
             streamID: streamID,
             windowID: window.id,
             encoderConfig: effectiveEncoderConfig,
-            qualityPreset: qualityPreset,
             streamScale: streamScale ?? 1.0,
             maxPacketSize: networkConfig.maxPacketSize,
             latencyMode: latencyMode

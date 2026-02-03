@@ -15,7 +15,6 @@ public extension MirageClientService {
     /// Start viewing a remote window.
     /// - Parameters:
     ///   - window: The remote window to stream.
-    ///   - quality: Quality preset for the stream.
     ///   - expectedPixelSize: Optional pixel dimensions the client expects to render at.
     ///     If provided, the host will encode at this resolution from the start.
     ///   - scaleFactor: Optional display scale factor (e.g., 2.0 for Retina).
@@ -27,7 +26,6 @@ public extension MirageClientService {
     ///   - encoderOverrides: Optional per-stream encoder overrides.
     func startViewing(
         window: MirageWindow,
-        quality: MirageQualityPreset = .medium,
         expectedPixelSize: CGSize? = nil,
         scaleFactor: CGFloat? = nil,
         displayResolution: CGSize? = nil,
@@ -38,7 +36,7 @@ public extension MirageClientService {
         guard case .connected = connectionState, let connection else { throw MirageError.protocolError("Not connected") }
 
         // Note: Decoder/reassembler are created per-stream AFTER receiving streamStarted with the stream ID.
-        var request = StartStreamMessage(windowID: window.id, preferredQuality: quality, dataPort: nil)
+        var request = StartStreamMessage(windowID: window.id, dataPort: nil)
         if let expectedPixelSize, expectedPixelSize.width > 0, expectedPixelSize.height > 0 {
             request.pixelWidth = Int(expectedPixelSize.width)
             request.pixelHeight = Int(expectedPixelSize.height)
@@ -96,8 +94,7 @@ public extension MirageClientService {
 
         let session = ClientStreamSession(
             id: realStreamID,
-            window: window,
-            quality: quality
+            window: window
         )
 
         activeStreams.append(session)

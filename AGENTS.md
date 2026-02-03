@@ -5,10 +5,7 @@ MirageKit is the Swift Package that implements the core streaming framework for 
 
 ## Behavior Notes
 - MirageKit license: PolyForm Shield 1.0.0 with the line-of-business notice for dedicated remote window/desktop/secondary display/drawing-tablet streaming.
-- Streaming presets (60/120 fps bitrates, Mbps): low 12/8, medium 70/100, high 100/130, ultra 200.
-- Preset pixel format: ultra/high/medium 10-bit; low 8-bit.
-- Preset color space: P3 except low.
-- Stream scale: client-provided scale derived from the app's resolution limit; presets define bitrate targets.
+- Stream scale: client-provided scale derived from the app's resolution limit; encoder overrides define bitrate targets.
 - ProMotion preference: refresh override based on MTKView cadence, 120 when supported and enabled, otherwise 60.
 - Backpressure: queue-based frame drops.
 - Encoder quality: derived from target bitrate and output resolution; QP bounds mapping when supported.
@@ -17,7 +14,7 @@ MirageKit is the Swift Package that implements the core streaming framework for 
 - In-flight cap: 120Hz 2 frames; 60Hz 1 frame.
 - Keyframe payload: 4-byte parameter set length prefix; Annex B parameter sets; AVCC frame data.
 - iPad modifier input uses flags snapshots with gesture resync to avoid stuck keys.
-- Custom preset: encoder overrides for pixel format, color space, bitrate, and keyframe interval.
+- Custom mode: encoder overrides for pixel format, color space, bitrate, and keyframe interval.
 - `MIRAGE_SIGNPOST=1` enables Instruments signposts for decode/render timing.
 - Automatic quality tests use staged UDP payloads (warmup + ramp until plateau) plus VideoToolbox benchmarks for encode/decode timing.
 
@@ -93,7 +90,7 @@ MirageKit/
 - Adaptive stream scale: not supported; streams keep the client-selected `streamScale` throughout the session.
 - SCK buffer lifetime: captured frames are copied into a CVPixelBufferPool before encode to avoid retaining SCK buffers.
 - Queue limits: packet queue thresholds scale with encoded area and frame rate.
-- Frame rate selection: host follows client refresh rate (120fps when supported) across presets.
+- Frame rate selection: host follows client refresh rate (120fps when supported) across streams.
 - Desktop streaming: packet-queue backpressure and scheduled keyframe deferral during high motion/queue pressure.
 - Low-latency backpressure: queue spikes drop frames to keep latency down; recovery keyframes are requested separately.
 - Keyframe throttling: host ignores repeated keyframe requests while a keyframe is in flight; encoding waits for UDP registration so the first keyframe is delivered.

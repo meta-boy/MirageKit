@@ -27,7 +27,6 @@ public extension MirageClientService {
     /// Select an app to stream (streams all of its windows).
     /// - Parameters:
     ///   - bundleIdentifier: Bundle identifier of the app to stream.
-    ///   - quality: Quality preset for the streams.
     ///   - scaleFactor: Optional display scale factor (e.g., 2.0 for Retina).
     ///   - displayResolution: Client's display resolution for virtual display sizing.
     ///   - keyFrameInterval: Optional keyframe interval in frames.
@@ -36,7 +35,6 @@ public extension MirageClientService {
     // ///   - preferHDR: Whether to request HDR streaming (Rec. 2020 with PQ).
     func selectApp(
         bundleIdentifier: String,
-        quality: MirageQualityPreset = .medium,
         scaleFactor: CGFloat? = nil,
         displayResolution: CGSize? = nil,
         keyFrameInterval: Int? = nil,
@@ -51,7 +49,6 @@ public extension MirageClientService {
 
         var request = SelectAppMessage(
             bundleIdentifier: bundleIdentifier,
-            preferredQuality: quality,
             dataPort: nil,
             scaleFactor: scaleFactor,
             displayWidth: effectiveDisplayResolution.width > 0 ? Int(effectiveDisplayResolution.width) : nil,

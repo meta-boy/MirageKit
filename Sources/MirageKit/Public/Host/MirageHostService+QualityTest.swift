@@ -87,7 +87,7 @@ extension MirageHostService {
     ) async {
         let payloadLength = UInt16(clamping: payloadBytes)
         let payload = Data(repeating: 0, count: payloadBytes)
-        let minIntervalSeconds: Double = 0.001
+        let minIntervalSeconds = 0.001
         let maxBurstPackets = 1024
         var sequence: UInt32 = 0
 

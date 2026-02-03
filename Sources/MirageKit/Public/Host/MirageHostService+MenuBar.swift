@@ -107,7 +107,7 @@ extension MirageHostService {
             let targetFrameRate = resolvedTargetFrameRate(clientMaxRefreshRate)
             MirageLogger
                 .host(
-                    "Desktop stream frame rate: \(targetFrameRate)fps (quality=\(request.preferredQuality.displayName), client max=\(clientMaxRefreshRate)Hz)"
+                    "Desktop stream frame rate: \(targetFrameRate)fps (client max=\(clientMaxRefreshRate)Hz)"
                 )
             let latencyMode = request.latencyMode ?? .smoothest
 
@@ -115,7 +115,6 @@ extension MirageHostService {
                 to: clientContext,
                 displayResolution: CGSize(width: request.displayWidth, height: request.displayHeight),
                 mode: request.mode ?? .mirrored,
-                qualityPreset: request.preferredQuality,
                 keyFrameInterval: request.keyFrameInterval,
                 pixelFormat: request.pixelFormat,
                 colorSpace: request.colorSpace,

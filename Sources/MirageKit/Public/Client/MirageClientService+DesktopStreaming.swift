@@ -14,7 +14,6 @@ import Foundation
 public extension MirageClientService {
     /// Start streaming the desktop (mirrored or secondary display mode).
     /// - Parameters:
-    ///   - quality: Quality preset for the stream.
     ///   - scaleFactor: Optional display scale factor.
     ///   - displayResolution: Client's display resolution for virtual display sizing.
     ///   - mode: Desktop stream mode (mirrored vs secondary display).
@@ -24,7 +23,6 @@ public extension MirageClientService {
     // TODO: HDR support - requires proper virtual display EDR configuration.
     // ///   - preferHDR: Whether to request HDR streaming (Rec. 2020 with PQ).
     func startDesktopStream(
-        quality: MirageQualityPreset = .medium,
         scaleFactor: CGFloat? = nil,
         displayResolution: CGSize? = nil,
         mode: MirageDesktopStreamMode = .mirrored,
@@ -44,7 +42,6 @@ public extension MirageClientService {
         desktopStreamMode = mode
 
         var request = StartDesktopStreamMessage(
-            preferredQuality: quality,
             scaleFactor: scaleFactor,
             displayWidth: Int(effectiveDisplayResolution.width),
             displayHeight: Int(effectiveDisplayResolution.height),

@@ -9,7 +9,7 @@
 
 import Foundation
 
-struct MirageBitrateQualityMapper {
+enum MirageBitrateQualityMapper {
     private struct Point {
         let bpp: Double
         let quality: Double
@@ -60,7 +60,7 @@ struct MirageBitrateQualityMapper {
         for index in 0 ..< points.count - 1 {
             let low = points[index]
             let high = points[index + 1]
-            if bpp >= low.bpp && bpp <= high.bpp {
+            if bpp >= low.bpp, bpp <= high.bpp {
                 let t = (bpp - low.bpp) / (high.bpp - low.bpp)
                 return low.quality + (high.quality - low.quality) * t
             }

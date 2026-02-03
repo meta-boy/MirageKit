@@ -50,7 +50,6 @@ extension MirageHostService {
         let streamScale = await originalContext.getStreamScale()
         let encoderSettings = await originalContext.getEncoderSettings()
         let targetFrameRate = await originalContext.getTargetFrameRate()
-        let qualityPreset = await originalContext.getQualityPreset()
 
         // Auto-start a new stream for this window
         do {
@@ -61,7 +60,6 @@ extension MirageHostService {
                 clientDisplayResolution: displayResolution,
                 keyFrameInterval: encoderSettings.keyFrameInterval,
                 streamScale: streamScale,
-                qualityPreset: qualityPreset,
                 targetFrameRate: targetFrameRate,
                 pixelFormat: encoderSettings.pixelFormat,
                 colorSpace: encoderSettings.colorSpace,

@@ -27,8 +27,6 @@ struct AppListMessage: Codable {
 struct SelectAppMessage: Codable {
     /// Bundle identifier of the app to stream
     let bundleIdentifier: String
-    /// Quality preset for initial streams
-    let preferredQuality: MirageQualityPreset
     /// Client's data port for video
     let dataPort: UInt16?
     /// Client's display scale factor
@@ -61,7 +59,6 @@ struct SelectAppMessage: Codable {
 
     enum CodingKeys: String, CodingKey {
         case bundleIdentifier
-        case preferredQuality
         case dataPort
         case scaleFactor
         case displayWidth

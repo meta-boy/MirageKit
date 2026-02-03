@@ -69,7 +69,6 @@ extension MirageHostService {
         let streamScale = await existingContext?.getStreamScale() ?? 1.0
         let encoderSettings = await existingContext?.getEncoderSettings()
         let targetFrameRate = await existingContext?.getTargetFrameRate()
-        let qualityPreset = await existingContext?.getQualityPreset()
         let usesVirtualDisplay = await existingContext?.isUsingVirtualDisplay() ?? false
         let sharedDisplayResolution: CGSize? = if usesVirtualDisplay {
             await SharedVirtualDisplayManager.shared.getDisplayBounds()?.size
@@ -97,7 +96,6 @@ extension MirageHostService {
                         clientDisplayResolution: sharedDisplayResolution,
                         keyFrameInterval: encoderSettings?.keyFrameInterval,
                         streamScale: streamScale,
-                        qualityPreset: qualityPreset,
                         targetFrameRate: targetFrameRate,
                         pixelFormat: encoderSettings?.pixelFormat,
                         colorSpace: encoderSettings?.colorSpace,
@@ -153,7 +151,6 @@ extension MirageHostService {
                 clientDisplayResolution: sharedDisplayResolution,
                 keyFrameInterval: encoderSettings?.keyFrameInterval,
                 streamScale: streamScale,
-                qualityPreset: qualityPreset,
                 targetFrameRate: targetFrameRate,
                 pixelFormat: encoderSettings?.pixelFormat,
                 colorSpace: encoderSettings?.colorSpace,

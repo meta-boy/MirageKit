@@ -229,7 +229,7 @@ extension MirageClientService {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 try? await Task.sleep(for: .seconds(1))
-                if let pingContinuation = self.pingContinuation {
+                if let pingContinuation {
                     pingContinuation.resume(throwing: MirageError.protocolError("Ping timed out"))
                     self.pingContinuation = nil
                 }
@@ -250,10 +250,10 @@ extension MirageClientService {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 try? await Task.sleep(for: timeout)
-                guard let continuation = self.qualityTestResultContinuation else { return }
+                guard let continuation = qualityTestResultContinuation else { return }
                 continuation.resume(returning: nil)
-                self.qualityTestResultContinuation = nil
-                self.qualityTestPendingTestID = nil
+                qualityTestResultContinuation = nil
+                qualityTestPendingTestID = nil
             }
         }
     }
