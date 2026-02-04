@@ -52,6 +52,44 @@ extension MirageHostService {
         qualityTestTasksByClientID[client.id] = task
     }
 
+    func handleQualityProbeRequest(
+        _ message: ControlMessage,
+        from client: MirageConnectedClient,
+        connection: NWConnection
+    ) async {
+        guard let request = try? message.decode(QualityProbeRequestMessage.self) else {
+            MirageLogger.host("Failed to decode quality probe request")
+            return
+        }
+
+        if let task = qualityProbeTasksByClientID[client.id] {
+            task.cancel()
+        }
+
+        let task = Task.detached(priority: .userInitiated) { [request, connection] in
+            let frameRate = max(1, request.frameRate)
+            let encodeMs = try? await MirageCodecBenchmark.runEncodeProbe(
+                width: request.width,
+                height: request.height,
+                frameRate: frameRate,
+                pixelFormat: request.pixelFormat
+            )
+            let result = QualityProbeResultMessage(
+                probeID: request.probeID,
+                width: request.width,
+                height: request.height,
+                frameRate: frameRate,
+                pixelFormat: request.pixelFormat,
+                encodeMs: encodeMs
+            )
+            if let message = try? ControlMessage(type: .qualityProbeResult, content: result) {
+                connection.send(content: message.serialize(), completion: .idempotent)
+            }
+        }
+
+        qualityProbeTasksByClientID[client.id] = task
+    }
+
     private func sendCodecBenchmarkResult(testID: UUID, to connection: NWConnection) async {
         let store = MirageCodecBenchmarkStore()
         let encodeMs = try? await MirageCodecBenchmark.runEncodeBenchmark()

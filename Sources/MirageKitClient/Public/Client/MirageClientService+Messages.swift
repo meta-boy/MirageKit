@@ -86,6 +86,8 @@ extension MirageClientService {
             handlePong(message)
         case .qualityTestResult:
             handleQualityTestResult(message)
+        case .qualityProbeResult:
+            handleQualityProbeResult(message)
         default:
             break
         }

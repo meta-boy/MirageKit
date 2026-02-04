@@ -51,10 +51,47 @@ enum MirageCodecBenchmark {
         return average(decodeTimes)
     }
 
+    static func runDecodeProbe(
+        width: Int,
+        height: Int,
+        frameRate: Int,
+        pixelFormat: MiragePixelFormat,
+        frameCount: Int = 45
+    ) async throws -> Double {
+        let probeFormat = benchmarkPixelFormat(for: pixelFormat)
+        let encoder = BenchmarkEncoder(
+            width: width,
+            height: height,
+            frameRate: frameRate,
+            pixelFormat: probeFormat
+        )
+        let encoded = try await encoder.encodeFrames(frameCount: frameCount, collectSamples: true)
+        guard let firstSample = encoded.samples.first,
+              let formatDescription = CMSampleBufferGetFormatDescription(firstSample) else {
+            throw MirageError.protocolError("Failed to create sample buffers for decode probe")
+        }
+
+        let decodeTimes = try await BenchmarkDecoder.decodeSamples(
+            encoded.samples,
+            formatDescription: formatDescription
+        )
+        let trimmed = decodeTimes.dropFirst(5)
+        return average(Array(trimmed))
+    }
+
     private static func average(_ values: [Double]) -> Double {
         guard !values.isEmpty else { return 0 }
         let total = values.reduce(0, +)
         return total / Double(values.count)
+    }
+
+    private static func benchmarkPixelFormat(for format: MiragePixelFormat) -> OSType {
+        switch format {
+        case .p010, .bgr10a2:
+            kCVPixelFormatType_420YpCbCr10BiPlanarFullRange
+        case .bgra8, .nv12:
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        }
     }
 
     private final class BenchmarkEncoder {

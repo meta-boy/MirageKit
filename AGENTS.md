@@ -76,6 +76,7 @@ Docs: `If-Your-Computer-Feels-Stuttery.md` - ColorSync stutter cleanup commands.
 - Shared types, input events, trust, and CloudKit helpers: `Sources/MirageKit/Public/`.
 - Client services, delegates, session stores, metrics, cursor snapshots, and stream views: `Sources/MirageKitClient/Public/`.
 - Host services, delegates, window/input controllers, and host utilities: `Sources/MirageKitHost/Public/`.
+- Quality probe results: `MirageQualityProbeResult` in `Sources/MirageKit/Public/Types/`.
 
 ## Internal Implementation
 - Shared protocol, logging, and support utilities: `Sources/MirageKit/Internal/`.

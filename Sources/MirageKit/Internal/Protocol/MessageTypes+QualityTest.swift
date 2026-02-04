@@ -45,3 +45,50 @@ package struct QualityTestResultMessage: Codable {
         self.benchmarkVersion = benchmarkVersion
     }
 }
+
+package struct QualityProbeRequestMessage: Codable {
+    package let probeID: UUID
+    package let width: Int
+    package let height: Int
+    package let frameRate: Int
+    package let pixelFormat: MiragePixelFormat
+
+    package init(
+        probeID: UUID,
+        width: Int,
+        height: Int,
+        frameRate: Int,
+        pixelFormat: MiragePixelFormat
+    ) {
+        self.probeID = probeID
+        self.width = width
+        self.height = height
+        self.frameRate = frameRate
+        self.pixelFormat = pixelFormat
+    }
+}
+
+package struct QualityProbeResultMessage: Codable {
+    package let probeID: UUID
+    package let width: Int
+    package let height: Int
+    package let frameRate: Int
+    package let pixelFormat: MiragePixelFormat
+    package let encodeMs: Double?
+
+    package init(
+        probeID: UUID,
+        width: Int,
+        height: Int,
+        frameRate: Int,
+        pixelFormat: MiragePixelFormat,
+        encodeMs: Double?
+    ) {
+        self.probeID = probeID
+        self.width = width
+        self.height = height
+        self.frameRate = frameRate
+        self.pixelFormat = pixelFormat
+        self.encodeMs = encodeMs
+    }
+}

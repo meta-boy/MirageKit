@@ -55,6 +55,35 @@ enum MirageCodecBenchmark {
         return average(decodeTimes)
     }
 
+    static func runEncodeProbe(
+        width: Int,
+        height: Int,
+        frameRate: Int,
+        pixelFormat: MiragePixelFormat,
+        frameCount: Int = 45
+    ) async throws -> Double {
+        let sanitizedFrameRate = max(1, frameRate)
+        #if os(macOS)
+        return try await runEncoderThroughputProbe(
+            width: width,
+            height: height,
+            frameRate: sanitizedFrameRate,
+            pixelFormat: pixelFormat,
+            frameCount: frameCount
+        )
+        #else
+        let encoder = BenchmarkEncoder(
+            width: width,
+            height: height,
+            frameRate: sanitizedFrameRate,
+            pixelFormat: benchmarkPixelFormat(for: pixelFormat)
+        )
+        let result = try await encoder.encodeFrames(frameCount: frameCount, collectSamples: false)
+        let trimmed = result.encodeTimes.dropFirst(5)
+        return average(Array(trimmed))
+        #endif
+    }
+
     private static func average(_ values: [Double]) -> Double {
         guard !values.isEmpty else { return 0 }
         let total = values.reduce(0, +)
@@ -143,11 +172,129 @@ enum MirageCodecBenchmark {
         return average(encodeTimes)
     }
 
+    private static func runEncoderThroughputProbe(
+        width: Int,
+        height: Int,
+        frameRate: Int,
+        pixelFormat: MiragePixelFormat,
+        frameCount: Int
+    ) async throws -> Double {
+        let effectivePixelFormat = probePixelFormat(for: pixelFormat)
+        let colorSpace: MirageColorSpace = isTenBit(pixelFormat) ? .displayP3 : .sRGB
+        let targetBitrate = probeBitrateBps(
+            width: width,
+            height: height,
+            frameRate: frameRate,
+            pixelFormat: effectivePixelFormat
+        )
+        let config = MirageEncoderConfiguration(
+            targetFrameRate: frameRate,
+            keyFrameInterval: frameRate * 2,
+            colorSpace: colorSpace,
+            pixelFormat: effectivePixelFormat,
+            bitrate: targetBitrate
+        )
+        let encoder = HEVCEncoder(
+            configuration: config,
+            latencyMode: .lowestLatency,
+            inFlightLimit: 1
+        )
+        try await encoder.createSession(width: width, height: height)
+        try await encoder.preheat()
+
+        let group = DispatchGroup()
+        await encoder.startEncoding(
+            onEncodedFrame: { _, _, _ in },
+            onFrameComplete: { group.leave() }
+        )
+
+        let duration = CMTime(value: 1, timescale: CMTimeScale(frameRate))
+        let frameInfo = CapturedFrameInfo(
+            contentRect: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)),
+            dirtyPercentage: 100,
+            isIdleFrame: false
+        )
+        let pixelBufferFormat = benchmarkPixelFormat(for: effectivePixelFormat)
+
+        var encodeTimes: [Double] = []
+
+        for frameIndex in 0 ..< frameCount {
+            guard let pixelBuffer = makeBenchmarkPixelBuffer(
+                width: width,
+                height: height,
+                pixelFormat: pixelBufferFormat,
+                frameIndex: frameIndex
+            ) else {
+                throw MirageError.protocolError("Encode probe failed: pixel buffer unavailable")
+            }
+
+            let presentationTime = CMTime(
+                value: CMTimeValue(frameIndex),
+                timescale: CMTimeScale(frameRate)
+            )
+            let frame = CapturedFrame(
+                pixelBuffer: pixelBuffer,
+                presentationTime: presentationTime,
+                duration: duration,
+                captureTime: CFAbsoluteTimeGetCurrent(),
+                info: frameInfo
+            )
+
+            group.enter()
+            let startTime = CFAbsoluteTimeGetCurrent()
+            let result = try await encoder.encodeFrame(frame, forceKeyframe: frameIndex == 0)
+            switch result {
+            case .accepted:
+                let waitResult = await waitForGroup(group, timeout: .seconds(2))
+                if waitResult == .timedOut {
+                    throw MirageError.protocolError("Encode probe timed out")
+                }
+                let deltaMs = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+                if frameIndex >= 5 {
+                    encodeTimes.append(deltaMs)
+                }
+            case .skipped:
+                group.leave()
+            }
+        }
+
+        await encoder.stopEncoding()
+
+        guard !encodeTimes.isEmpty else {
+            throw MirageError.protocolError("Encode probe failed: no samples")
+        }
+
+        return average(encodeTimes)
+    }
+
     private static func benchmarkBitrateBps(pixelFormat: OSType) -> Int {
         let targetBpp: Double = pixelFormat == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange ? 0.18 : 0.14
         let pixelsPerSecond = Double(benchmarkWidth * benchmarkHeight * benchmarkFrameRate)
         let target = Int(pixelsPerSecond * targetBpp)
         return max(20_000_000, target)
+    }
+
+    private static func probeBitrateBps(
+        width: Int,
+        height: Int,
+        frameRate: Int,
+        pixelFormat: MiragePixelFormat
+    ) -> Int {
+        let targetBpp: Double = isTenBit(pixelFormat) ? 0.18 : 0.14
+        let pixelsPerSecond = Double(width * height * frameRate)
+        let target = Int(pixelsPerSecond * targetBpp)
+        return max(20_000_000, target)
+    }
+
+    private static func probePixelFormat(for format: MiragePixelFormat) -> MiragePixelFormat {
+        switch format {
+        case .p010, .nv12:
+            return format
+        case .bgr10a2:
+            return .p010
+        case .bgra8:
+            return .nv12
+        }
     }
 
     private static func makeBenchmarkPixelBuffer(
@@ -518,6 +665,24 @@ enum MirageCodecBenchmark {
                 let result = group.wait(timeout: .now() + timeout.timeInterval)
                 continuation.resume(returning: result)
             }
+        }
+    }
+
+    private static func benchmarkPixelFormat(for format: MiragePixelFormat) -> OSType {
+        switch format {
+        case .p010, .bgr10a2:
+            return kCVPixelFormatType_420YpCbCr10BiPlanarFullRange
+        case .bgra8, .nv12:
+            return kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        }
+    }
+
+    private static func isTenBit(_ format: MiragePixelFormat) -> Bool {
+        switch format {
+        case .p010, .bgr10a2:
+            true
+        case .bgra8, .nv12:
+            false
         }
     }
 }

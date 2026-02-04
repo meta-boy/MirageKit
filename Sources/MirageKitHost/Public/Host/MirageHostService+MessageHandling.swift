@@ -212,6 +212,9 @@ extension MirageHostService {
         case .qualityTestRequest:
             await handleQualityTestRequest(message, from: client, connection: connection)
 
+        case .qualityProbeRequest:
+            await handleQualityProbeRequest(message, from: client, connection: connection)
+
         default:
             MirageLogger.host("Unhandled message type: \(message.type)")
         }

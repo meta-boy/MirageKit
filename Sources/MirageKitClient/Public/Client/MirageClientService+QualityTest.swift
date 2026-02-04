@@ -7,6 +7,7 @@
 //  Client-side quality test support.
 //
 
+import CoreGraphics
 import Foundation
 import Network
 import MirageKit
@@ -90,7 +91,7 @@ extension MirageClientService {
             )
             if isStable {
                 let previousThroughput = lastStableThroughput
-                lastStableBitrate = targetBitrate
+                lastStableBitrate = stage.throughputBps
                 lastStableThroughput = stage.throughputBps
                 lastStableLoss = stage.lossPercent
 
@@ -168,6 +169,76 @@ extension MirageClientService {
         )
     }
 
+    public func runQualityProbe(
+        resolution: CGSize,
+        pixelFormat: MiragePixelFormat,
+        frameRate: Int
+    ) async throws -> MirageQualityProbeResult {
+        guard case .connected = connectionState, let connection else {
+            throw MirageError.protocolError("Not connected")
+        }
+
+        let rawWidth = max(2, Int(resolution.width.rounded(.down)))
+        let rawHeight = max(2, Int(resolution.height.rounded(.down)))
+        let width = rawWidth - (rawWidth % 2)
+        let height = rawHeight - (rawHeight % 2)
+        let probeID = UUID()
+        let sanitizedFrameRate = max(1, frameRate)
+        let decodeTask = Task {
+            try await runDecodeProbe(
+                width: width,
+                height: height,
+                frameRate: sanitizedFrameRate,
+                pixelFormat: pixelFormat
+            )
+        }
+
+        let hostTask = Task { [weak self] in
+            await self?.awaitQualityProbeResult(probeID: probeID, timeout: .seconds(5))
+        }
+
+        let request = QualityProbeRequestMessage(
+            probeID: probeID,
+            width: width,
+            height: height,
+            frameRate: sanitizedFrameRate,
+            pixelFormat: pixelFormat
+        )
+        let message = try ControlMessage(type: .qualityProbeRequest, content: request)
+
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                connection.send(content: message.serialize(), completion: .contentProcessed { error in
+                    if let error { continuation.resume(throwing: error) } else {
+                        continuation.resume()
+                    }
+                })
+            }
+        } catch {
+            qualityProbeResultContinuation?.resume(returning: nil)
+            qualityProbeResultContinuation = nil
+            qualityProbePendingID = nil
+            decodeTask.cancel()
+            throw error
+        }
+
+        guard let hostResult = await hostTask.value else {
+            decodeTask.cancel()
+            throw MirageError.protocolError("Quality probe timed out")
+        }
+
+        let decodeMs = try await decodeTask.value
+
+        return MirageQualityProbeResult(
+            width: hostResult.width,
+            height: hostResult.height,
+            frameRate: hostResult.frameRate,
+            pixelFormat: hostResult.pixelFormat,
+            hostEncodeMs: hostResult.encodeMs,
+            clientDecodeMs: decodeMs
+        )
+    }
+
     func handlePong(_: ControlMessage) {
         pingContinuation?.resume()
         pingContinuation = nil
@@ -181,6 +252,14 @@ extension MirageClientService {
         qualityTestPendingTestID = nil
     }
 
+    func handleQualityProbeResult(_ message: ControlMessage) {
+        guard let result = try? message.decode(QualityProbeResultMessage.self) else { return }
+        guard qualityProbePendingID == result.probeID else { return }
+        qualityProbeResultContinuation?.resume(returning: result)
+        qualityProbeResultContinuation = nil
+        qualityProbePendingID = nil
+    }
+
     nonisolated func handleQualityTestPacket(_ header: QualityTestPacketHeader, data: Data) {
         qualityTestLock.lock()
         let accumulator = qualityTestAccumulatorStorage
@@ -189,7 +268,7 @@ extension MirageClientService {
 
         guard let accumulator, activeTestID == header.testID else { return }
         let payloadBytes = min(Int(header.payloadLength), max(0, data.count - mirageQualityTestHeaderSize))
-        accumulator.record(stageID: Int(header.stageID), payloadBytes: payloadBytes)
+        accumulator.record(header: header, payloadBytes: payloadBytes)
     }
 
     private func measureRTT() async throws -> Double {
@@ -259,6 +338,27 @@ extension MirageClientService {
         }
     }
 
+    private func awaitQualityProbeResult(probeID: UUID, timeout: Duration) async -> QualityProbeResultMessage? {
+        if let pending = qualityProbePendingID, pending != probeID {
+            qualityProbeResultContinuation?.resume(returning: nil)
+            qualityProbeResultContinuation = nil
+        }
+
+        qualityProbePendingID = probeID
+
+        return await withCheckedContinuation { continuation in
+            qualityProbeResultContinuation = continuation
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                try? await Task.sleep(for: timeout)
+                guard let continuation = qualityProbeResultContinuation else { return }
+                continuation.resume(returning: nil)
+                qualityProbeResultContinuation = nil
+                qualityProbePendingID = nil
+            }
+        }
+    }
+
     private func sendQualityTestRegistration() async throws {
         guard let udpConnection else {
             throw MirageError.protocolError("No UDP connection")
@@ -291,6 +391,20 @@ extension MirageClientService {
         )
         store.save(record)
         return record
+    }
+
+    private func runDecodeProbe(
+        width: Int,
+        height: Int,
+        frameRate: Int,
+        pixelFormat: MiragePixelFormat
+    ) async throws -> Double {
+        try await MirageCodecBenchmark.runDecodeProbe(
+            width: width,
+            height: height,
+            frameRate: frameRate,
+            pixelFormat: pixelFormat
+        )
     }
 
     private func runQualityTestStage(

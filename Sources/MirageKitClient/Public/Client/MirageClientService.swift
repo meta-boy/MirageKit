@@ -175,6 +175,8 @@ public final class MirageClientService {
     nonisolated(unsafe) var qualityTestActiveTestIDStorage: UUID?
     var qualityTestResultContinuation: CheckedContinuation<QualityTestResultMessage?, Never>?
     var qualityTestPendingTestID: UUID?
+    var qualityProbeResultContinuation: CheckedContinuation<QualityProbeResultMessage?, Never>?
+    var qualityProbePendingID: UUID?
     var pingContinuation: CheckedContinuation<Void, Error>?
 
     /// Thread-safe set of active stream IDs for packet filtering from UDP callback
