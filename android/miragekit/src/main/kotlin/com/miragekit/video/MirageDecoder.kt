@@ -46,10 +46,15 @@ class MirageDecoder(private val surface: Surface) {
     }
 
     fun decodeFrame(frame: ReassembledFrame) {
-        // Basic resolution check - in real implementation we'd use dimensionToken or SPS parsing
-        if (!isConfigured) {
-             // Use default or try to infer from rect?
-             // Ideally we get resolution from Connection negotiation or first frame.
+        // Check for resolution change or initial configuration
+        val frameWidth = frame.header.contentRectWidth.toInt()
+        val frameHeight = frame.header.contentRectHeight.toInt()
+
+        // If the frame has valid dimensions and they differ from current config, reconfigure
+        if (frameWidth > 0 && frameHeight > 0 && (frameWidth != currentWidth || frameHeight != currentHeight || !isConfigured)) {
+            configure(frameWidth, frameHeight)
+        } else if (!isConfigured) {
+             // Fallback if first frame has no valid rect (unlikely for I-frame)
              configure(1920, 1080)
         }
 

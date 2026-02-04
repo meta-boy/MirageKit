@@ -56,21 +56,9 @@ class MirageClient(private val context: Context) {
             val response = Json.decodeFromString<HelloResponseMessage>(String(responseMsg.payload))
             if (response.accepted) {
                 connectedHost = host
-                // Start UDP listener on the assigned data port?
-                // Actually the host TELLS us the data port to send to? Or the port it listens on?
-                // UDP is usually Client sends to Host DataPort.
-                // But Client also needs to listen for Video.
-                // Usually Host sends video to Client's UDP port.
-                // Does Client register its UDP port?
-                // Protocol: "Client registers stream IDs to receive data."
-                // "UDP registration (streamID + deviceID)"
-
-                // Let's assume we listen on ANY port and send a registration packet?
-                // Or maybe `HelloResponse` tells us where to send UDP?
-                // `HelloResponse` has `dataPort`. That's likely the Host's UDP port.
-                // The client likely needs to punch a hole or send a packet there.
-
-                startUdpReception(9848) // Local port, can be random 0
+                // Start UDP listener on dynamic port (0)
+                // The host expects us to send a registration packet to its dataPort.
+                startUdpReception(0, host.endpoint, response.dataPort.toInt(), deviceId)
             } else {
                 tcp.disconnect()
                 throw Exception("Connection rejected")
@@ -84,16 +72,50 @@ class MirageClient(private val context: Context) {
         startControlLoop()
     }
 
-    private fun startUdpReception(localPort: Int) {
+    private fun startUdpReception(localPort: Int, hostAddress: String, hostPort: Int, deviceId: String) {
         val receiver = UdpReceiver()
         udpReceiver = receiver
 
+        // Launch the receiver flow
         receiver.start(localPort).onEach { (header, payload) ->
             val frame = reassembler.processPacket(header, payload)
             if (frame != null) {
                  decoder?.decodeFrame(frame)
             }
         }.launchIn(scope)
+
+        // Send registration/punch packet (FrameHeader with no payload)
+        // Protocol: "Client registers stream IDs to receive data"
+        // We construct a dummy header or specific registration format.
+        // Assuming implicit registration by sending any packet to the host data port.
+        // Or we might need to send the deviceID or streamID.
+        // Based on Swift code reading, the client sends "UDP registration (streamID + deviceID)".
+        // However, we don't have the exact struct for that.
+        // Let's send a FrameHeader with empty payload and streamID 0 to punch the hole.
+        scope.launch(Dispatchers.IO) {
+            val punchHeader = FrameHeader(
+                flags = 0u,
+                streamID = 0u,
+                sequenceNumber = 0u,
+                timestamp = 0u,
+                frameNumber = 0u,
+                fragmentIndex = 0u,
+                fragmentCount = 1u,
+                payloadLength = 0u,
+                frameByteCount = 0u,
+                checksum = 0u
+            )
+            val data = punchHeader.serialize()
+            try {
+                // Repeat a few times to ensure arrival
+                repeat(3) {
+                    receiver.send(data, hostAddress, hostPort)
+                    delay(50)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     private fun startControlLoop() {

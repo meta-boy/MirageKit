@@ -19,6 +19,14 @@ class UdpReceiver {
     // Default max packet size from Swift is 1200.
     private val bufferSize = 2048
 
+    // Send a packet to the destination
+    suspend fun send(data: ByteArray, host: String, port: Int) = withContext(Dispatchers.IO) {
+        val socket = socket ?: return@withContext
+        val address = java.net.InetAddress.getByName(host)
+        val packet = DatagramPacket(data, data.size, address, port)
+        socket.send(packet)
+    }
+
     fun start(port: Int): Flow<Pair<FrameHeader, ByteArray>> = callbackFlow {
         val socket = DatagramSocket(port)
         this@UdpReceiver.socket = socket
